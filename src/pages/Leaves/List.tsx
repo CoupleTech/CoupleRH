@@ -118,7 +118,7 @@ export default function LeavesList() {
   };
 
   const filteredLeaves = leaves.filter((l) => {
-    const contract = l.employment_contracts;
+    const contract = l.employment_contracts as any;
     if (selectedCompanyId && contract?.company_id !== selectedCompanyId) return false;
     const name = contract?.workers?.people?.full_name || "";
     return name.toLowerCase().includes(searchTerm.toLowerCase());

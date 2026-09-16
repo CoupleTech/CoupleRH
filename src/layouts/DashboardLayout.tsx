@@ -5,7 +5,7 @@ import {
   Building2, Users, Settings, LogOut, LayoutDashboard,
   CalendarDays, FileText, ShieldCheck, UserMinus, Stethoscope,
   Briefcase, Clock, Calculator, Activity, ShieldAlert, TrendingUp,
-  ChevronDown, ChevronUp, ChevronRight, Menu, X, Bell, Check, GitBranch, Landmark, MapPin, Watch, HelpCircle
+  ChevronDown, ChevronUp, ChevronRight, Menu, X, Bell, Check, GitBranch, Landmark, MapPin, Watch, HelpCircle, Inbox
 } from 'lucide-react';
 import { useCompany } from '../contexts/CompanyContext';
 
@@ -54,6 +54,7 @@ const NAV_SECTIONS = [
       { to: '/folha/lancamentos', icon: Activity, label: 'Lançamentos Variáveis' },
       { to: '/folha/holerites', icon: FileText, label: 'Holerites' },
       { to: '/folha/rubricas', icon: Settings, label: 'Rubricas e Regras' },
+      { to: '/folha/relatorios', icon: TrendingUp, label: 'Relatórios Analíticos' },
     ]
   },
   {
@@ -66,6 +67,7 @@ const NAV_SECTIONS = [
   {
     label: 'Documentos',
     items: [
+      { to: '/documentos/recepcao', icon: Inbox, label: 'Recepção / Auditoria' },
       { to: '/documentos/templates', icon: FileText, label: 'Modelos' },
       { to: '/documentos/cofre', icon: ShieldCheck, label: 'Cofre Digital' },
     ]

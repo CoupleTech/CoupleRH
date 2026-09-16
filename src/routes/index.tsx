@@ -6,6 +6,7 @@ import { CompanyProvider } from '../contexts/CompanyContext';
 import Login from '../pages/Login';
 import Templates from '../pages/Documents/Templates';
 import SignaturesVault from '../pages/Documents/SignaturesVault';
+import PersonalDocsInbox from '../pages/Documents/PersonalDocsInbox';
 import EmployeePortal from '../pages/Portals/EmployeePortal';
 import EmployeePortalLogin from '../pages/Portals/Login';
 import VacationsList from '../pages/Vacations/List';
@@ -19,6 +20,7 @@ import PayrollRubrics from '../pages/Payroll/Rubrics';
 import PayrollEvents from '../pages/Payroll/Events';
 import PayrollCalculations from '../pages/Payroll/Calculations';
 import Payslips from '../pages/Payroll/Payslips';
+import PayrollReports from '../pages/Payroll/Reports';
 import TerminationsList from '../pages/Offboarding/List';
 import OffboardingWizard from '../pages/Offboarding/Wizard';
 import Movements from '../pages/Movements';
@@ -95,12 +97,14 @@ export function AppRoutes() {
               <Route path="/folha/lancamentos" element={<PayrollEvents />} />
               <Route path="/folha/holerites" element={<Payslips />} />
               <Route path="/folha/rubricas" element={<PayrollRubrics />} />
+              <Route path="/folha/relatorios" element={<PayrollReports />} />
               
               <Route path="/esocial" element={<ESocialDashboard />} />
               <Route path="/sst" element={<SstDashboard />} />
               
               <Route path="/documentos/templates" element={<Templates />} />
               <Route path="/documentos/cofre" element={<SignaturesVault />} />
+              <Route path="/documentos/recepcao" element={<PersonalDocsInbox />} />
               
               <Route path="/departamentos" element={<DepartmentsList />} />
               <Route path="/departamentos/novo" element={<DepartmentForm />} />

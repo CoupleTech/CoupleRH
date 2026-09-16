@@ -180,8 +180,8 @@ export class PayrollEngine {
            this.context.total_descontos += inssResult.value;
            this.context.base_irrf -= inssResult.value; // INSS deduz IRRF
            
-            // BUG 7 fix: Busca rubrica INSS por código '901' primeiro, depois por nome
-           const rubricInss = Array.from(this.context.rubricas.values()).find(r => r.code === '901' || r.code === '2001' || r.code === 'INSS_AUTO' || r.name.includes('INSS'));
+           // BUG 7 fix: Busca rubrica INSS por código '901' primeiro, depois por nome
+           const rubricInss = Array.from(this.context.rubricas.values()).find(r => r.code === '901' || r.code === '2001' || r.code === 'INSS_AUTO' || (r.name && r.name.toUpperCase().includes('INSS')));
 
            this.context.addMemory({
               rubric_id: rubricInss ? rubricInss.id : 'INSS_AUTO',
@@ -202,7 +202,7 @@ export class PayrollEngine {
            this.context.total_descontos += irrfResult.value;
            
             // BUG 7 fix: Busca rubrica IRRF por código '902' primeiro, depois por nome
-           const rubricIrrf = Array.from(this.context.rubricas.values()).find(r => r.code === '902' || r.code === '2002' || r.code === 'IRRF_AUTO' || r.name.includes('IRRF') || r.name.includes('IRPF'));
+           const rubricIrrf = Array.from(this.context.rubricas.values()).find(r => r.code === '902' || r.code === '2002' || r.code === 'IRRF_AUTO' || (r.name && (r.name.toUpperCase().includes('IRRF') || r.name.toUpperCase().includes('IRPF'))));
 
            this.context.addMemory({
               rubric_id: rubricIrrf ? rubricIrrf.id : 'IRRF_AUTO',
@@ -220,7 +220,7 @@ export class PayrollEngine {
         fgtsResult = FGTSCalculator.calculate(this.context.base_fgts);
         if (fgtsResult.value > 0) {
             // BUG 7 fix: Busca rubrica FGTS por código '903' primeiro, depois por nome
-            const rubricFgts = Array.from(this.context.rubricas.values()).find(r => r.code === '903' || r.code === '2005' || r.code === 'FGTS_AUTO' || r.name.includes('FGTS'));
+            const rubricFgts = Array.from(this.context.rubricas.values()).find(r => r.code === '903' || r.code === '2005' || r.code === 'FGTS_AUTO' || (r.name && r.name.toUpperCase().includes('FGTS')));
             
             this.context.addMemory({
               rubric_id: rubricFgts ? rubricFgts.id : 'FGTS_AUTO',

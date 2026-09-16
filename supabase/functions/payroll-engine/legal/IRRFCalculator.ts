@@ -37,22 +37,8 @@ export class IRRFCalculator {
     
     irrf = Math.max(0, irrf);
 
-    // Nova regra de Redução IRRF (se configurada na tela)
-    if (irrf > 0) {
-        const exemptionLimit = params.irrf_exemption_limit || 0; // Ex: 5000
-        const formulaLimit = params.irrf_reduction_formula_limit || 0; // Ex: 7350
-        const baseRed = params.irrf_base_reduction || 0;
-        
-        if (exemptionLimit > 0 && calcBase <= exemptionLimit) {
-            irrf = 0; // Isento pela ampliação da faixa
-        } else if (formulaLimit > 0 && calcBase <= formulaLimit) {
-            // Se estiver entre exemptionLimit e formulaLimit, aplicaria a fórmula (simplificaremos para base_reduction fixo se existir)
-            if (baseRed > 0) {
-                 irrf = Math.max(0, irrf - baseRed);
-            }
-        }
-    }
-
+    // Regras de isenção ou reduções absurdas que subtraem do imposto e dão R$ 63 foram removidas.
+    
     return {
       value: Math.round(irrf * 100) / 100,
       usedSimplified,

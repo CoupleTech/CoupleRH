@@ -1,23 +1,30 @@
 import { useState, useEffect } from "react";
-import { Search, UserMinus, ChevronRight, Loader2, Edit2 } from "lucide-react";
+import { Search, UserMinus, ChevronRight, Loader2, Edit2, FileText } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import TRCTViewer from "./components/TRCTViewer";
 
-interface TerminatedContract {
+interface Termination {
   id: string;
-  resignation_date: string;
-  workers: {
-    people: {
-      full_name: string;
-    };
+  contract_id: string;
+  last_working_day: string;
+  status: string;
+  calculated_trct: any;
+  employment_contracts: {
+    workers: {
+      people: {
+        full_name: string;
+      };
+    } | null;
   } | null;
 }
 
 export default function TerminationsList() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
-  const [terminations, setTerminations] = useState<TerminatedContract[]>([]);
+  const [terminations, setTerminations] = useState<Termination[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedTRCT, setSelectedTRCT] = useState<Termination | null>(null);
 
   useEffect(() => {
     fetchTerminations();
@@ -26,29 +33,35 @@ export default function TerminationsList() {
   const fetchTerminations = async () => {
     setLoading(true);
     const { data, error } = await supabase
-      .from("employment_contracts")
+      .from("terminations")
       .select(
         `
         id,
-        resignation_date,
-        workers (
-          people (
-            full_name
+        contract_id,
+        last_working_day,
+        status,
+        calculated_trct,
+        employment_contracts (
+          workers (
+            people (
+              full_name
+            )
           )
         )
-      `,
+      `
       )
-      .eq("status", "INACTIVE")
-      .order("resignation_date", { ascending: false });
+      .order("last_working_day", { ascending: false });
 
     if (!error && data) {
       setTerminations(data as any);
+    } else if (error) {
+       console.error("Error fetching terminations:", error);
     }
     setLoading(false);
   };
 
   const filteredTerminations = terminations.filter((t) => {
-    const name = t.workers?.people?.full_name || "";
+    const name = t.employment_contracts?.workers?.people?.full_name || "";
     return name.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
@@ -109,7 +122,7 @@ export default function TerminationsList() {
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {filteredTerminations.map((term) => {
-                  const name = term.workers?.people?.full_name || "Desconhecido";
+                  const name = term.employment_contracts?.workers?.people?.full_name || "Desconhecido";
                   return (
                     <tr key={term.id} className="hover:bg-slate-50/50 transition-colors group">
                       <td className="px-6 py-4">
@@ -124,23 +137,24 @@ export default function TerminationsList() {
                       </td>
                       <td className="px-6 py-4">
                         <span className="font-mono text-sm text-slate-600 tabular-nums">
-                          {term.resignation_date
-                            ? new Date(term.resignation_date).toLocaleDateString("pt-BR")
+                          {term.last_working_day
+                            ? new Date(term.last_working_day).toLocaleDateString("pt-BR")
                             : "—"}
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border bg-slate-50 text-slate-600 border-slate-200">
-                          Concluído
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border bg-emerald-50 text-emerald-600 border-emerald-200">
+                          {term.status === "CALCULATED" ? "Calculado" : term.status}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button 
-                            className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors cursor-pointer"
-                            title="Editar / Visualizar"
+                            onClick={() => setSelectedTRCT(term)}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-primary-600 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors cursor-pointer"
+                            title="Gerar TRCT"
                           >
-                            <Edit2 size={16} />
+                            <FileText size={16} /> TRCT
                           </button>
                         </div>
                       </td>
@@ -164,6 +178,13 @@ export default function TerminationsList() {
           </div>
         )}
       </div>
+      
+      {selectedTRCT && (
+        <TRCTViewer 
+          termination={selectedTRCT} 
+          onClose={() => setSelectedTRCT(null)} 
+        />
+      )}
     </div>
   );
 }

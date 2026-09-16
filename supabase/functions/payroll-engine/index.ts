@@ -1,3 +1,4 @@
+// FORCE DEPLOY TIMESTAMP 12345
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.0";
 import { PayrollContext, Rubric } from "./engine/PayrollContext.ts";
@@ -229,13 +230,16 @@ serve(async (req) => {
     if (period.type === 'MONTHLY') {
       const { data: advData } = await supabase
         .from('payslips')
-        .select('contract_id, net_salary, payroll_periods!inner(type, month, year, status)')
+        .select('contract_id, total_earnings, payroll_periods!inner(type, month, year, status)')
         .eq('tenant_id', tenant_id)
         .eq('payroll_periods.type', 'ADVANCE')
         .eq('payroll_periods.month', period.month)
         .eq('payroll_periods.year', period.year)
         .eq('payroll_periods.status', 'CLOSED');
-      advancePayslips = advData || [];
+        
+      if (advData) {
+        advancePayslips = advData;
+      }
     }
 
     // 3.6 Busca Férias (VACATION ou MONTHLY)
@@ -306,23 +310,28 @@ serve(async (req) => {
         let rubricAdvEarning = applicableRubrics[0];
 
         if (!rubricAdvEarning) {
-          // Cria rubrica virtual para não dar erro 400 se o usuário esqueceu de cadastrar
-          rubricAdvEarning = {
-            id: 'rubrica-adiantamento-virtual',
+          // Cria a rubrica no BD para não estourar FK UUID e aparecer no recibo
+          const newRub = {
+            tenant_id,
             code: '301',
             name: 'Adiantamento Quinzenal',
             type: 'EARNING',
             category: 'ADVANCE',
-            calculation_form: 'FIXED',
-            calculation_base: 'SALARIO_BASE',
+            calculation_form: 'FIXO', // Pro adiantamento o valor é fixo gerado antes
+            calculation_type: 'FIXED',
             percentage: 40,
-            incidencias: {
-              inss: false, irrf: false, fgts: false,
-              inss_patronal: false, rat: false, terceiros: false,
-              gera_base_inss: false, gera_base_irrf: false, gera_base_fgts: false
-            }
-          } as any;
-          applicableRubrics.push(rubricAdvEarning);
+            incidencias: { gera_base_inss: false, gera_base_irrf: false, gera_base_fgts: false }
+          };
+          const { data: inserted } = await supabase.from('payroll_rubrics').insert(newRub).select().single();
+          if (inserted) {
+             rubricAdvEarning = inserted;
+             rubricas.push(inserted);
+             applicableRubrics.push(inserted);
+          } else {
+             // Fallback pra não crachar o motor se der erro no insert
+             rubricAdvEarning = { ...newRub, id: 'rubrica-adiantamento-virtual' } as any;
+             applicableRubrics.push(rubricAdvEarning);
+          }
         }
 
         if (rubricAdvEarning) {
@@ -494,60 +503,80 @@ serve(async (req) => {
         });
       }
 
-      // Injeta Descontos Fixos (empréstimos, pensão, etc.)
-      const contractDeductions = employeeDeductions?.filter(d => {
-         if (d.contract_id !== contract.id) return false;
-         if (d.is_active === false) return false;
-         
-         // Regra de deduct_on_advance: filtra conforme o tipo de folha
-         if (period.type === 'ADVANCE' && d.deduct_on_advance !== true) return false;
-         if (period.type === 'MONTHLY' && d.deduct_on_advance === true) return false;
-         
-         // Verifica vigência
-         const periodDate = new Date(period.year, period.month - 1, 1);
-         if (d.start_date && new Date(d.start_date) > new Date(period.year, period.month, 0)) return false; // Inicia no futuro
-         if (d.end_date && new Date(d.end_date) < periodDate) return false; // Já terminou
-         
-         return true;
-      }) || [];
-      
-      for (const d of contractDeductions) {
-        if (d.rubric_id && d.value > 0) {
-          eventos.push({
-            rubric_id: d.rubric_id,
-            manual_value: d.value,
-            quantity: 1
-          });
-        }
-      }
-
       // Injeta Desconto de Adiantamento se houver na competência
       if (period.type === 'MONTHLY') {
         const contractAdvance = advancePayslips.find(a => a.contract_id === contract.id);
-        if (contractAdvance && contractAdvance.net_salary > 0) {
+        if (contractAdvance && contractAdvance.total_earnings > 0) {
           let rubricAdvDeduction = applicableRubrics.find(r => r.code === '801');
           if (!rubricAdvDeduction) {
-             rubricAdvDeduction = {
-                id: 'rubrica-desc-adiantamento-virtual',
+             // Procura na lista global pois applicableRubrics excluiu itens com "adiantamento" no nome antes
+             rubricAdvDeduction = rubricas.find(r => r.code === '801' || (r.name && r.name.toLowerCase().includes('desconto de adiantamento') && r.type === 'DEDUCTION'));
+             if (rubricAdvDeduction) applicableRubrics.push(rubricAdvDeduction);
+          }
+          if (!rubricAdvDeduction) {
+             const newRub = {
+                tenant_id,
                 code: '801',
                 name: 'Desconto de Adiantamento',
                 type: 'DEDUCTION',
                 category: 'ADVANCE',
-                calculation_form: 'FIXED',
+                calculation_form: 'FIXO',
+                calculation_type: 'FIXED',
                 incidencias: { gera_base_inss: false, gera_base_irrf: false, gera_base_fgts: false }
-             } as any;
-             applicableRubrics.push(rubricAdvDeduction);
+             };
+             const { data: inserted } = await supabase.from('payroll_rubrics').insert(newRub).select().single();
+             if (inserted) {
+                 rubricAdvDeduction = inserted;
+                 rubricas.push(inserted);
+                 applicableRubrics.push(inserted);
+             } else {
+                 rubricAdvDeduction = { ...newRub, id: 'rubrica-desc-adiantamento-virtual' } as any;
+                 applicableRubrics.push(rubricAdvDeduction);
+             }
           }
           if (rubricAdvDeduction) {
              eventos.push({
                rubric_id: rubricAdvDeduction.id,
-               manual_value: contractAdvance.net_salary,
+               manual_value: contractAdvance.total_earnings,
                quantity: 1
              });
           }
         }
       }
     } // End of else (period.type !== 'ADVANCE')
+
+    // ==========================================
+    // DEDUÇÕES FIXAS (TODAS AS FOLHAS MENSAL/ADVANCE)
+    // ==========================================
+    const contractDeductions = employeeDeductions?.filter(d => {
+       if (d.contract_id !== contract.id) return false;
+       if (d.is_active === false) return false;
+       
+       if (period.type === 'ADVANCE' && d.deduct_on_advance !== true) return false;
+       if (period.type === 'MONTHLY' && d.deduct_on_advance === true) return false;
+       
+       const periodDate = new Date(period.year, period.month - 1, 1);
+       if (d.start_date && new Date(d.start_date) > new Date(period.year, period.month, 0)) return false;
+       if (d.end_date && new Date(d.end_date) < periodDate) return false;
+       
+       return true;
+    }) || [];
+    
+    for (const d of contractDeductions) {
+      if (d.rubric_id && d.value > 0) {
+        eventos.push({
+          rubric_id: d.rubric_id,
+          manual_value: d.value,
+          quantity: 1
+        });
+        
+        // BUG FIX: Garante que a rubrica de dedução conste em applicableRubrics (vital p/ folha de Adiantamento)
+        if (!applicableRubrics.find(r => r.id === d.rubric_id)) {
+            const rub = rubricas.find(r => r.id === d.rubric_id);
+            if (rub) applicableRubrics.push(rub);
+        }
+      }
+    }
 
       // Calcula dias trabalhados proporcionais (parse manual para evitar timezone)
       let diasTrabalhados = 30;

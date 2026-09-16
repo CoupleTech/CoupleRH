@@ -276,4 +276,10 @@
   .stagger-2 { animation-delay: 100ms; }
   .stagger-3 { animation-delay: 150ms; }
   .stagger-4 { animation-delay: 200ms; }
+  .stagger-5 { animation-delay: 250ms; }
+
+  /* Safe area for notch devices */
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
 }

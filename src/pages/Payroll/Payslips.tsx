@@ -32,7 +32,9 @@ interface PayslipPreview {
   fgts_month: number;
   status: string;
   employment_contracts: {
-    role: string;
+    positions?: {
+      title: string;
+    };
     workers: {
       people: {
         full_name: string;
@@ -131,7 +133,9 @@ export default function Payslips() {
           fgts_month,
           status,
           employment_contracts (
-            role,
+            positions (
+              title
+            ),
             workers (
               people (
                 full_name
@@ -334,7 +338,7 @@ export default function Payslips() {
                         {name}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
-                        {slip.employment_contracts?.role || "-"}
+                        {slip.employment_contracts?.positions?.title || "-"}
                       </td>
                       <td className="px-6 py-4 font-bold text-slate-900 text-right">
                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(slip.net_salary || 0)}
@@ -435,7 +439,7 @@ export default function Payslips() {
                   </div>
                   <div>
                     <p><span className="font-bold">CBO:</span> 0000-00</p>
-                    <p><span className="font-bold">Cargo:</span> {selectedPayslip.employment_contracts?.role}</p>
+                    <p><span className="font-bold">Cargo:</span> {selectedPayslip.employment_contracts?.positions?.title}</p>
                   </div>
                 </div>
 
@@ -520,7 +524,8 @@ export default function Payslips() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL DA MEMÓRIA DE CÁLCULO */}
@@ -572,7 +577,8 @@ export default function Payslips() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

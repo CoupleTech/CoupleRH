@@ -190,14 +190,14 @@ export default function VacationsList() {
   };
 
   const filteredVacations = vacations.filter((vac) => {
-    const contract = vac.employment_contracts;
+    const contract = vac.employment_contracts as any;
     if (selectedCompanyId && contract?.company_id !== selectedCompanyId) return false;
     const name = contract?.workers?.people?.full_name || "";
     return name.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
   const filteredRequests = requests.filter((req) => {
-    const contract = req.vacation_vesting_periods?.employment_contracts;
+    const contract = req.vacation_vesting_periods?.employment_contracts as any;
     if (selectedCompanyId && contract?.company_id !== selectedCompanyId) return false;
     const name = contract?.workers?.people?.full_name || "";
     return name.toLowerCase().includes(searchTerm.toLowerCase());

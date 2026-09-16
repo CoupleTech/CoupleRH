@@ -879,10 +879,10 @@ Resultado: 204,55
 **Status**: `[Em Progresso]`
 
 ### O que fazer
-- [ ] Relatórios analíticos de folha
+- [x] Relatórios analíticos de folha
 - [x] Holerite digital (PDF + Online)
 - [ ] Portal do funcionário (Visão mobile/web para o empregado)
-- [ ] Painel gerencial / Dashboard com custos de folhaine)
+- [x] Painel gerencial / Dashboard com custos de folha
 - [ ] Espelho de ponto
 - [ ] TRCT digital
 - [ ] Portal do trabalhador (self-service: holerites, férias, ponto)
