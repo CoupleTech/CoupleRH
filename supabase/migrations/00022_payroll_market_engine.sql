@@ -89,6 +89,7 @@ CREATE POLICY "Users can view variable events" ON public.payroll_variable_events
 CREATE POLICY "Users can manage variable events" ON public.payroll_variable_events FOR ALL USING (tenant_id = ANY(public.user_tenant_ids()));
 
 -- 4. O Novo Motor de Folha Progressivo
+DROP FUNCTION IF EXISTS public.process_payroll_period(UUID);
 CREATE OR REPLACE FUNCTION public.process_payroll_period(p_period_id UUID)
 RETURNS VOID
 LANGUAGE plpgsql

@@ -15,11 +15,13 @@ CREATE TABLE IF NOT EXISTS public.employment_contract_history (
 ALTER TABLE public.employment_contract_history ENABLE ROW LEVEL SECURITY;
 
 -- Políticas de acesso
+DROP POLICY IF EXISTS "Tenant Admins and DP can view history" ON public.employment_contract_history;
 CREATE POLICY "Tenant Admins and DP can view history" 
     ON public.employment_contract_history FOR SELECT USING (
         tenant_id = ANY (public.user_tenant_ids()) 
     );
 
+DROP POLICY IF EXISTS "Tenant Admins and DP can manage history" ON public.employment_contract_history;
 CREATE POLICY "Tenant Admins and DP can manage history" 
     ON public.employment_contract_history FOR ALL USING (
         tenant_id = ANY (public.user_tenant_ids()) 
