@@ -1131,6 +1131,23 @@ CREATE TABLE IF NOT EXISTS public.timesheets (
 ALTER TABLE public.time_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.time_bank_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.timesheets ENABLE ROW LEVEL SECURITY;
+CREATE TABLE IF NOT EXISTS public.payroll_periods (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    parent_period_id UUID REFERENCES public.payroll_periods(id),
+    complement_reason TEXT,
+    month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+    year INTEGER NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('MONTHLY', 'ADVANCE', '13TH', 'SUPPLEMENTARY', 'COMPLEMENTARY', 'THIRTEENTH_1', 'THIRTEENTH_2', 'PROFIT_SHARING')),
+    status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'OPEN', 'PROCESSING', 'CALCULATED', 'CONFERENCE', 'CLOSED', 'CANCELED', 'REOPENED')),
+    processing_date TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(tenant_id, company_id, month, year, type)
+);
+
+
 ALTER TABLE public.payroll_periods ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payroll_rubrics ENABLE ROW LEVEL SECURITY;
 
@@ -2002,21 +2019,6 @@ NOTIFY pgrst, 'reload schema';
 -- ==============================================================================
 
 -- 1. Períodos de Folha (Competências)
-CREATE TABLE IF NOT EXISTS public.payroll_periods (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
-    parent_period_id UUID REFERENCES public.payroll_periods(id),
-    complement_reason TEXT,
-    month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
-    year INTEGER NOT NULL,
-    type TEXT NOT NULL CHECK (type IN ('MONTHLY', 'ADVANCE', '13TH', 'SUPPLEMENTARY', 'COMPLEMENTARY', 'THIRTEENTH_1', 'THIRTEENTH_2', 'PROFIT_SHARING')),
-    status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'OPEN', 'PROCESSING', 'CALCULATED', 'CONFERENCE', 'CLOSED', 'CANCELED', 'REOPENED')),
-    processing_date TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(tenant_id, company_id, month, year, type)
-);
 
 -- 2. Eventos Variáveis do Mês (Lançamentos Manuais)
 CREATE TABLE IF NOT EXISTS public.payroll_variable_events (
