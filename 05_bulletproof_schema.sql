@@ -1128,22 +1128,6 @@ CREATE TABLE IF NOT EXISTS public.timesheets (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS public.payroll_periods (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-    competence_month INTEGER NOT NULL CHECK (competence_month BETWEEN 1 AND 12),
-    competence_year INTEGER NOT NULL,
-    payroll_type TEXT NOT NULL CHECK (payroll_type IN ('MONTHLY', 'ADVANCE', 'THIRTEENTH_1', 'THIRTEENTH_2', 'PROFIT_SHARING')),
-    payment_date DATE NOT NULL,
-    status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'PROCESSING', 'CONFERENCE', 'CLOSED')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(tenant_id, competence_month, competence_year, payroll_type)
-);
-
-
-
-
 ALTER TABLE public.time_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.time_bank_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.timesheets ENABLE ROW LEVEL SECURITY;
@@ -2021,14 +2005,17 @@ NOTIFY pgrst, 'reload schema';
 CREATE TABLE IF NOT EXISTS public.payroll_periods (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    parent_period_id UUID REFERENCES public.payroll_periods(id),
+    complement_reason TEXT,
     month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
     year INTEGER NOT NULL,
-    type TEXT NOT NULL CHECK (type IN ('MONTHLY', 'ADVANCE', '13TH', 'SUPPLEMENTARY')),
-    status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'CALCULATED', 'CONFERENCE', 'CLOSED', 'CANCELED')),
+    type TEXT NOT NULL CHECK (type IN ('MONTHLY', 'ADVANCE', '13TH', 'SUPPLEMENTARY', 'COMPLEMENTARY', 'THIRTEENTH_1', 'THIRTEENTH_2', 'PROFIT_SHARING')),
+    status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'OPEN', 'PROCESSING', 'CALCULATED', 'CONFERENCE', 'CLOSED', 'CANCELED', 'REOPENED')),
     processing_date TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(tenant_id, month, year, type)
+    UNIQUE(tenant_id, company_id, month, year, type)
 );
 
 -- 2. Eventos Variáveis do Mês (Lançamentos Manuais)
@@ -2363,3 +2350,6 @@ CREATE POLICY "Tenant Admins and DP can manage dependents" ON public.dependents 
 DROP TRIGGER IF EXISTS audit_dependents_trigger ON public.dependents;
 DROP TRIGGER IF EXISTS audit_dependents_trigger ON public.dependents;
 CREATE TRIGGER audit_dependents_trigger AFTER INSERT OR UPDATE OR DELETE ON public.dependents FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+
+NOTIFY pgrst, 'reload schema';
+
