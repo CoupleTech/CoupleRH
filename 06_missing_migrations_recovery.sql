@@ -1,626 +1,74 @@
 -- MISSING MIGRATIONS RECOVERY SCRIPT
 
 -- ==========================================
--- Source: 00036_add_trct_to_terminations.sql
+-- Source: 00025_create_employee_scales.sql
 -- ==========================================
 
--- Migration: 00036_add_trct_to_terminations
--- Description: Adiciona coluna calculated_trct para salvar o snapshot do TRCT
+-- Migration: 00025_create_employee_scales
+-- Description: Criação da tabela de escalas para relacionar empregados às jornadas e ciclos de trabalho.
 
-ALTER TABLE public.terminations ADD COLUMN IF NOT EXISTS calculated_trct JSONB;
-
-NOTIFY pgrst, 'reload schema';
-
-
--- ==========================================
--- Source: 00037_complementary_payroll.sql
--- ==========================================
-
--- Migration: 00037_complementary_payroll
--- Description: Adiciona suporte a folha complementar na tabela payroll_periods
-
--- 1. Modificar a constraint de type
-ALTER TABLE public.payroll_periods DROP CONSTRAINT IF EXISTS payroll_periods_type_check;
-
-ALTER TABLE public.payroll_periods ADD CONSTRAINT payroll_periods_type_check 
-    CHECK (type IN ('MONTHLY', 'ADVANCE', '13TH', 'THIRTEENTH_1', 'THIRTEENTH_2', 'VACATION', 'PROFIT_SHARING', 'COMPLEMENTARY'));
-
--- 2. Adicionar colunas de relacionamento e motivo
-ALTER TABLE public.payroll_periods ADD COLUMN IF NOT EXISTS parent_period_id UUID REFERENCES public.payroll_periods(id);
-ALTER TABLE public.payroll_periods ADD COLUMN IF NOT EXISTS complement_reason TEXT;
-
-NOTIFY pgrst, 'reload schema';
-
-
--- ==========================================
--- Source: 00038_salary_adjustments.sql
--- ==========================================
-
--- Migration: 00038_salary_adjustments
--- Description: Adiciona tabela para histórico de reajustes salariais e dissídios
-
-CREATE TABLE IF NOT EXISTS public.salary_adjustments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-    contract_id UUID NOT NULL REFERENCES public.employment_contracts(id) ON DELETE CASCADE,
-    old_salary DECIMAL(10, 2) NOT NULL,
-    new_salary DECIMAL(10, 2) NOT NULL,
-    percentage DECIMAL(5, 2), -- ex: 10.50 para 10,5%
-    effective_date DATE NOT NULL,
-    approval_date DATE NOT NULL DEFAULT CURRENT_DATE,
-    reason TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- Enable RLS
-ALTER TABLE public.salary_adjustments ENABLE ROW LEVEL SECURITY;
-
--- Create policy for tenant access
-DROP POLICY IF EXISTS "Tenants can manage their salary_adjustments" ON public.salary_adjustments;
-CREATE POLICY "Tenants can manage their salary_adjustments" ON public.salary_adjustments
-    FOR ALL
-    USING (
-        tenant_id IN (
-            SELECT tenant_id 
-            FROM public.tenant_users 
-            WHERE user_id = auth.uid()
-        )
-    );
-
-NOTIFY pgrst, 'reload schema';
-
-
--- ==========================================
--- Source: 00039_expand_audit_engine.sql
--- ==========================================
-
--- Migration: 00039_expand_audit_engine
--- Description: Extensão da engine de auditoria para capturar motivo, versão do motor e expor logs via view.
-
--- 1. Adicionar colunas em audit.logs
-ALTER TABLE audit.logs 
-    ADD COLUMN IF NOT EXISTS reason TEXT,
-    ADD COLUMN IF NOT EXISTS engine_version TEXT;
-
--- 2. Atualizar a função de trigger para injetar as sessões
-CREATE OR REPLACE FUNCTION audit.audit_trigger_func()
-RETURNS TRIGGER AS $$
-DECLARE
-    current_tenant_id UUID;
-    v_old JSONB;
-    v_new JSONB;
-    v_reason TEXT;
-    v_engine TEXT;
-BEGIN
-    -- Capturar motivo e engine injetados via set_config, se existirem
-    BEGIN
-        v_reason := current_setting('app.audit_reason', true);
-    EXCEPTION WHEN OTHERS THEN
-        v_reason := NULL;
-    END;
-
-    BEGIN
-        v_engine := current_setting('app.engine_version', true);
-    EXCEPTION WHEN OTHERS THEN
-        v_engine := NULL;
-    END;
-
-    -- Capturar o tenant_id da linha modificada, se existir
-    IF TG_OP = 'DELETE' THEN
-        v_old := to_jsonb(OLD);
-        BEGIN
-            current_tenant_id := OLD.tenant_id;
-        EXCEPTION WHEN OTHERS THEN
-            current_tenant_id := NULL;
-        END;
-    ELSE
-        v_new := to_jsonb(NEW);
-        BEGIN
-            current_tenant_id := NEW.tenant_id;
-        EXCEPTION WHEN OTHERS THEN
-            current_tenant_id := NULL;
-        END;
-        
-        IF TG_OP = 'UPDATE' THEN
-            v_old := to_jsonb(OLD);
-            -- Não auditar se nada mudou de fato
-            IF v_old = v_new THEN
-                RETURN NEW;
-            END IF;
-        END IF;
-    END IF;
-
-    -- Inserir o log com SYSTEM_USER (bypass RLS)
-    INSERT INTO audit.logs (
-        tenant_id,
-        actor_id,
-        action,
-        entity_type,
-        entity_id,
-        old_values,
-        new_values,
-        reason,
-        engine_version
-    ) VALUES (
-        current_tenant_id,
-        COALESCE(auth.uid(), '00000000-0000-0000-0000-000000000000'::UUID),
-        TG_OP,
-        TG_TABLE_NAME::TEXT,
-        COALESCE((v_new->>'id'), (v_old->>'id'), 'unknown'),
-        v_old,
-        v_new,
-        v_reason,
-        v_engine
-    );
-
-    IF TG_OP = 'DELETE' THEN
-        RETURN OLD;
-    ELSE
-        RETURN NEW;
-    END IF;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- 3. Criar a view exposta publicamente para consumir no Frontend via PostgREST
-CREATE OR REPLACE VIEW public.audit_logs_view AS
-SELECT 
-    id,
-    timestamp,
-    tenant_id,
-    actor_id,
-    action,
-    entity_type,
-    entity_id,
-    old_values,
-    new_values,
-    ip_address,
-    reason,
-    engine_version
-FROM audit.logs;
-
--- Atribuir grants na View
-GRANT SELECT ON public.audit_logs_view TO authenticated, anon;
-
--- 4. Anexar trigger de auditoria nas tabelas solicitadas (apenas se não existirem ainda)
-
-DO $$
-BEGIN
-    -- payroll_rubrics
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_payroll_rubrics_trigger') THEN
-DROP TRIGGER IF EXISTS audit_payroll_rubrics_trigger ON public.payroll_rubrics;
-CREATE TRIGGER audit_payroll_rubrics_trigger
-        AFTER INSERT OR UPDATE OR DELETE ON public.payroll_rubrics
-        FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
-    END IF;
-
-    -- employment_contracts
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_employment_contracts_trigger') THEN
-DROP TRIGGER IF EXISTS audit_employment_contracts_trigger ON public.employment_contracts;
-CREATE TRIGGER audit_employment_contracts_trigger
-        AFTER INSERT OR UPDATE OR DELETE ON public.employment_contracts
-        FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
-    END IF;
-
-    -- salary_adjustments
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_salary_adjustments_trigger') THEN
-DROP TRIGGER IF EXISTS audit_salary_adjustments_trigger ON public.salary_adjustments;
-CREATE TRIGGER audit_salary_adjustments_trigger
-        AFTER INSERT OR UPDATE OR DELETE ON public.salary_adjustments
-        FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
-    END IF;
-
-    -- payroll_variable_events
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_payroll_variable_events_trigger') THEN
-DROP TRIGGER IF EXISTS audit_payroll_variable_events_trigger ON public.payroll_variable_events;
-CREATE TRIGGER audit_payroll_variable_events_trigger
-        AFTER INSERT OR UPDATE OR DELETE ON public.payroll_variable_events
-        FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
-    END IF;
-
-    -- employee_fixed_events
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_employee_fixed_events_trigger') THEN
-DROP TRIGGER IF EXISTS audit_employee_fixed_events_trigger ON public.employee_fixed_events;
-CREATE TRIGGER audit_employee_fixed_events_trigger
-        AFTER INSERT OR UPDATE OR DELETE ON public.employee_fixed_events
-        FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
-    END IF;
-
-    -- payroll_periods
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_payroll_periods_trigger') THEN
-DROP TRIGGER IF EXISTS audit_payroll_periods_trigger ON public.payroll_periods;
-CREATE TRIGGER audit_payroll_periods_trigger
-        AFTER INSERT OR UPDATE OR DELETE ON public.payroll_periods
-        FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
-    END IF;
-END $$;
-
-
--- ==========================================
--- Source: 00040_expand_payroll_periods_status.sql
--- ==========================================
-
--- Migration: 00040_expand_payroll_periods_status
--- Description: Altera a constraint de status da tabela payroll_periods para suportar o fluxo da Fase 31.
-
--- Primeiro, verificamos e removemos a constraint atual se existir
-ALTER TABLE public.payroll_periods DROP CONSTRAINT IF EXISTS payroll_periods_status_check;
-
--- Em seguida, adicionamos a nova constraint suportando todos os estados da máquina
-ALTER TABLE public.payroll_periods ADD CONSTRAINT payroll_periods_status_check 
-    CHECK (status IN ('DRAFT', 'CALCULATED', 'CONFERENCE', 'CLOSED', 'REOPENED', 'CANCELED'));
-
--- Recarregar o schema para o PostgREST
-NOTIFY pgrst, 'reload schema';
-
-
--- ==========================================
--- Source: 00041_add_payslip_versions.sql
--- ==========================================
-
--- Migration: 00041_add_payslip_versions
--- Description: Adiciona colunas para armazenar as versões dos motores e tabelas utilizadas no cálculo de cada holerite (Fase 32).
-
-ALTER TABLE public.payslips ADD COLUMN IF NOT EXISTS engine_version TEXT DEFAULT '1.0.0',
-    ADD COLUMN IF NOT EXISTS rubrics_version TEXT DEFAULT '1.0.0',
-    ADD COLUMN IF NOT EXISTS rules_version TEXT DEFAULT '1.0.0',
-    ADD COLUMN IF NOT EXISTS inss_table_version TEXT DEFAULT '2026.1',
-    ADD COLUMN IF NOT EXISTS irrf_table_version TEXT DEFAULT '2026.1',
-    ADD COLUMN IF NOT EXISTS fgts_table_version TEXT DEFAULT '1.0.0';
-
--- Recarregar o schema para o PostgREST
-NOTIFY pgrst, 'reload schema';
-
-
--- ==========================================
--- Source: 00042_add_employee_contacts_banks_docs.sql
--- ==========================================
-
--- Migration: 00042_add_employee_contacts_banks_docs
--- Description: Adiciona campos de contato à pessoa, dados bancários ao trabalhador e cria tabela de documentos pessoais
-
--- 1. Contatos na tabela people
-ALTER TABLE public.people ADD COLUMN IF NOT EXISTS email TEXT,
-ADD COLUMN IF NOT EXISTS corporate_email TEXT,
-ADD COLUMN IF NOT EXISTS phone TEXT,
-ADD COLUMN IF NOT EXISTS mobile TEXT,
-ADD COLUMN IF NOT EXISTS emergency_contact_name TEXT,
-ADD COLUMN IF NOT EXISTS emergency_contact_phone TEXT,
-ADD COLUMN IF NOT EXISTS emergency_contact_relation TEXT;
-
--- 2. Dados bancários na tabela workers (Vínculo da pessoa com a empresa)
-ALTER TABLE public.workers ADD COLUMN IF NOT EXISTS bank_code TEXT,
-ADD COLUMN IF NOT EXISTS bank_name TEXT,
-ADD COLUMN IF NOT EXISTS agency TEXT,
-ADD COLUMN IF NOT EXISTS agency_digit TEXT,
-ADD COLUMN IF NOT EXISTS account_number TEXT,
-ADD COLUMN IF NOT EXISTS account_digit TEXT,
-ADD COLUMN IF NOT EXISTS account_type TEXT, -- 'CORRENTE', 'POUPANCA', 'SALARIO'
-ADD COLUMN IF NOT EXISTS pix_key TEXT,
-ADD COLUMN IF NOT EXISTS pix_type TEXT; -- 'CPF', 'CNPJ', 'EMAIL', 'PHONE', 'RANDOM'
-
--- 3. Nova tabela de Documentos do Colaborador (worker_personal_documents)
-CREATE TABLE IF NOT EXISTS public.worker_personal_documents (
+CREATE TABLE IF NOT EXISTS public.employee_scales (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-    worker_id UUID NOT NULL REFERENCES public.workers(id) ON DELETE CASCADE,
-    document_type TEXT NOT NULL, -- 'RG', 'CPF', 'CNH', 'PIS', 'ASO_ADMISSIONAL', 'COMPROVANTE_RESIDENCIA', etc
-    document_number TEXT,
-    issuer TEXT, -- Órgão emissor
-    issue_date DATE,
-    expiration_date DATE,
-    file_url TEXT, -- Preparado para futuro storage
-    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'EXPIRED')),
+    contract_id UUID NOT NULL REFERENCES public.employment_contracts(id) ON DELETE CASCADE,
+    work_schedule_id UUID NOT NULL REFERENCES public.work_schedules(id) ON DELETE RESTRICT,
+    
+    cycle_type TEXT NOT NULL DEFAULT 'WEEKLY' CHECK (cycle_type IN ('WEEKLY', '12X36', '24X48', 'CUSTOM')),
+    
+    -- Para ciclos alternados (ex: 12x36 -> 1 dia trabalho, 1 folga)
+    worked_days INTEGER,
+    free_days INTEGER,
+    
+    -- Para ciclos semanais fixos (Array de inteiros: 0=Dom, 1=Seg... 6=Sáb)
+    weekly_schedule JSONB,
+    
+    start_date DATE NOT NULL,
+    end_date DATE,
+    
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Ativar RLS
-ALTER TABLE public.worker_personal_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_scales ENABLE ROW LEVEL SECURITY;
 
--- Políticas RLS para worker_personal_documents
-DROP POLICY IF EXISTS "Users can view worker_personal_documents in their tenants" ON public.worker_personal_documents;
-CREATE POLICY "Users can view worker_personal_documents in their tenants" 
-    ON public.worker_personal_documents FOR SELECT USING (tenant_id = ANY (public.user_tenant_ids()));
+-- Políticas de RLS
+CREATE POLICY "Users can view employee scales in their tenants" 
+    ON public.employee_scales FOR SELECT 
+    USING (tenant_id = ANY (public.user_tenant_ids()));
 
-DROP POLICY IF EXISTS "Tenant Admins and DP can manage worker_personal_documents" ON public.worker_personal_documents;
-CREATE POLICY "Tenant Admins and DP can manage worker_personal_documents" 
-    ON public.worker_personal_documents FOR ALL 
+CREATE POLICY "Tenant Admins and DP can manage employee scales" 
+    ON public.employee_scales FOR ALL 
     USING (
         tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (SELECT 1 FROM public.tenant_users WHERE user_id = auth.uid() AND tenant_id = worker_personal_documents.tenant_id AND role IN ('system_admin', 'tenant_admin', 'dp_analyst'))
+        AND EXISTS (
+            SELECT 1 FROM public.tenant_users 
+            WHERE user_id = auth.uid() 
+            AND tenant_id = public.employee_scales.tenant_id 
+            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        )
     );
 
--- Anexar ao motor de auditoria (Triggers)
-DROP TRIGGER IF EXISTS audit_worker_personal_documents_trigger ON public.worker_personal_documents;
-DROP TRIGGER IF EXISTS audit_worker_personal_documents_trigger ON public.worker_personal_documents;
-CREATE TRIGGER audit_worker_personal_documents_trigger
-AFTER INSERT OR UPDATE OR DELETE ON public.worker_personal_documents
+-- Gatilho de auditoria
+DO $
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'employee_scales') THEN
+        DROP TRIGGER IF EXISTS audit_employee_scales_trigger ON public.employee_scales;
+    END IF;
+END $;
+CREATE TRIGGER audit_employee_scales_trigger 
+AFTER INSERT OR UPDATE OR DELETE ON public.employee_scales 
 FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
 
 
 -- ==========================================
--- Source: 00043_employee_portal_auth.sql
+-- Source: 00026_payroll_overtime_rubrics.sql
 -- ==========================================
 
--- Migration: 00043_employee_portal_auth
--- Description: Criação da função de autenticação (RPC) para o Portal do Colaborador (CPF e Data de Nascimento)
+-- Migration: 00026_payroll_overtime_rubrics
+-- Description: Cria rubricas padrões de Horas Extras e DSR para todos os tenants.
 
-CREATE OR REPLACE FUNCTION public.authenticate_employee(p_cpf TEXT, p_birth_date TEXT)
-RETURNS TABLE (
-    worker_id UUID,
-    person_id UUID,
-    company_id UUID,
-    tenant_id UUID,
-    full_name TEXT
-)
-SECURITY DEFINER
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT 
-        w.id as worker_id,
-        p.id as person_id,
-        w.company_id,
-        w.tenant_id,
-        p.full_name
-    FROM public.people p
-    JOIN public.workers w ON w.person_id = p.id
-    WHERE 
-        -- Remove formatação do CPF, se houver
-        REGEXP_REPLACE(p.cpf, '[^0-9]', '', 'g') = REGEXP_REPLACE(p_cpf, '[^0-9]', '', 'g')
-        -- Compara a data formatada DDMMAAAA com a data de nascimento no banco
-        AND to_char(p.birth_date, 'DDMMYYYY') = p_birth_date
-        -- Apenas trabalhadores ativos
-        AND w.deleted_at IS NULL;
-END;
-$$ LANGUAGE plpgsql;
-
--- Grant permissions for authenticated and anonymous users to call the auth function
-GRANT EXECUTE ON FUNCTION public.authenticate_employee(TEXT, TEXT) TO authenticated, anon;
-
-
--- ==========================================
--- Source: 00044_user_profiles_and_dynamic_rbac.sql
--- ==========================================
-
--- Migration: 00044_user_profiles_and_dynamic_rbac
--- Description: Criação de perfis dinâmicos (RBAC), tabela de usuários e vinculação com auth.users
-
--- 1. User Profiles
--- Armazena dados públicos dos usuários já que não podemos consultar auth.users no frontend diretamente
-CREATE TABLE IF NOT EXISTS public.user_profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    full_name TEXT,
-    email TEXT NOT NULL,
-    avatar_url TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Ativar RLS
-ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
-
--- Usuários podem ver perfis de quem está no mesmo tenant
-CREATE POLICY "Users can view profiles in their tenants" 
-    ON public.user_profiles FOR SELECT 
-    USING (
-        id IN (
-            SELECT user_id FROM public.tenant_users WHERE tenant_id = ANY(public.user_tenant_ids())
-        )
-        OR id = auth.uid()
-    );
-
--- Trigger para sincronizar auth.users -> public.user_profiles
-CREATE OR REPLACE FUNCTION public.handle_new_user() 
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO public.user_profiles (id, email, full_name)
-    VALUES (new.id, new.email, new.raw_user_meta_data->>'full_name');
-    RETURN new;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Garantir que o trigger não duplique se executado novamente
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-    AFTER INSERT ON auth.users
-    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
--- 2. Dynamic RBAC (Roles e Permissions)
-
--- Tabela de Permissões Disponíveis no Sistema
-CREATE TABLE IF NOT EXISTS public.permissions (
-    slug TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    module TEXT NOT NULL,
-    description TEXT
-);
-
--- Tabela de Perfis (Roles)
-CREATE TABLE IF NOT EXISTS public.roles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID REFERENCES public.tenants(id) ON DELETE CASCADE, -- NULL = System Global Role
-    name TEXT NOT NULL,
-    description TEXT,
-    is_system_role BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Permissões vinculadas a um perfil
-CREATE TABLE IF NOT EXISTS public.role_permissions (
-    role_id UUID NOT NULL REFERENCES public.roles(id) ON DELETE CASCADE,
-    permission_slug TEXT NOT NULL REFERENCES public.permissions(slug) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (role_id, permission_slug)
-);
-
--- Adicionar role_id à tabela tenant_users
-ALTER TABLE public.tenant_users ADD COLUMN IF NOT EXISTS role_id UUID REFERENCES public.roles(id) ON DELETE SET NULL;
-
--- Habilitar RLS nas novas tabelas
-ALTER TABLE public.permissions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.roles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
-
--- Políticas RBAC básicas
--- Todo mundo pode ler permissões
-DROP POLICY IF EXISTS "Anyone can read permissions" ON public.permissions;
-CREATE POLICY "Anyone can read permissions" ON public.permissions FOR SELECT USING (true);
-
--- Perfis globais (tenant_id IS NULL) e perfis do próprio tenant
-DROP POLICY IF EXISTS "Users can read roles" ON public.roles;
-CREATE POLICY "Users can read roles" ON public.roles FOR SELECT 
-    USING (tenant_id IS NULL OR tenant_id = ANY(public.user_tenant_ids()));
-
-DROP POLICY IF EXISTS "Admins can manage tenant roles" ON public.roles;
-CREATE POLICY "Admins can manage tenant roles" ON public.roles FOR ALL
-    USING (tenant_id = ANY(public.user_tenant_ids()));
-
-DROP POLICY IF EXISTS "Users can read role_permissions" ON public.role_permissions;
-CREATE POLICY "Users can read role_permissions" ON public.role_permissions FOR SELECT 
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.roles r 
-            WHERE r.id = role_permissions.role_id 
-            AND (r.tenant_id IS NULL OR r.tenant_id = ANY(public.user_tenant_ids()))
-        )
-    );
-
-DROP POLICY IF EXISTS "Admins can manage role_permissions" ON public.role_permissions;
-CREATE POLICY "Admins can manage role_permissions" ON public.role_permissions FOR ALL
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.roles r 
-            WHERE r.id = role_permissions.role_id 
-            AND r.tenant_id = ANY(public.user_tenant_ids())
-            AND r.is_system_role = FALSE -- Não pode alterar roles do sistema
-        )
-    );
-
--- 3. Seed Dados Base
-
--- Permissões Básicas
-INSERT INTO public.permissions (slug, name, module, description) VALUES
-('manage_users', 'Gerenciar Usuários e Perfis', 'Configurações', 'Criar usuários e perfis de acesso'),
-('manage_settings', 'Configurações Globais', 'Configurações', 'Alterar preferências do sistema'),
-('manage_employees', 'Gestão de Funcionários', 'RH', 'Cadastrar e editar dados de colaboradores'),
-('manage_payroll', 'Folha de Pagamento', 'DP', 'Calcular folha, lançar eventos, férias e rescisões'),
-('manage_sst', 'Saúde e Segurança', 'SST', 'Gerenciar atestados e eventos de SST'),
-('view_reports', 'Visualizar Relatórios', 'Geral', 'Acesso aos relatórios e exportações')
-ON CONFLICT (slug) DO NOTHING;
-
--- Criar Roles do Sistema
-INSERT INTO public.roles (id, tenant_id, name, description, is_system_role) VALUES
-('00000000-0000-0000-0000-000000000001', NULL, 'Administrador Global', 'Acesso total a todos os módulos do sistema.', TRUE),
-('00000000-0000-0000-0000-000000000002', NULL, 'Analista de DP', 'Acesso à folha de pagamento e gestão de funcionários.', TRUE),
-('00000000-0000-0000-0000-000000000003', NULL, 'Especialista SST', 'Acesso restrito ao módulo de Saúde e Segurança.', TRUE)
-ON CONFLICT DO NOTHING;
-
--- Vincular permissões ao Admin
-INSERT INTO public.role_permissions (role_id, permission_slug) VALUES
-('00000000-0000-0000-0000-000000000001', 'manage_users'),
-('00000000-0000-0000-0000-000000000001', 'manage_settings'),
-('00000000-0000-0000-0000-000000000001', 'manage_employees'),
-('00000000-0000-0000-0000-000000000001', 'manage_payroll'),
-('00000000-0000-0000-0000-000000000001', 'manage_sst'),
-('00000000-0000-0000-0000-000000000001', 'view_reports')
-ON CONFLICT DO NOTHING;
-
--- Vincular permissões ao Analista DP
-INSERT INTO public.role_permissions (role_id, permission_slug) VALUES
-('00000000-0000-0000-0000-000000000002', 'manage_employees'),
-('00000000-0000-0000-0000-000000000002', 'manage_payroll'),
-('00000000-0000-0000-0000-000000000002', 'view_reports')
-ON CONFLICT DO NOTHING;
-
--- Atualizar tenant_users existentes para apontarem para as Roles baseadas na string antiga
-UPDATE public.tenant_users 
-SET role_id = '00000000-0000-0000-0000-000000000001' 
-WHERE role IN ('system_admin', 'tenant_admin');
-
-UPDATE public.tenant_users 
-SET role_id = '00000000-0000-0000-0000-000000000002' 
-WHERE role = 'dp_analyst';
-
-UPDATE public.tenant_users 
-SET role_id = '00000000-0000-0000-0000-000000000003' 
-WHERE role = 'sst_specialist';
-
--- Nota: Não iremos dropar a constraint antiga 'role' de imediato para não quebrar 
--- as políticas RLS existentes (que usam role IN ('system_admin', ...)).
--- Vamos usar role_id + roles e custom roles progressivamente.
-
-
--- ==========================================
--- Source: 00045_add_company_to_benefits.sql
--- ==========================================
-
--- Migration: 00045_add_company_to_benefits
--- Description: Adiciona company_id a benefit_catalogs para permitir benefícios específicos por filial.
-
-ALTER TABLE public.benefit_catalogs ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE;
-
--- Se company_id for null, o benefício é global para o tenant.
-
-
--- ==========================================
--- Source: 00046_add_payment_date_to_payroll.sql
--- ==========================================
-
--- Migration: 00046_add_payment_date_to_payroll
--- Description: Adiciona a coluna payment_date para suportar o prazo de pagamento (ex: 2 dias antes das férias ou rescisão) e evitar o erro do schema cache.
-
-ALTER TABLE public.payroll_periods ADD COLUMN IF NOT EXISTS payment_date DATE;
-
--- Força a atualização do cache do PostgREST (API do Supabase)
-NOTIFY pgrst, 'reload schema';
-
-
--- ==========================================
--- Source: 00047_seed_absences_rubrics.sql
--- ==========================================
-
--- Migration: 00047_seed_absences_rubrics
--- Description: Cria rubricas padrões de Faltas Injustificadas e Atrasos para o Espelho de Ponto Dinâmico.
-
-DO $$ 
-DECLARE
-    tenant RECORD;
-BEGIN
-    FOR tenant IN SELECT id FROM public.tenants LOOP
-        
-        -- Falta Injustificada (Cód 210)
-        INSERT INTO public.payroll_rubrics (
-            tenant_id, code, name, type, category, calculation_type, calculation_form, calculation_base, 
-            incidence_inss, incidence_irrf, incidence_fgts, generates_inss_base, generates_irrf_base, generates_fgts_base
-        ) VALUES (
-            tenant.id, '210', 'Faltas Injustificadas', 'DEDUCTION', 'OTHER', 'FORMULA', 'DIAS', 'SALARIO_BASE',
-            true, true, true, true, true, true
-        ) ON CONFLICT (tenant_id, code) DO NOTHING;
-
-        -- Atrasos (Cód 211)
-        INSERT INTO public.payroll_rubrics (
-            tenant_id, code, name, type, category, calculation_type, calculation_form, calculation_base, factor,
-            incidence_inss, incidence_irrf, incidence_fgts, generates_inss_base, generates_irrf_base, generates_fgts_base
-        ) VALUES (
-            tenant.id, '211', 'Atrasos (Horas/Minutos)', 'DEDUCTION', 'OTHER', 'FORMULA', 'HORAS', 'SALARIO_BASE', 1.0,
-            true, true, true, true, true, true
-        ) ON CONFLICT (tenant_id, code) DO NOTHING;
-
-        -- DSR sobre Faltas/Atrasos (Cód 212)
-        INSERT INTO public.payroll_rubrics (
-            tenant_id, code, name, type, category, calculation_type, calculation_form, calculation_base, 
-            incidence_inss, incidence_irrf, incidence_fgts, generates_inss_base, generates_irrf_base, generates_fgts_base
-        ) VALUES (
-            tenant.id, '212', 'DSR s/ Faltas', 'DEDUCTION', 'OTHER', 'FORMULA', 'DIAS', 'SALARIO_BASE',
-            true, true, true, true, true, true
-        ) ON CONFLICT (tenant_id, code) DO NOTHING;
-
-    END LOOP;
-END $$;
 
 NOTIFY pgrst, 'reload schema';
 
