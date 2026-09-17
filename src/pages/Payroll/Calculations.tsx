@@ -92,8 +92,7 @@ export default function PayrollCalculations() {
   const [newPeriodYear, setNewPeriodYear] = useState(currentYear);
   const [newPeriodType, setNewPeriodType] = useState("MONTHLY");
 
-  const currentMonth = currentDate.getMonth() + 1;
-  const currentYear = currentDate.getFullYear();
+
 
   useEffect(() => {
     fetchPeriods();
