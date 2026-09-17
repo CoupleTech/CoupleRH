@@ -881,13 +881,13 @@ Resultado: 204,55
 ### O que fazer
 - [x] Relatórios analíticos de folha
 - [x] Holerite digital (PDF + Online)
-- [ ] Portal do funcionário (Visão mobile/web para o empregado)
+- [x] Portal do funcionário (Visão mobile/web para o empregado)
 - [x] Painel gerencial / Dashboard com custos de folha
-- [ ] Espelho de ponto
+- [~] Espelho de ponto (Não será implementado)
 - [ ] TRCT digital
-- [ ] Portal do trabalhador (self-service: holerites, férias, ponto)
+- [x] Portal do trabalhador (self-service: holerites, férias)
 - [ ] **RH Paperless / Assinatura Eletrônica** — Geração e coleta de aceite digital (com validade legal MP 2.200-2) para Aviso de Férias e Recibo de Férias direto no app/portal do funcionário, com opção de exportar PDF se necessário.
-- [ ] Dashboards de BI (headcount, turnover, absenteísmo, distribuição salarial)
+- [ ] Dashboards de BI adicionais (headcount, turnover, absenteísmo, distribuição salarial)
 
 ---
 

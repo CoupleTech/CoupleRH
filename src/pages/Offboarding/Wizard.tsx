@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   Check,
@@ -15,8 +16,15 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
-import { generateTRCT, type TRCTResult } from "../../lib/trctEngine";
 import { useCompany } from "../../contexts/CompanyContext";
+
+export interface TRCTResult {
+  proventos: any;
+  descontos: any;
+  encargos: any;
+  totais: any;
+  metadados: any;
+}
 
 export default function OffboardingWizard() {
   const navigate = useNavigate();
@@ -33,7 +41,9 @@ export default function OffboardingWizard() {
   >("worked");
   const [resignationReason, setResignationReason] = useState("");
   const [mediasAdicionais, setMediasAdicionais] = useState<number>(0);
+  const [outrosDescontos, setOutrosDescontos] = useState<number>(0);
   const [trctResult, setTrctResult] = useState<TRCTResult | null>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const totalSteps = 4;
 
@@ -94,22 +104,46 @@ export default function OffboardingWizard() {
     setStep((s) => s + 1);
   };
 
-  const handleSimulate = () => {
+  const handleSimulate = async () => {
     if (!selectedEmployee || !resignationDate) {
       alert("Preencha a Data Efetiva do Desligamento no Passo 2.");
       return;
     }
-    const result = generateTRCT({
-      baseSalary: selectedEmployee.base_salary,
-      mediasAdicionais,
-      admissionDate: selectedEmployee.admission_date,
-      noticeDate: noticeDate || resignationDate,
-      terminationDate: resignationDate,
-      noticeType,
-      reason: resignationReason,
-    });
-    setTrctResult(result);
-    setShowTRCT(true);
+    
+    setIsSimulating(true);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const { data: tenantData } = await supabase
+        .from("tenant_users")
+        .select("tenant_id")
+        .eq("user_id", userData.user?.id)
+        .single();
+
+      if (!tenantData) throw new Error("Tenant não encontrado");
+
+      const { data, error } = await supabase.functions.invoke('termination-engine', {
+        body: {
+          contract_id: selectedEmployee.id,
+          mediasAdicionais,
+          outrosDescontos,
+          noticeDate: noticeDate || resignationDate,
+          terminationDate: resignationDate,
+          noticeType,
+          reason: resignationReason,
+          tenant_id: tenantData.tenant_id
+        }
+      });
+
+      if (error) throw error;
+      
+      setTrctResult(data);
+      setShowTRCT(true);
+    } catch (err: any) {
+      console.error("Erro ao calcular rescisão:", err);
+      alert("Erro ao calcular rescisão: " + err.message);
+    } finally {
+      setIsSimulating(false);
+    }
   };
 
   const handleSaveTRCT = async () => {
@@ -143,8 +177,8 @@ export default function OffboardingWizard() {
         };
         const noticeEnum = noticeMap[noticeType] || "WORKED";
 
-        // Create termination record
-        const { error: terminationError } = await supabase.from("terminations").insert({
+        // Create termination record (upsert in case of previous partial failure)
+        const { error: terminationError } = await supabase.from("terminations").upsert({
           tenant_id: tenantData.tenant_id,
           contract_id: selectedEmployee.id,
           termination_reason: reasonEnum,
@@ -154,14 +188,14 @@ export default function OffboardingWizard() {
           fgts_fine_percentage: (trctResult.encargos.percentualMulta * 100),
           status: "CALCULATED",
           calculated_trct: trctResult,
-        });
+        }, { onConflict: 'contract_id' });
 
         if (terminationError) throw terminationError;
 
         // Update contract status
         const { error: contractError } = await supabase
           .from("employment_contracts")
-          .update({ status: noticeType === "worked" ? "NOTICE_PERIOD" : "TERMINATED" })
+          .update({ status: noticeType === "worked" ? "ACTIVE" : "INACTIVE" })
           .eq("id", selectedEmployee.id);
 
         if (contractError) throw contractError;
@@ -178,7 +212,7 @@ export default function OffboardingWizard() {
   };
 
   return (
-    <div className="animate-fade-up max-w-4xl mx-auto">
+    <div className="animate-fade-up max-w-5xl mx-auto">
       <div className="flex items-center gap-4 mb-8">
         <button
           onClick={() => navigate("/desligamentos")}
@@ -234,9 +268,10 @@ export default function OffboardingWizard() {
         </div>
       </div>
 
-      {/* Form Area */}
-      <div className="glass panel p-0 mt-12 min-h-[400px]">
-        {step === 1 && (
+      {/* Form Area with Card Styling */}
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm mt-8 min-h-[400px] flex flex-col">
+        <div className="flex-1 p-6 sm:p-10">
+          {step === 1 && (
           <div className="space-y-6 animate-in fade-in">
             <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">
               Selecione o Colaborador
@@ -324,9 +359,9 @@ export default function OffboardingWizard() {
                   </option>
                 </select>
               </div>
-              <div className="col-span-2">
+              <div className="col-span-1">
                 <label className="input-label">
-                  Médias Rescisórias (Comissões, H.E., Adicionais)
+                  Médias Rescisórias (Comissões, H.E., etc)
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">
@@ -337,6 +372,25 @@ export default function OffboardingWizard() {
                     value={mediasAdicionais || ""}
                     onChange={(e) =>
                       setMediasAdicionais(Number(e.target.value))
+                    }
+                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg bg-slate-50 focus:ring-2 focus:ring-rose-500 outline-none"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div className="col-span-1">
+                <label className="input-label">
+                  Outros Descontos (Empréstimos, etc)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">
+                    R$
+                  </span>
+                  <input
+                    type="number"
+                    value={outrosDescontos || ""}
+                    onChange={(e) =>
+                      setOutrosDescontos(Number(e.target.value))
                     }
                     className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg bg-slate-50 focus:ring-2 focus:ring-rose-500 outline-none"
                     placeholder="0.00"
@@ -466,19 +520,20 @@ export default function OffboardingWizard() {
               <div className="mt-4 flex gap-4">
                 <button
                   onClick={handleSimulate}
-                  className="flex items-center gap-2 bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium shadow-sm hover:bg-slate-50 text-sm transition-colors"
+                  disabled={isSimulating}
+                  className="flex items-center gap-2 bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium shadow-sm hover:bg-slate-50 text-sm transition-colors disabled:opacity-70 disabled:cursor-wait"
                 >
-                  <Calculator size={16} /> Simular TRCT (Prévia)
+                  <Calculator size={16} /> {isSimulating ? "Simulando..." : "Simular TRCT (Prévia)"}
                 </button>
               </div>
             </div>
           </div>
         )}
-      </div>
+        </div>
 
-      {/* Footer Navigation */}
-      <div className="flex items-center justify-between mt-6">
-        <button
+        {/* Footer Navigation */}
+        <div className="flex items-center justify-between p-6 sm:px-10 sm:py-6 border-t border-slate-100 bg-slate-50/50 rounded-b-3xl mt-auto">
+          <button
           onClick={() => setStep(step - 1)}
           disabled={step === 1}
           className={`px-6 py-2.5 rounded-lg font-medium transition-colors ${step === 1 ? "opacity-0 cursor-default" : "text-slate-600 bg-white border border-slate-200 hover:bg-slate-50"}`}
@@ -495,366 +550,236 @@ export default function OffboardingWizard() {
           </button>
         ) : (
           <button
-            onClick={() => navigate("/desligamentos")}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium text-white bg-rose-700 hover:bg-rose-800 transition-colors shadow-sm"
+            onClick={() => {
+              if (!trctResult) {
+                alert("Por favor, clique em 'Simular TRCT (Prévia)' acima primeiro para gerar os cálculos da rescisão.");
+                return;
+              }
+              handleSaveTRCT();
+            }}
+            disabled={isSaving}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium text-white bg-rose-700 hover:bg-rose-800 transition-colors shadow-sm disabled:opacity-50"
           >
             <Save size={18} />
-            Confirmar Desligamento
+            {isSaving ? "Processando..." : "Confirmar Desligamento"}
           </button>
         )}
+        </div>
       </div>
 
       {/* TRCT Simulation Modal */}
-      {showTRCT && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-5 bg-slate-900 text-white flex justify-between items-center shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-rose-500 rounded-lg">
-                  <Calculator size={20} className="text-white" />
+      {showTRCT && createPortal(
+        <div className="fixed inset-0 z-[999] flex items-center justify-center py-6 px-4 sm:px-6 sm:py-10 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden ring-1 ring-slate-200"
+            style={{ maxHeight: '100%' }}
+          >
+            {/* Premium Header */}
+            <div className="px-6 py-5 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex justify-between items-center shrink-0 border-b border-slate-700">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center backdrop-blur-sm shadow-inner ring-1 ring-white/20">
+                  <Calculator size={24} className="text-emerald-400" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-lg leading-tight">
-                    Simulação de TRCT
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Termo de Rescisão do Contrato de Trabalho
-                  </p>
+                  <h3 className="font-bold text-xl tracking-tight">Simulação de Rescisão</h3>
+                  <p className="text-sm text-slate-300 font-medium mt-0.5">Termo de Rescisão do Contrato de Trabalho</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowTRCT(false)}
-                className="p-2 hover:bg-white/10 rounded-full transition-colors text-slate-400 hover:text-white"
+                className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-rose-500 hover:text-white text-slate-300 rounded-full transition-all"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto flex-1 bg-slate-50">
-              <div className="mb-6 p-4 bg-white border border-slate-200 rounded-xl">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="block text-slate-500 font-medium text-xs uppercase tracking-wider mb-1">
-                      Colaborador
-                    </span>
-                    <span className="font-bold text-slate-800">
-                      {selectedEmployee?.workers?.people?.full_name}
-                    </span>
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto min-h-0 p-6 space-y-8 bg-slate-50/50">
+              
+              {/* Employee Summary Card */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Colaborador</p>
+                  <p className="font-bold text-slate-800 text-lg">{selectedEmployee?.workers?.people?.full_name}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Salário Base</p>
+                  <p className="font-bold text-slate-800 text-lg">
+                    {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(selectedEmployee?.base_salary || 0)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Proventos Section */}
+                <div className="space-y-4">
+                  <h4 className="font-bold text-slate-800 flex items-center gap-2 text-sm uppercase tracking-wider">
+                    <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center"><DollarSign size={14} className="text-emerald-600" /></div>
+                    Proventos
+                  </h4>
+                  <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                    <table className="w-full text-sm text-slate-600">
+                      <tbody className="divide-y divide-slate-100">
+                        <tr className="hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-3 font-medium">Saldo de Salário ({trctResult?.proventos.saldoSalario.dias || 0}d)</td>
+                          <td className="px-4 py-3 text-right font-mono text-slate-900">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult?.proventos.saldoSalario.valor || 0)}</td>
+                        </tr>
+                        {trctResult?.proventos.avisoIndenizado.valor ? (
+                          <tr className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 font-medium">Aviso Indenizado ({trctResult?.proventos.avisoIndenizado.dias}d)</td>
+                            <td className="px-4 py-3 text-right font-mono text-slate-900">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult.proventos.avisoIndenizado.valor)}</td>
+                          </tr>
+                        ) : null}
+                        <tr className="hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-3 font-medium">13º Proporcional ({trctResult?.proventos.decimoTerceiro.avos || 0}/12)</td>
+                          <td className="px-4 py-3 text-right font-mono text-slate-900">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult?.proventos.decimoTerceiro.valor || 0)}</td>
+                        </tr>
+                        {trctResult?.proventos.decimoTerceiroAviso.valor ? (
+                          <tr className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 font-medium">13º s/ Aviso ({trctResult?.proventos.decimoTerceiroAviso.avos}/12)</td>
+                            <td className="px-4 py-3 text-right font-mono text-slate-900">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult.proventos.decimoTerceiroAviso.valor)}</td>
+                          </tr>
+                        ) : null}
+                        <tr className="hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-3 font-medium">Férias Prop. ({trctResult?.proventos.feriasProporcionais.avos || 0}/12)</td>
+                          <td className="px-4 py-3 text-right font-mono text-slate-900">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult?.proventos.feriasProporcionais.valor || 0)}</td>
+                        </tr>
+                        <tr className="hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-3 font-medium">1/3 de Férias</td>
+                          <td className="px-4 py-3 text-right font-mono text-slate-900">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult?.proventos.umTercoFerias.valor || 0)}</td>
+                        </tr>
+                      </tbody>
+                      <tfoot className="bg-emerald-50/50 border-t border-emerald-100">
+                        <tr>
+                          <td className="px-4 py-3 font-bold text-emerald-900 text-xs tracking-wider uppercase">Total de Proventos</td>
+                          <td className="px-4 py-3 text-right font-bold text-emerald-700 font-mono text-base">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult?.totais.bruto || 0)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
-                  <div>
-                    <span className="block text-slate-500 font-medium text-xs uppercase tracking-wider mb-1">
-                      Salário Base
-                    </span>
-                    <span className="font-bold text-slate-800">
-                      {new Intl.NumberFormat("pt-BR", {
-                        style: "currency",
-                        currency: "BRL",
-                      }).format(selectedEmployee?.base_salary || 3500)}
-                    </span>
+                </div>
+
+                {/* Descontos Section */}
+                <div className="space-y-4">
+                  <h4 className="font-bold text-slate-800 flex items-center gap-2 text-sm uppercase tracking-wider">
+                    <div className="w-6 h-6 rounded-full bg-rose-100 flex items-center justify-center"><Percent size={14} className="text-rose-600" /></div>
+                    Descontos
+                  </h4>
+                  <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                    <table className="w-full text-sm text-slate-600">
+                      <tbody className="divide-y divide-slate-100">
+                        {trctResult?.descontos.inssSaldo.valor ? (
+                          <tr className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 font-medium">INSS s/ Saldo</td>
+                            <td className="px-4 py-3 text-right font-mono text-rose-600">- {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult.descontos.inssSaldo.valor)}</td>
+                          </tr>
+                        ) : null}
+                        {trctResult?.descontos.inssDecimo.valor ? (
+                          <tr className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 font-medium">INSS s/ 13º</td>
+                            <td className="px-4 py-3 text-right font-mono text-rose-600">- {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult.descontos.inssDecimo.valor)}</td>
+                          </tr>
+                        ) : null}
+                        {trctResult?.descontos.irrf.valor ? (
+                          <tr className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 font-medium">IRRF</td>
+                            <td className="px-4 py-3 text-right font-mono text-rose-600">- {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult.descontos.irrf.valor)}</td>
+                          </tr>
+                        ) : null}
+                        {trctResult?.descontos.avisoDescontado.valor ? (
+                          <tr className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 font-medium">Aviso Descontado</td>
+                            <td className="px-4 py-3 text-right font-mono text-rose-600">- {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult.descontos.avisoDescontado.valor)}</td>
+                          </tr>
+                        ) : null}
+                        {trctResult?.descontos.outros?.valor ? (
+                          <tr className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 font-medium">Outros Descontos</td>
+                            <td className="px-4 py-3 text-right font-mono text-rose-600">- {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult.descontos.outros.valor)}</td>
+                          </tr>
+                        ) : null}
+                      </tbody>
+                      <tfoot className="bg-rose-50/50 border-t border-rose-100">
+                        <tr>
+                          <td className="px-4 py-3 font-bold text-rose-900 text-xs tracking-wider uppercase">Total de Descontos</td>
+                          <td className="px-4 py-3 text-right font-bold text-rose-700 font-mono text-base">- {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult?.totais.descontos || 0)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-2 text-sm uppercase tracking-wider">
-                  <DollarSign size={16} className="text-emerald-600" />
-                  Proventos (A Receber)
+              {/* FGTS Section */}
+              <div className="space-y-4 pt-4">
+                <h4 className="font-bold text-slate-800 flex items-center gap-2 text-sm uppercase tracking-wider">
+                  <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center"><FileText size={14} className="text-blue-600" /></div>
+                  Encargos de FGTS
                 </h4>
-                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-sm">
-                    <tbody className="divide-y divide-slate-100">
-                      <tr className="hover:bg-slate-50">
-                        <td className="px-4 py-3 font-medium text-slate-700">
-                          Saldo de Salário (
-                          {trctResult?.proventos.saldoSalario.dias || 0} dias)
-                        </td>
-                        <td className="px-4 py-3 text-right text-slate-900 font-mono">
-                          {new Intl.NumberFormat("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          }).format(
-                            trctResult?.proventos.saldoSalario.valor || 0,
-                          )}
-                        </td>
-                      </tr>
-                      {trctResult?.proventos.avisoIndenizado.valor ? (
-                        <tr className="hover:bg-slate-50">
-                          <td className="px-4 py-3 font-medium text-slate-700">
-                            Aviso Prévio Indenizado (
-                            {trctResult.proventos.avisoIndenizado.dias} dias)
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-900 font-mono">
-                            {new Intl.NumberFormat("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            }).format(
-                              trctResult.proventos.avisoIndenizado.valor,
-                            )}
-                          </td>
-                        </tr>
-                      ) : null}
-                      <tr className="hover:bg-slate-50">
-                        <td className="px-4 py-3 font-medium text-slate-700">
-                          13º Salário Proporcional (
-                          {trctResult?.proventos.decimoTerceiro.avos || 0}/12)
-                        </td>
-                        <td className="px-4 py-3 text-right text-slate-900 font-mono">
-                          {new Intl.NumberFormat("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          }).format(
-                            trctResult?.proventos.decimoTerceiro.valor || 0,
-                          )}
-                        </td>
-                      </tr>
-                      {trctResult?.proventos.decimoTerceiroAviso.valor ? (
-                        <tr className="hover:bg-slate-50">
-                          <td className="px-4 py-3 font-medium text-slate-700">
-                            13º s/ Aviso Indenizado (
-                            {trctResult.proventos.decimoTerceiroAviso.avos}/12)
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-900 font-mono">
-                            {new Intl.NumberFormat("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            }).format(
-                              trctResult.proventos.decimoTerceiroAviso.valor,
-                            )}
-                          </td>
-                        </tr>
-                      ) : null}
-                      <tr className="hover:bg-slate-50">
-                        <td className="px-4 py-3 font-medium text-slate-700">
-                          Férias Proporcionais (
-                          {trctResult?.proventos.feriasProporcionais.avos || 0}
-                          /12)
-                        </td>
-                        <td className="px-4 py-3 text-right text-slate-900 font-mono">
-                          {new Intl.NumberFormat("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          }).format(
-                            trctResult?.proventos.feriasProporcionais.valor ||
-                              0,
-                          )}
-                        </td>
-                      </tr>
-                      <tr className="hover:bg-slate-50">
-                        <td className="px-4 py-3 font-medium text-slate-700">
-                          1/3 de Férias
-                        </td>
-                        <td className="px-4 py-3 text-right text-slate-900 font-mono">
-                          {new Intl.NumberFormat("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          }).format(
-                            trctResult?.proventos.umTercoFerias.valor || 0,
-                          )}
-                        </td>
-                      </tr>
-                    </tbody>
-                    <tfoot className="bg-emerald-50 border-t border-emerald-100">
-                      <tr>
-                        <td className="px-4 py-3 font-bold text-emerald-900">
-                          Total de Proventos
-                        </td>
-                        <td className="px-4 py-3 text-right font-bold text-emerald-700 font-mono">
-                          {new Intl.NumberFormat("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          }).format(trctResult?.totais.bruto || 0)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-
-                <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-2 mt-6 text-sm uppercase tracking-wider">
-                  <Percent size={16} className="text-rose-600" />
-                  Descontos
-                </h4>
-                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-sm">
-                    <tbody className="divide-y divide-slate-100">
-                      {trctResult?.descontos.inssSaldo.valor ? (
-                        <tr className="hover:bg-slate-50">
-                          <td className="px-4 py-3 font-medium text-slate-700">
-                            INSS s/ Saldo de Salário
-                          </td>
-                          <td className="px-4 py-3 text-right text-rose-600 font-mono">
-                            -{" "}
-                            {new Intl.NumberFormat("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            }).format(trctResult.descontos.inssSaldo.valor)}
-                          </td>
-                        </tr>
-                      ) : null}
-                      {trctResult?.descontos.inssDecimo.valor ? (
-                        <tr className="hover:bg-slate-50">
-                          <td className="px-4 py-3 font-medium text-slate-700">
-                            INSS s/ 13º Salário
-                          </td>
-                          <td className="px-4 py-3 text-right text-rose-600 font-mono">
-                            -{" "}
-                            {new Intl.NumberFormat("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            }).format(trctResult.descontos.inssDecimo.valor)}
-                          </td>
-                        </tr>
-                      ) : null}
-                      {trctResult?.descontos.irrf.valor ? (
-                        <tr className="hover:bg-slate-50">
-                          <td className="px-4 py-3 font-medium text-slate-700">
-                            IRRF s/ Verbas
-                          </td>
-                          <td className="px-4 py-3 text-right text-rose-600 font-mono">
-                            -{" "}
-                            {new Intl.NumberFormat("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            }).format(trctResult.descontos.irrf.valor)}
-                          </td>
-                        </tr>
-                      ) : null}
-                      {trctResult?.descontos.avisoDescontado.valor ? (
-                        <tr className="hover:bg-slate-50">
-                          <td className="px-4 py-3 font-medium text-slate-700">
-                            Desconto Aviso Prévio Não Cumprido
-                          </td>
-                          <td className="px-4 py-3 text-right text-rose-600 font-mono">
-                            -{" "}
-                            {new Intl.NumberFormat("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            }).format(
-                              trctResult.descontos.avisoDescontado.valor,
-                            )}
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                    <tfoot className="bg-rose-50 border-t border-rose-100">
-                      <tr>
-                        <td className="px-4 py-3 font-bold text-rose-900">
-                          Total de Descontos
-                        </td>
-                        <td className="px-4 py-3 text-right font-bold text-rose-700 font-mono">
-                          -{" "}
-                          {new Intl.NumberFormat("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          }).format(trctResult?.totais.descontos || 0)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </div>
-
-              <div className="space-y-4 mt-8 pt-6 border-t border-slate-200">
-                <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-2 text-sm uppercase tracking-wider">
-                  <FileText size={16} className="text-blue-600" />
-                  Encargos da Rescisão (FGTS)
-                </h4>
-                <div className="bg-slate-800 rounded-xl overflow-hidden shadow-inner">
+                <div className="bg-slate-900 rounded-xl overflow-hidden shadow-md">
                   <table className="w-full text-sm text-slate-300">
-                    <tbody className="divide-y divide-slate-700/50">
+                    <tbody className="divide-y divide-slate-800">
                       <tr>
-                        <td className="px-4 py-3 font-medium">
-                          FGTS Mês da Rescisão (8%)
-                        </td>
-                        <td className="px-4 py-3 text-right text-blue-300 font-mono">
-                          {new Intl.NumberFormat("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          }).format(trctResult?.encargos.fgtsMes || 0)}
-                        </td>
+                        <td className="px-5 py-4 font-medium">FGTS Mês da Rescisão</td>
+                        <td className="px-5 py-4 text-right font-mono text-blue-300">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult?.encargos.fgtsMes || 0)}</td>
                       </tr>
                       {trctResult?.encargos.fgtsAviso ? (
                         <tr>
-                          <td className="px-4 py-3 font-medium">
-                            FGTS s/ Aviso Indenizado
-                          </td>
-                          <td className="px-4 py-3 text-right text-blue-300 font-mono">
-                            {new Intl.NumberFormat("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            }).format(trctResult.encargos.fgtsAviso)}
-                          </td>
+                          <td className="px-5 py-4 font-medium">FGTS s/ Aviso</td>
+                          <td className="px-5 py-4 text-right font-mono text-blue-300">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult.encargos.fgtsAviso)}</td>
                         </tr>
                       ) : null}
                       <tr>
-                        <td className="px-4 py-3 font-medium">
-                          FGTS s/ 13º Salário
-                        </td>
-                        <td className="px-4 py-3 text-right text-blue-300 font-mono">
-                          {new Intl.NumberFormat("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          }).format(trctResult?.encargos.fgtsDecimo || 0)}
-                        </td>
+                        <td className="px-5 py-4 font-medium">FGTS s/ 13º</td>
+                        <td className="px-5 py-4 text-right font-mono text-blue-300">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult?.encargos.fgtsDecimo || 0)}</td>
                       </tr>
                       {trctResult?.encargos.multaFGTS ? (
-                        <tr className="bg-slate-700/30">
-                          <td className="px-4 py-3 font-bold text-white">
-                            Multa Rescisória (
-                            {(
-                              trctResult?.encargos.percentualMulta * 100
-                            ).toFixed(0)}
-                            %)
-                          </td>
-                          <td className="px-4 py-3 text-right font-bold text-blue-400 font-mono">
-                            {new Intl.NumberFormat("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            }).format(trctResult.encargos.multaFGTS)}
-                          </td>
+                        <tr className="bg-blue-600/20">
+                          <td className="px-5 py-4 font-bold text-white">Multa Rescisória ({(trctResult?.encargos.percentualMulta * 100).toFixed(0)}%)</td>
+                          <td className="px-5 py-4 text-right font-bold text-blue-400 font-mono text-base">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult.encargos.multaFGTS)}</td>
                         </tr>
                       ) : null}
                     </tbody>
                   </table>
                 </div>
-                <p className="text-xs text-slate-500 mt-2">
-                  A multa rescisória e os depósitos do mês são recolhidos via
-                  guia GRRF/FGTS Digital e não compõem o valor líquido direto em
-                  conta, exceto nos regimes de saque apropriados.
+                <p className="text-xs font-medium text-slate-400 px-2 leading-relaxed">
+                  * Os valores de FGTS e Multa não compõem o líquido a receber em conta. São recolhidos via guia GRRF/FGTS Digital para saque pelo trabalhador conforme regra do motivo de desligamento.
                 </p>
               </div>
             </div>
 
-            <div className="p-5 bg-slate-100 border-t border-slate-200 shrink-0">
-              <div className="flex justify-between items-center mb-4">
-                <span className="font-semibold text-slate-600 uppercase tracking-widest text-xs">
-                  Valor Líquido da Rescisão
-                </span>
-                <span className="text-3xl font-black text-slate-900 font-mono">
-                  {new Intl.NumberFormat("pt-BR", {
-                    style: "currency",
-                    currency: "BRL",
-                  }).format(trctResult?.totais.liquido || 0)}
-                </span>
+            {/* Premium Footer */}
+            <div className="px-6 py-5 bg-white border-t border-slate-200 shrink-0 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-5">
+                <div className="text-center sm:text-left">
+                  <span className="block font-bold text-slate-400 uppercase tracking-widest text-xs mb-1">
+                    Valor Líquido da Rescisão
+                  </span>
+                  <span className="text-3xl sm:text-4xl font-black text-slate-900 font-mono tracking-tight">
+                    {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(trctResult?.totais.liquido || 0)}
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-end gap-3">
+              <div className="flex flex-col sm:flex-row justify-end gap-3 w-full">
                 <button
                   onClick={() => setShowTRCT(false)}
                   disabled={isSaving}
-                  className="px-6 py-2.5 rounded-lg font-medium text-slate-600 bg-white border border-slate-300 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl font-semibold text-slate-600 bg-white border-2 border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all disabled:opacity-50"
                 >
                   Fechar Simulação
                 </button>
                 <button
                   onClick={handleSaveTRCT}
                   disabled={isSaving}
-                  className="px-6 py-2.5 rounded-lg font-medium text-white bg-rose-600 hover:bg-rose-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl font-semibold text-white bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-600/30 hover:shadow-rose-600/40 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  {isSaving ? "Salvando..." : "Confirmar Desligamento"}
+                  {isSaving ? "Processando..." : "Confirmar Desligamento"}
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -37,7 +37,13 @@ export class IRRFCalculator {
     
     irrf = Math.max(0, irrf);
 
-    // Regras de isenção ou reduções absurdas que subtraem do imposto e dão R$ 63 foram removidas.
+    // Redutor IRRF 2026 (fase.md)
+    if (base <= 5000) {
+      irrf = Math.max(0, irrf - 312.89);
+    } else if (base <= 7350) {
+      const redutor = 978.62 - (0.133145 * base);
+      irrf = Math.max(0, irrf - Math.max(0, redutor));
+    }
     
     return {
       value: Math.round(irrf * 100) / 100,

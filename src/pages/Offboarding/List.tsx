@@ -32,32 +32,50 @@ export default function TerminationsList() {
 
   const fetchTerminations = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("terminations")
-      .select(
-        `
-        id,
-        contract_id,
-        last_working_day,
-        status,
-        calculated_trct,
-        employment_contracts (
+    try {
+      const { data: termsData, error: termsError } = await supabase
+        .from("terminations")
+        .select("*")
+        .order("last_working_day", { ascending: false });
+
+      if (termsError) throw termsError;
+
+      if (!termsData || termsData.length === 0) {
+        setTerminations([]);
+        setLoading(false);
+        return;
+      }
+
+      const contractIds = termsData.map((t) => t.contract_id);
+      
+      const { data: contractsData, error: contractsError } = await supabase
+        .from("employment_contracts")
+        .select(`
+          id,
           workers (
             people (
               full_name
             )
           )
-        )
-      `
-      )
-      .order("last_working_day", { ascending: false });
+        `)
+        .in("id", contractIds);
 
-    if (!error && data) {
-      setTerminations(data as any);
-    } else if (error) {
-       console.error("Error fetching terminations:", error);
+      if (contractsError) throw contractsError;
+
+      const contractsMap = new Map();
+      contractsData?.forEach((c) => contractsMap.set(c.id, c));
+
+      const mergedData = termsData.map((t) => ({
+        ...t,
+        employment_contracts: contractsMap.get(t.contract_id) || null,
+      }));
+
+      setTerminations(mergedData as any);
+    } catch (error) {
+      console.error("Error fetching terminations:", error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const filteredTerminations = terminations.filter((t) => {
