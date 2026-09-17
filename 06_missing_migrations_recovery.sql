@@ -7,7 +7,7 @@
 -- Migration: 00036_add_trct_to_terminations
 -- Description: Adiciona coluna calculated_trct para salvar o snapshot do TRCT
 
-ALTER TABLE public.terminations ADD COLUMN IF NOT EXISTS IF NOT EXISTS calculated_trct JSONB;
+ALTER TABLE public.terminations ADD COLUMN IF NOT EXISTS calculated_trct JSONB;
 
 NOTIFY pgrst, 'reload schema';
 
@@ -26,8 +26,8 @@ ALTER TABLE public.payroll_periods ADD CONSTRAINT payroll_periods_type_check
     CHECK (type IN ('MONTHLY', 'ADVANCE', '13TH', 'THIRTEENTH_1', 'THIRTEENTH_2', 'VACATION', 'PROFIT_SHARING', 'COMPLEMENTARY'));
 
 -- 2. Adicionar colunas de relacionamento e motivo
-ALTER TABLE public.payroll_periods ADD COLUMN IF NOT EXISTS IF NOT EXISTS parent_period_id UUID REFERENCES public.payroll_periods(id);
-ALTER TABLE public.payroll_periods ADD COLUMN IF NOT EXISTS IF NOT EXISTS complement_reason TEXT;
+ALTER TABLE public.payroll_periods ADD COLUMN IF NOT EXISTS parent_period_id UUID REFERENCES public.payroll_periods(id);
+ALTER TABLE public.payroll_periods ADD COLUMN IF NOT EXISTS complement_reason TEXT;
 
 NOTIFY pgrst, 'reload schema';
 
@@ -266,7 +266,7 @@ NOTIFY pgrst, 'reload schema';
 -- Migration: 00041_add_payslip_versions
 -- Description: Adiciona colunas para armazenar as versões dos motores e tabelas utilizadas no cálculo de cada holerite (Fase 32).
 
-ALTER TABLE public.payslips ADD COLUMN IF NOT EXISTS IF NOT EXISTS engine_version TEXT DEFAULT '1.0.0',
+ALTER TABLE public.payslips ADD COLUMN IF NOT EXISTS engine_version TEXT DEFAULT '1.0.0',
     ADD COLUMN IF NOT EXISTS rubrics_version TEXT DEFAULT '1.0.0',
     ADD COLUMN IF NOT EXISTS rules_version TEXT DEFAULT '1.0.0',
     ADD COLUMN IF NOT EXISTS inss_table_version TEXT DEFAULT '2026.1',
@@ -285,7 +285,7 @@ NOTIFY pgrst, 'reload schema';
 -- Description: Adiciona campos de contato à pessoa, dados bancários ao trabalhador e cria tabela de documentos pessoais
 
 -- 1. Contatos na tabela people
-ALTER TABLE public.people ADD COLUMN IF NOT EXISTS IF NOT EXISTS email TEXT,
+ALTER TABLE public.people ADD COLUMN IF NOT EXISTS email TEXT,
 ADD COLUMN IF NOT EXISTS corporate_email TEXT,
 ADD COLUMN IF NOT EXISTS phone TEXT,
 ADD COLUMN IF NOT EXISTS mobile TEXT,
@@ -294,7 +294,7 @@ ADD COLUMN IF NOT EXISTS emergency_contact_phone TEXT,
 ADD COLUMN IF NOT EXISTS emergency_contact_relation TEXT;
 
 -- 2. Dados bancários na tabela workers (Vínculo da pessoa com a empresa)
-ALTER TABLE public.workers ADD COLUMN IF NOT EXISTS IF NOT EXISTS bank_code TEXT,
+ALTER TABLE public.workers ADD COLUMN IF NOT EXISTS bank_code TEXT,
 ADD COLUMN IF NOT EXISTS bank_name TEXT,
 ADD COLUMN IF NOT EXISTS agency TEXT,
 ADD COLUMN IF NOT EXISTS agency_digit TEXT,
@@ -581,7 +581,7 @@ ALTER TABLE public.benefit_catalogs ADD COLUMN IF NOT EXISTS company_id UUID REF
 -- Migration: 00046_add_payment_date_to_payroll
 -- Description: Adiciona a coluna payment_date para suportar o prazo de pagamento (ex: 2 dias antes das férias ou rescisão) e evitar o erro do schema cache.
 
-ALTER TABLE public.payroll_periods ADD COLUMN IF NOT EXISTS IF NOT EXISTS payment_date DATE;
+ALTER TABLE public.payroll_periods ADD COLUMN IF NOT EXISTS payment_date DATE;
 
 -- Força a atualização do cache do PostgREST (API do Supabase)
 NOTIFY pgrst, 'reload schema';
@@ -643,7 +643,7 @@ NOTIFY pgrst, 'reload schema';
 -- Resolve o BUG R1 (colunas com nomes incompatíveis entre frontend e banco).
 
 -- 1. Adicionar colunas que a tela Rubrics.tsx espera mas não existem
-ALTER TABLE public.payroll_rubrics ADD COLUMN IF NOT EXISTS IF NOT EXISTS origin TEXT DEFAULT 'MANUAL',
+ALTER TABLE public.payroll_rubrics ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'MANUAL',
   ADD COLUMN IF NOT EXISTS valid_from DATE,
   ADD COLUMN IF NOT EXISTS valid_to DATE,
   ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1,
@@ -652,14 +652,14 @@ ALTER TABLE public.payroll_rubrics ADD COLUMN IF NOT EXISTS IF NOT EXISTS origin
 -- 2. Adicionar colunas com os nomes corretos que a tela usa para incidências patronais
 -- (A tela envia: incidence_inss_patronal, incidence_rat, incidence_third_parties)
 -- (O banco antigo tinha: inss_patronal_incidence, rat_incidence, terceiros_incidence)
-ALTER TABLE public.payroll_rubrics ADD COLUMN IF NOT EXISTS IF NOT EXISTS incidence_inss_patronal BOOLEAN DEFAULT false,
+ALTER TABLE public.payroll_rubrics ADD COLUMN IF NOT EXISTS incidence_inss_patronal BOOLEAN DEFAULT false,
   ADD COLUMN IF NOT EXISTS incidence_rat BOOLEAN DEFAULT false,
   ADD COLUMN IF NOT EXISTS incidence_third_parties BOOLEAN DEFAULT false;
 
 -- 3. Adicionar colunas com os nomes corretos que a tela usa para bases geradas
 -- (A tela envia: generates_base_inss, generates_base_irrf, generates_base_fgts)
 -- (O banco antigo tinha: generates_inss_base, generates_irrf_base, generates_fgts_base)
-ALTER TABLE public.payroll_rubrics ADD COLUMN IF NOT EXISTS IF NOT EXISTS generates_base_inss BOOLEAN DEFAULT false,
+ALTER TABLE public.payroll_rubrics ADD COLUMN IF NOT EXISTS generates_base_inss BOOLEAN DEFAULT false,
   ADD COLUMN IF NOT EXISTS generates_base_irrf BOOLEAN DEFAULT false,
   ADD COLUMN IF NOT EXISTS generates_base_fgts BOOLEAN DEFAULT false;
 
@@ -1282,7 +1282,7 @@ CHECK (status = ANY (ARRAY['ACTIVE', 'INACTIVE', 'EXPIRED', 'PENDING', 'SUBMITTE
 -- Description: Adiciona company_id aos períodos de folha para permitir que cada empresa tenha seus próprios fechamentos.
 
 -- 1. Adiciona a coluna company_id (permitindo null inicialmente para dados antigos)
--- ALTER TABLE public.payroll_periods ADD COLUMN IF NOT EXISTS IF NOT EXISTS company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE;
+-- ALTER TABLE public.payroll_periods ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE;
 
 -- 2. Limpa os períodos existentes para evitar inconsistências (como estamos em dev/MVP e a folha deve ser por empresa)
 -- Obs: Isso vai apagar os holerites calculados, será necessário rodar o motor novamente.
