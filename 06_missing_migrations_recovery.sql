@@ -187,7 +187,6 @@ DO $$
 BEGIN
     -- payroll_rubrics
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_payroll_rubrics_trigger') THEN
-        DROP TRIGGER IF EXISTS audit_payroll_rubrics_trigger ON public.table_name_placeholder;
 DROP TRIGGER IF EXISTS audit_payroll_rubrics_trigger ON public.payroll_rubrics;
 CREATE TRIGGER audit_payroll_rubrics_trigger
         AFTER INSERT OR UPDATE OR DELETE ON public.payroll_rubrics
@@ -196,7 +195,6 @@ CREATE TRIGGER audit_payroll_rubrics_trigger
 
     -- employment_contracts
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_employment_contracts_trigger') THEN
-        DROP TRIGGER IF EXISTS audit_employment_contracts_trigger ON public.table_name_placeholder;
 DROP TRIGGER IF EXISTS audit_employment_contracts_trigger ON public.employment_contracts;
 CREATE TRIGGER audit_employment_contracts_trigger
         AFTER INSERT OR UPDATE OR DELETE ON public.employment_contracts
@@ -205,7 +203,6 @@ CREATE TRIGGER audit_employment_contracts_trigger
 
     -- salary_adjustments
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_salary_adjustments_trigger') THEN
-        DROP TRIGGER IF EXISTS audit_salary_adjustments_trigger ON public.table_name_placeholder;
 DROP TRIGGER IF EXISTS audit_salary_adjustments_trigger ON public.salary_adjustments;
 CREATE TRIGGER audit_salary_adjustments_trigger
         AFTER INSERT OR UPDATE OR DELETE ON public.salary_adjustments
@@ -214,7 +211,6 @@ CREATE TRIGGER audit_salary_adjustments_trigger
 
     -- payroll_variable_events
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_payroll_variable_events_trigger') THEN
-        DROP TRIGGER IF EXISTS audit_payroll_variable_events_trigger ON public.table_name_placeholder;
 DROP TRIGGER IF EXISTS audit_payroll_variable_events_trigger ON public.payroll_variable_events;
 CREATE TRIGGER audit_payroll_variable_events_trigger
         AFTER INSERT OR UPDATE OR DELETE ON public.payroll_variable_events
@@ -223,7 +219,6 @@ CREATE TRIGGER audit_payroll_variable_events_trigger
 
     -- employee_fixed_events
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_employee_fixed_events_trigger') THEN
-        DROP TRIGGER IF EXISTS audit_employee_fixed_events_trigger ON public.table_name_placeholder;
 DROP TRIGGER IF EXISTS audit_employee_fixed_events_trigger ON public.employee_fixed_events;
 CREATE TRIGGER audit_employee_fixed_events_trigger
         AFTER INSERT OR UPDATE OR DELETE ON public.employee_fixed_events
@@ -232,7 +227,6 @@ CREATE TRIGGER audit_employee_fixed_events_trigger
 
     -- payroll_periods
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_payroll_periods_trigger') THEN
-        DROP TRIGGER IF EXISTS audit_payroll_periods_trigger ON public.table_name_placeholder;
 DROP TRIGGER IF EXISTS audit_payroll_periods_trigger ON public.payroll_periods;
 CREATE TRIGGER audit_payroll_periods_trigger
         AFTER INSERT OR UPDATE OR DELETE ON public.payroll_periods
@@ -339,7 +333,6 @@ CREATE POLICY "Tenant Admins and DP can manage worker_personal_documents"
 
 -- Anexar ao motor de auditoria (Triggers)
 DROP TRIGGER IF EXISTS audit_worker_personal_documents_trigger ON public.worker_personal_documents;
-DROP TRIGGER IF EXISTS audit_worker_personal_documents_trigger ON public.table_name_placeholder;
 DROP TRIGGER IF EXISTS audit_worker_personal_documents_trigger ON public.worker_personal_documents;
 CREATE TRIGGER audit_worker_personal_documents_trigger
 AFTER INSERT OR UPDATE OR DELETE ON public.worker_personal_documents
@@ -430,8 +423,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Garantir que o trigger não duplique se executado novamente
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-DROP TRIGGER IF EXISTS on_auth_user_created ON public.table_name_placeholder;
-DROP TRIGGER IF EXISTS on_auth_user_created ON public.handle_new_user;
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
