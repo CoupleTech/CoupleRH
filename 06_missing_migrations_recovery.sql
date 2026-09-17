@@ -50,12 +50,12 @@ CREATE POLICY "Tenant Admins and DP can manage employee scales"
     );
 
 -- Gatilho de auditoria
-DO $
+DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'employee_scales') THEN
         DROP TRIGGER IF EXISTS audit_employee_scales_trigger ON public.employee_scales;
     END IF;
-END $;
+END $$;
 CREATE TRIGGER audit_employee_scales_trigger 
 AFTER INSERT OR UPDATE OR DELETE ON public.employee_scales 
 FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
@@ -104,7 +104,7 @@ ALTER TABLE public.payroll_rubrics ADD COLUMN IF NOT EXISTS generates_base_inss 
   ADD COLUMN IF NOT EXISTS generates_base_fgts BOOLEAN DEFAULT false;
 
 -- 4. Migrar dados existentes das colunas antigas para as novas (se existirem)
-DO $$
+DO $$$
 BEGIN
   -- Migrar incidências patronais
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'payroll_rubrics' AND column_name = 'inss_patronal_incidence') THEN
@@ -161,7 +161,7 @@ NOTIFY pgrst, 'reload schema';
 
 -- 1. Limpar rubricas duplicadas (1001 vs 101, 2001 vs 901)
 -- Se as antigas (1001) não têm vínculos, as deletamos. (Evitando FK violation na payroll_rubrics se já foi usada).
-DO $$
+DO $$$
 BEGIN
   BEGIN
     DELETE FROM public.payroll_rubrics WHERE code IN ('1001', '2001', '2002', '2005');
@@ -172,7 +172,7 @@ BEGIN
 END $$;
 
 -- 2. Inserir rubricas 150 (HE50) e 160 (HE100) para o Espelho de Ponto
-DO $$
+DO $$$
 DECLARE
   v_tenant_id UUID;
 BEGIN
@@ -736,7 +736,7 @@ TRUNCATE TABLE public.payroll_periods CASCADE;
 
 -- Dependendo de como a constraint foi nomeada, pode ser "payroll_periods_tenant_id_competence_month_competence_y_key"
 -- Vamos garantir removendo qualquer constraint de unique nas colunas antigas:
-DO $$ 
+DO $$$ 
 DECLARE 
     r RECORD;
 BEGIN
