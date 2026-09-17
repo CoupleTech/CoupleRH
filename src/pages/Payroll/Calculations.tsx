@@ -82,8 +82,16 @@ export default function PayrollCalculations() {
   const [showComplementModal, setShowComplementModal] = useState(false);
   const [selectedParentPeriodId, setSelectedParentPeriodId] = useState("");
   const [complementReason, setComplementReason] = useState("");
-
+  
   const currentDate = new Date();
+  const currentMonth = currentDate.getMonth() + 1;
+  const currentYear = currentDate.getFullYear();
+  
+  const [showNewPeriodModal, setShowNewPeriodModal] = useState(false);
+  const [newPeriodMonth, setNewPeriodMonth] = useState(currentMonth);
+  const [newPeriodYear, setNewPeriodYear] = useState(currentYear);
+  const [newPeriodType, setNewPeriodType] = useState("MONTHLY");
+
   const currentMonth = currentDate.getMonth() + 1;
   const currentYear = currentDate.getFullYear();
 
@@ -145,6 +153,27 @@ export default function PayrollCalculations() {
       }
     }
     setLoadingPeriods(false);
+  };
+
+    const createCustomPeriod = async () => {
+    const { data: userData } = await supabase.auth.getUser();
+    const { data: tenantData } = await supabase
+      .from("tenant_users")
+      .select("tenant_id")
+      .eq("user_id", userData.user?.id)
+      .single();
+
+    if (tenantData && selectedCompanyId) {
+      await supabase.from("payroll_periods").upsert({
+        tenant_id: tenantData.tenant_id,
+        company_id: selectedCompanyId,
+        month: newPeriodMonth,
+        year: newPeriodYear,
+        type: newPeriodType,
+      }, { onConflict: 'tenant_id, company_id, month, year, type', ignoreDuplicates: true });
+      setShowNewPeriodModal(false);
+      fetchPeriods();
+    }
   };
 
   const createPeriodByType = async (type: string) => {
@@ -398,6 +427,13 @@ export default function PayrollCalculations() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
+                    <button
+            onClick={() => setShowNewPeriodModal(true)}
+            className="btn-primary flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium shadow-sm transition-all"
+            title="Abrir Nova Competência"
+          >
+            + Nova Competência
+          </button>
           <button
             onClick={() => createPeriodByType("ADVANCE")}
             className="btn-secondary whitespace-nowrap bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium shadow-sm transition-all"
@@ -850,6 +886,78 @@ export default function PayrollCalculations() {
           )}
         </div>
       </div>
+
+            {showNewPeriodModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 animate-in fade-in backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100">
+              <h2 className="text-xl font-bold text-slate-900 font-display">
+                Nova Competência
+              </h2>
+              <button
+                onClick={() => setShowNewPeriodModal(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Mês</label>
+                  <select 
+                    value={newPeriodMonth} 
+                    onChange={(e) => setNewPeriodMonth(Number(e.target.value))}
+                    className="input-field w-full"
+                  >
+                    {Array.from({length: 12}, (_, i) => i + 1).map(m => (
+                      <option key={m} value={m}>{getMonthName(m)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Ano</label>
+                  <input 
+                    type="number" 
+                    value={newPeriodYear} 
+                    onChange={(e) => setNewPeriodYear(Number(e.target.value))}
+                    className="input-field w-full"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Tipo de Folha</label>
+                <select 
+                  value={newPeriodType} 
+                  onChange={(e) => setNewPeriodType(e.target.value)}
+                  className="input-field w-full"
+                >
+                  <option value="MONTHLY">Mensal</option>
+                  <option value="ADVANCE">Adiantamento</option>
+                  <option value="THIRTEENTH_1">13º Salário (1ª Parcela)</option>
+                  <option value="THIRTEENTH_2">13º Salário (2ª Parcela)</option>
+                  <option value="PROFIT_SHARING">PLR / Bônus</option>
+                </select>
+              </div>
+            </div>
+            <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+              <button
+                onClick={() => setShowNewPeriodModal(false)}
+                className="px-4 py-2 font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={createCustomPeriod}
+                className="btn-primary px-4 py-2"
+              >
+                Criar Competência
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {showComplementModal && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 animate-in fade-in backdrop-blur-sm p-4">
