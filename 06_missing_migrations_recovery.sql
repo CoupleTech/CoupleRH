@@ -540,18 +540,18 @@ ON CONFLICT (id) DO NOTHING;
 
 -- 2. Políticas de Storage para o bucket employee-documents
 -- Permitir leitura pública (já que o bucket é public, mas garantindo acesso)
-CREATE POLICY "employee_docs_public_access" 
-ON storage.objects FOR SELECT 
+DROP POLICY IF EXISTS "employee_docs_public_access" ON storage.objects;
+CREATE POLICY "employee_docs_public_access" ON storage.objects FOR SELECT 
 USING (bucket_id = 'employee-documents');
 
 -- Permitir upload pelo portal do colaborador (como usa autenticação customizada, precisamos liberar para anon)
-CREATE POLICY "employee_docs_anon_upload" 
-ON storage.objects FOR INSERT 
+DROP POLICY IF EXISTS "employee_docs_anon_upload" ON storage.objects;
+CREATE POLICY "employee_docs_anon_upload" ON storage.objects FOR INSERT 
 WITH CHECK (bucket_id = 'employee-documents');
 
 -- Permitir upload e gerência pelo admin (autenticado)
-CREATE POLICY "employee_docs_admin_full_access" 
-ON storage.objects FOR ALL 
+DROP POLICY IF EXISTS "employee_docs_admin_full_access" ON storage.objects;
+CREATE POLICY "employee_docs_admin_full_access" ON storage.objects FOR ALL 
 USING (bucket_id = 'employee-documents' AND auth.role() = 'authenticated');
 
 -- 3. RPC para buscar documentos pessoais (Portal)
