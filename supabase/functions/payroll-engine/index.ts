@@ -316,8 +316,8 @@ serve(async (req) => {
             code: '250',
             name: 'Adiantamento Quinzenal',
             type: 'EARNING',
+            rubric_type: 'EARNING',
             category: 'ADVANCE',
-            calculation_form: 'FIXO', // Pro adiantamento o valor é fixo gerado antes
             calculation_type: 'FIXED',
             percentage: 40,
             incidencias: { gera_base_inss: false, gera_base_irrf: false, gera_base_fgts: false }
@@ -519,8 +519,8 @@ serve(async (req) => {
                 code: '850',
                 name: 'Desconto de Adiantamento',
                 type: 'DEDUCTION',
+                rubric_type: 'DEDUCTION',
                 category: 'ADVANCE',
-                calculation_form: 'FIXO',
                 calculation_type: 'FIXED',
                 incidencias: { gera_base_inss: false, gera_base_irrf: false, gera_base_fgts: false }
              };
