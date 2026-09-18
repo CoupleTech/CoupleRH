@@ -312,12 +312,12 @@ export default function () {
     }
   };
 
-  const getMonthName = async (month: number) => {
+  const getMonthName = (month: number) => {
     const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     return months[month - 1];
   };
 
-  const getPeriodTypeLabel = async (type: string) => {
+  const getPeriodTypeLabel = (type: string) => {
     switch(type) {
       case 'MONTHLY': return 'Mensal';
       case 'ADVANCE': return 'Adiantamento';

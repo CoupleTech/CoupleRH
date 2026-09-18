@@ -399,13 +399,13 @@ export default function () {
     setLoadingMemory(prev => ({...prev, [payslipId]: false}));
   };
 
-  const formatCurrency = async (val: number) =>
+  const formatCurrency = (val: number) =>
     new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",
     }).format(val);
 
-  const getMonthName = async (month: number) => {
+  const getMonthName = (month: number) => {
     const date = new Date(2000, month - 1, 1);
     return format(date, "MMMM", { locale: ptBR }).toUpperCase();
   };
