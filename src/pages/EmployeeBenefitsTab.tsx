@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { toast } from 'sonner';
-import { confirmDialog } from '..\components\ConfirmDialogProvider';
+import { confirmDialog } from '../components/ConfirmDialogProvider';
 
 interface Benefit {
   id: string;

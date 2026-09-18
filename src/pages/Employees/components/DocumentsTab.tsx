@@ -3,7 +3,7 @@ import { Save, Loader2, AlertCircle, FileText, Plus, Trash2 } from "lucide-react
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
 import { toast } from 'sonner';
-import { confirmDialog } from '..\..\..\components\ConfirmDialogProvider';
+import { confirmDialog } from '../../../components/ConfirmDialogProvider';
 
 export default function ({ workerId, initialData, onSaved }: any) {
   const { user } = useAuth();

@@ -12,7 +12,7 @@ import {
 import { supabase } from "../../lib/supabase";
 import { Pagination } from "../../components/Pagination";
 import { toast } from 'sonner';
-import { confirmDialog } from '..\..\components\ConfirmDialogProvider';
+import { confirmDialog } from '../../components/ConfirmDialogProvider';
 
 interface Rubric {
   id: string;

@@ -4,7 +4,7 @@ import { supabase } from "../../../lib/supabase";
 import InviteUserModal from "./InviteUserModal";
 import RoleModal from "./RoleModal";
 import { toast } from 'sonner';
-import { confirmDialog } from '..\..\..\components\ConfirmDialogProvider';
+import { confirmDialog } from '../../../components/ConfirmDialogProvider';
 
 interface Role {
   id: string;
