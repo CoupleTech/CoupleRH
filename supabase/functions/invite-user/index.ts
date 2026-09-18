@@ -1,4 +1,3 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -6,7 +5,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -64,6 +63,8 @@ serve(async (req) => {
     const origin = req.headers.get("origin") || req.headers.get("referer") || "http://localhost:5173";
     const redirectTo = `${origin.replace(/\/$/, '')}/update-password`;
 
+    let targetUserId = null;
+
     // 1. Invitar o usuário no auth
     // O Supabase enviará um email com link mágico para o usuário
     const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
@@ -75,42 +76,61 @@ serve(async (req) => {
     );
 
     if (inviteError) {
-      // Se o usuário já existe, podemos apenas querer adicionar ele ao tenant
-      if (inviteError.status === 422 || inviteError.message.includes("already registered")) {
-         // O usuário já tem conta, vamos apenas buscá-lo para adicionar ao tenant
-         // Por limitações da API, talvez não possamos buscar usuários por email sem permissões estritas
-         // Mas se a chamada falhou, retornamos o erro para o frontend.
-         throw new Error("Este usuário já possui cadastro. Funcionalidade de vincular usuário existente em desenvolvimento.");
+      // Se o usuário já existe, podemos querer apenas adicioná-lo ao tenant
+      if (inviteError.status === 422 || inviteError.message?.includes("already registered") || inviteError.message?.includes("already been registered")) {
+        // O usuário já tem conta, vamos buscá-lo na tabela pública user_profiles para pegar o ID
+        const { data: existingUser, error: findError } = await supabaseAdmin
+          .from("user_profiles")
+          .select("id")
+          .eq("email", email)
+          .maybeSingle();
+
+        if (findError || !existingUser) {
+          throw new Error(`Este usuário já possui cadastro global, mas não foi possível localizá-lo para vinculação. Detalhes: ${findError?.message}`);
+        }
+        targetUserId = existingUser.id;
+      } else {
+        throw inviteError;
       }
-      throw inviteError;
+    } else {
+      targetUserId = inviteData.user?.id;
     }
 
-    const newUserId = inviteData.user.id;
+    if (!targetUserId) {
+      throw new Error("Não foi possível determinar o ID do usuário após o convite/busca.");
+    }
 
-    // 2. Opcional: A trigger já insere em user_profiles, 
-    // mas precisamos inserir em tenant_users
+    // 2. Inserir na tabela tenant_users com a nova role_id sem forçar a role legacy "employee"
     const { error: insertTenantUserError } = await supabaseAdmin
       .from("tenant_users")
       .insert({
         tenant_id: tenantId,
-        user_id: newUserId,
-        role_id: role_id,
-        role: 'employee' // Manter a compatibilidade com a RLS antiga temporariamente
+        user_id: targetUserId,
+        role_id: role_id
+        // Removido: role: 'employee'
       });
 
     if (insertTenantUserError) {
+      // Ignora erro se o usuário já estiver vinculado à empresa
+      if (insertTenantUserError.code === '23505') {
+        return new Response(
+          JSON.stringify({ message: "Usuário já estava vinculado a esta empresa!" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+        );
+      }
       throw insertTenantUserError;
     }
 
     return new Response(
-      JSON.stringify({ message: "Usuário convidado com sucesso!" }),
+      JSON.stringify({ message: "Usuário convidado/vinculado com sucesso!" }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       }
     );
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error("Erro na Edge Function invite-user:", error);
+    return new Response(JSON.stringify({ error: error.message || "Erro desconhecido." }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 400,
     });
