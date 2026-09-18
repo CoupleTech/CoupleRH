@@ -13,6 +13,7 @@ import {
   ChevronUp,
   AlertCircle,
   X,
+  Trash2,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useCompany } from "../../contexts/CompanyContext";
@@ -150,6 +151,9 @@ export default function () {
         setPeriods(data as PayrollPeriod[]);
         if (!activePeriod && data.length > 0) {
           selectPeriod(data[0] as PayrollPeriod);
+        } else if (activePeriod) {
+          const updatedActive = data.find(p => p.id === activePeriod.id);
+          if (updatedActive) selectPeriod(updatedActive as PayrollPeriod);
         }
       }
     }
@@ -280,6 +284,35 @@ export default function () {
       setPayslips(formatted);
     }
     setLoadingPayslips(false);
+  };
+
+  const deletePeriod = async () => {
+    if (!activePeriod) return;
+    if (activePeriod.status === 'CLOSED') {
+      toast.error("Não é possível excluir uma folha fechada.");
+      return;
+    }
+    
+    if (!await confirmDialog("Tem certeza que deseja excluir esta folha? Todos os lançamentos serão perdidos.")) return;
+    
+    setProcessing(true);
+    try {
+      const { error } = await supabase
+        .from('payroll_periods')
+        .delete()
+        .eq('id', activePeriod.id);
+        
+      if (error) throw error;
+      
+      toast.success("Folha excluída com sucesso.");
+      setActivePeriod(null);
+      await fetchPeriods();
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Erro ao excluir folha: " + err.message);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const processPayroll = async () => {
@@ -585,6 +618,18 @@ export default function () {
                       >
                         <AlertCircle size={18} />
                         Reabrir Folha (Auditoria)
+                      </button>
+                    )}
+
+                    {/* Excluir Periodo (Apenas não fechado) */}
+                    {activePeriod.status !== 'CLOSED' && (
+                      <button
+                        onClick={deletePeriod}
+                        disabled={processing}
+                        className="flex items-center gap-2 bg-rose-50 text-rose-600 border border-rose-200 px-6 py-2.5 rounded-lg font-bold shadow-sm hover:bg-rose-100 transition-colors disabled:opacity-50"
+                      >
+                        <Trash2 size={18} />
+                        Excluir
                       </button>
                     )}
 

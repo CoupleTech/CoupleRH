@@ -415,7 +415,7 @@ export default function () {
               
               <button 
                 onClick={openModal} 
-                disabled={activePeriod?.status !== "OPEN" && activePeriod?.status !== "DRAFT"}
+                disabled={activePeriod?.status === "CLOSED"}
                 className="btn-primary whitespace-nowrap"
               >
                 <Plus size={18} />
