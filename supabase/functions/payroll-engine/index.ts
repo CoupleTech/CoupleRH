@@ -229,7 +229,7 @@ serve(async (req) => {
     // 3.5 Busca Adiantamentos (se for folha MENSAL) para realizar o Desconto
     let advancePayslips: any[] = [];
     if (period.type === 'MONTHLY') {
-      const { data: advData } = await supabase
+      const { data: advData, error: advErr } = await supabase
         .from('payslips')
         .select('contract_id, total_earnings, payroll_periods!inner(type, month, year, status)')
         .eq('tenant_id', tenant_id)
@@ -238,6 +238,8 @@ serve(async (req) => {
         .eq('payroll_periods.year', period.year)
         .in('payroll_periods.status', ['CLOSED', 'CONFERENCE', 'CALCULATED']);
         
+      debugLogs.push({ step: 'advData fetch', advData, advErr, periodMonth: period.month, periodYear: period.year });
+
       if (advData) {
         advancePayslips = advData;
       }
@@ -507,6 +509,7 @@ serve(async (req) => {
       // Injeta Desconto de Adiantamento se houver na competência
       if (period.type === 'MONTHLY') {
         const contractAdvance = advancePayslips.find(a => a.contract_id === contract.id);
+        debugLogs.push({ step: 'MONTHLY deduction check', contractId: contract.id, contractAdvance });
         if (contractAdvance && contractAdvance.total_earnings > 0) {
           let rubricAdvDeduction = applicableRubrics.find(r => r.code === '850');
           if (!rubricAdvDeduction) {
@@ -829,7 +832,7 @@ serve(async (req) => {
     }).eq('id', period_id);
 
     return new Response(
-      JSON.stringify({ success: true, processed: results.length, results }),
+      JSON.stringify({ success: true, processed: results.length, results, debug: debugLogs }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   } catch (error: any) {
