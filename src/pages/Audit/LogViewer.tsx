@@ -5,6 +5,7 @@ import {
   History,
   Activity,
   Database,
+  Loader2,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { Pagination } from "../../components/Pagination";
