@@ -5,14 +5,17 @@ import { AppRoutes } from './routes'
 
 import { Toaster } from 'sonner';
 import { ConfirmDialogProvider } from './components/ConfirmDialogProvider';
+import { PromptDialogProvider } from './components/PromptDialogProvider';
 import { UpdateNotifier } from './components/UpdateNotifier';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ConfirmDialogProvider>
-      <AppRoutes />
-      <Toaster position="top-right" richColors closeButton />
-      <UpdateNotifier />
+      <PromptDialogProvider>
+        <AppRoutes />
+        <Toaster position="top-right" richColors closeButton />
+        <UpdateNotifier />
+      </PromptDialogProvider>
     </ConfirmDialogProvider>
   </StrictMode>,
 )

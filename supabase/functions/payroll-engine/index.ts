@@ -229,24 +229,36 @@ serve(async (req) => {
     // 3.5 Busca Adiantamentos (se for folha MENSAL) para realizar o Desconto
     let advancePayslips: any[] = [];
     if (period.type === 'MONTHLY') {
-      const { data: advData, error: advErr } = await supabase
-        .from('payslips')
-        .select('contract_id, total_earnings, payroll_periods!inner(type, month, year, status)')
+      const { data: advPeriods, error: advPeriodErr } = await supabase
+        .from('payroll_periods')
+        .select('id')
         .eq('tenant_id', tenant_id)
-        .eq('payroll_periods.type', 'ADVANCE')
-        .eq('payroll_periods.month', period.month)
-        .eq('payroll_periods.year', period.year)
-        .in('payroll_periods.status', ['CLOSED', 'CONFERENCE', 'CALCULATED']);
-        
-      debugLogs.push({ step: 'advData fetch', advData, advErr, periodMonth: period.month, periodYear: period.year });
+        .eq('type', 'ADVANCE')
+        .eq('month', period.month)
+        .eq('year', period.year)
+        .in('status', ['CLOSED', 'CONFERENCE', 'CALCULATED']);
 
-      if (advData) {
-        advancePayslips = advData;
+      if (advPeriodErr) {
+        debugLogs.push({ step: 'advData fetch error', advPeriodErr, periodMonth: period.month, periodYear: period.year });
+      } else if (advPeriods && advPeriods.length > 0) {
+        const advPeriodIds = advPeriods.map(p => p.id);
+        
+        const { data: advData, error: advErr } = await supabase
+          .from('payslips')
+          .select('contract_id, total_earnings')
+          .eq('tenant_id', tenant_id)
+          .in('period_id', advPeriodIds);
+          
+        debugLogs.push({ step: 'advData fetch success', advData, advErr, periodMonth: period.month, periodYear: period.year, advPeriodIds });
+
+        if (advData) {
+          advancePayslips = advData;
+        }
+      } else {
+        debugLogs.push({ step: 'advData fetch - no periods', periodMonth: period.month, periodYear: period.year });
       }
     }
 
-    // 3.6 Busca Férias (VACATION ou MONTHLY)
-    // Para VACATION: Gera os recibos. Para MONTHLY: Ajusta dias trabalhados.
     // Vamos buscar solicitações de férias onde o mês de start_date coincide com a competência.
     // (Para um sistema avançado, verificaríamos sobreposições exatas de dias. No MVP: pega férias que iniciam no mês).
     const startOfMonth = new Date(period.year, period.month - 1, 1).toISOString().split('T')[0];

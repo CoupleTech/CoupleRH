@@ -1,0 +1,37 @@
+MISSING COLUMNS REPORT
+======================
+Table 'payroll_rubrics' is missing column 'calculation_form'
+Table 'payroll_rubrics' is missing column 'type'
+Table 'workers' is missing column 'people'
+Table 'workers' is missing column 'cpf)'
+Table 'workers' is missing column 'employment_contracts'
+Table 'workers' is missing column 'company_id)'
+Table 'employment_contracts' is missing column 'contract_type'
+Table 'employment_contracts' is missing column 'workload_hours'
+Table 'work_schedules' is missing column 'status'
+
+TABLE NOT FOUND IN database.md: worker_personal_documents
+Table 'payroll_periods' is missing column 'month'
+Table 'payroll_periods' is missing column 'year'
+Table 'payroll_periods' is missing column 'type'
+Table 'payroll_periods' is missing column 'company_id'
+Table 'payroll_periods' is missing column 'parent_period_id'
+Table 'payroll_periods' is missing column 'complement_reason'
+
+TABLE NOT FOUND IN database.md: salary_adjustments
+Table 'employment_contract_history' is missing column 'employment_contract_id'
+Table 'employment_contract_history' is missing column 'event_type'
+Table 'employment_contract_history' is missing column 'old_value'
+Table 'employment_contract_history' is missing column 'new_value'
+Table 'employment_contract_history' is missing column 'event_date'
+Table 'payroll_memory_calc' is missing column 'logs'
+
+TABLE NOT FOUND IN database.md: roles
+
+TABLE NOT FOUND IN database.md: user_profiles
+
+TABLE NOT FOUND IN database.md: role_permissions
+
+TABLE NOT FOUND IN database.md: general_legal_parameters
+
+TABLE NOT FOUND IN database.md: payroll_variable_events

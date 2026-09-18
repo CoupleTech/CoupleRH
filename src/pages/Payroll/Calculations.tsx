@@ -21,6 +21,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from 'sonner';
 import { confirmDialog } from '../../components/ConfirmDialogProvider';
+import { promptDialog } from '../../components/PromptDialogProvider';
 
 interface PayrollPeriod {
   id: string;
@@ -384,7 +385,13 @@ export default function () {
     
     // Simular injeção de motivo na sessão se fosse fechamento/reabertura (Para MVP, vamos direto)
     if (newStatus === 'REOPENED') {
-      const reason = window.prompt("Motivo da reabertura (Auditoria):");
+      const reason = await promptDialog({
+        title: "Reabertura de Folha",
+        message: "Por favor, informe o motivo da reabertura para fins de auditoria.",
+        placeholder: "Ex: Ajuste de horas extras",
+        confirmText: "Reabrir",
+        cancelText: "Cancelar"
+      });
       if (!reason) return; // Cancelado
       // O ideal é chamar um RPC para setar current_setting('app.audit_reason', reason)
       // Mas para o MVP via client, passamos apenas o status e a trigger default pega.
