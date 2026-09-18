@@ -15,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../contexts/CompanyContext";
 import { Pagination } from "../../../components/Pagination";
+import { toast } from 'sonner';
 
 interface Sector {
   id: string;
@@ -31,7 +32,7 @@ interface Sector {
   };
 }
 
-export default function SectorsList() {
+export default async function SectorsList() {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");
@@ -92,14 +93,14 @@ export default function SectorsList() {
       .eq("id", id);
       
     if (error) {
-      alert("Erro ao alterar status.");
+      toast.error("Erro ao alterar status.");
     } else {
       setSectors(sectors.map(s => s.id === id ? { ...s, status: newStatus } : s));
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir este setor? Só será possível se não houver vínculos.")) return;
+    if (!await confirmDialog("Deseja realmente excluir este setor? Só será possível se não houver vínculos.")) return;
     
     const { error } = await supabase
       .from("sectors")
@@ -108,9 +109,9 @@ export default function SectorsList() {
       
     if (error) {
       if (error.code === '23503') {
-        alert("Não é possível excluir este setor pois ele está vinculado a um ou mais colaboradores ou locais.");
+        toast.error("Não é possível excluir este setor pois ele está vinculado a um ou mais colaboradores ou locais.");
       } else {
-        alert("Erro ao excluir setor.");
+        toast.error("Erro ao excluir setor.");
       }
     } else {
       setSectors(sectors.filter(s => s.id !== id));
@@ -145,7 +146,7 @@ export default function SectorsList() {
         </div>
         
         <button 
-          onClick={() => navigate('/setores/novo')}
+          onClick={async () => navigate('/setores/novo')}
           className="btn-primary"
         >
           <Plus size={18} />
@@ -225,14 +226,14 @@ export default function SectorsList() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => navigate(`/setores/${sector.id}`)}
+                          onClick={async () => navigate(`/setores/${sector.id}`)}
                           className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors cursor-pointer"
                           title="Editar"
                         >
                           <Edit2 size={16} />
                         </button>
                         <button 
-                          onClick={() => handleToggleStatus(sector.id, sector.status)}
+                          onClick={async () => handleToggleStatus(sector.id, sector.status)}
                           className={`p-2 rounded-lg transition-colors cursor-pointer ${
                             sector.status === 'ACTIVE' 
                               ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' 
@@ -243,7 +244,7 @@ export default function SectorsList() {
                           <Power size={16} />
                         </button>
                         <button 
-                          onClick={() => handleDelete(sector.id)}
+                          onClick={async () => handleDelete(sector.id)}
                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                           title="Excluir"
                         >
@@ -281,7 +282,7 @@ export default function SectorsList() {
             </p>
             {!searchTerm && (
               <button 
-                onClick={() => navigate('/setores/novo')}
+                onClick={async () => navigate('/setores/novo')}
                 className="btn-primary"
               >
                 <Plus size={18} />

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Save, Calculator, Plus, Trash2 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import { toast } from 'sonner';
 
 interface Bracket {
   id?: string;
@@ -126,7 +127,7 @@ export default function LegalTablesForm() {
 
     } catch (error) {
       console.error('Error fetching data:', error);
-      alert('Erro ao buscar versão');
+      toast.error('Erro ao buscar versão');
       navigate('/configuracoes/tabelas-legais');
     } finally {
       setLoading(false);
@@ -248,11 +249,11 @@ export default function LegalTablesForm() {
         if (irrfErr) throw irrfErr;
       }
 
-      alert('Versão salva com sucesso!');
+      toast.error('Versão salva com sucesso!');
       navigate('/configuracoes/tabelas-legais');
     } catch (error: any) {
       console.error('Error saving:', error);
-      alert('Erro ao salvar versão: ' + error.message);
+      toast.error('Erro ao salvar versão: ' + error.message);
     } finally {
       setSaving(false);
     }

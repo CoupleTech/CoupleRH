@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { vacationService } from "../../services/vacationService";
 import { useCompany } from "../../contexts/CompanyContext";
+import { toast } from 'sonner';
 
 interface VacationWizardProps {
   inline?: boolean;
@@ -76,11 +77,11 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
 
   const handleNext = () => {
     if (step === 1 && !selectedPeriod) {
-      alert("Selecione um período aquisitivo antes de prosseguir.");
+      toast.error("Selecione um período aquisitivo antes de prosseguir.");
       return;
     }
     if (step === 2 && !startDate) {
-      alert("Informe a data de início das férias.");
+      toast.error("Informe a data de início das férias.");
       return;
     }
     setStep((s) => s + 1);
@@ -241,13 +242,13 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
       }
 
       if (!inline) {
-        alert("Férias programadas com sucesso!" + (generateReceipt ? " Recibo gerado com sucesso." : ""));
+        toast.error("Férias programadas com sucesso!" + (generateReceipt ? " Recibo gerado com sucesso." : ""));
         navigate("/ferias");
       }
       if (onSaved) onSaved();
     } catch (e: any) {
       console.error(e);
-      alert(`Erro ao programar férias: ${e.message}`);
+      toast.error(`Erro ao programar férias: ${e.message}`);
     } finally {
       setSaving(false);
     }

@@ -20,6 +20,7 @@ import { leaveService } from "../../services/leaveService";
 import { useCompany } from "../../contexts/CompanyContext";
 import { supabase } from "../../lib/supabase";
 import { Pagination } from "../../components/Pagination";
+import { toast } from 'sonner';
 
 interface Leave {
   id: string;
@@ -37,7 +38,7 @@ interface Leave {
   } | null;
 }
 
-export default function LeavesList() {
+export default async function LeavesList() {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");
@@ -76,14 +77,14 @@ export default function LeavesList() {
       .eq("id", id);
       
     if (error) {
-      alert("Erro ao alterar status.");
+      toast.error("Erro ao alterar status.");
     } else {
       setLeaves(leaves.map(l => l.id === id ? { ...l, status: newStatus } : l));
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir este afastamento?")) return;
+    if (!await confirmDialog("Deseja realmente excluir este afastamento?")) return;
     
     const { error } = await supabase
       .from("leaves")
@@ -91,13 +92,13 @@ export default function LeavesList() {
       .eq("id", id);
       
     if (error) {
-      alert("Erro ao excluir afastamento.");
+      toast.error("Erro ao excluir afastamento.");
     } else {
       setLeaves(leaves.filter(l => l.id !== id));
     }
   };
 
-  const getLeaveTypeName = (type: string) => {
+  const getLeaveTypeName = async (type: string) => {
     switch (type) {
       case "SICK_LEAVE":
         return "Atestado Médico (Doença)";
@@ -116,7 +117,7 @@ export default function LeavesList() {
     }
   };
 
-  const calculateDays = (start: string, end: string | null) => {
+  const calculateDays = async (start: string, end: string | null) => {
     if (!end) return 1;
     const diffTime = Math.abs(
       new Date(end).getTime() - new Date(start).getTime(),
@@ -154,7 +155,7 @@ export default function LeavesList() {
         </div>
         
         <button 
-          onClick={() => navigate('/afastamentos/novo')}
+          onClick={async () => navigate('/afastamentos/novo')}
           className="btn-primary"
         >
           <Plus size={18} />
@@ -250,14 +251,14 @@ export default function LeavesList() {
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button 
-                            onClick={() => setSelectedLeaveView(leave)}
+                            onClick={async () => setSelectedLeaveView(leave)}
                             className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors cursor-pointer"
                             title="Visualizar Detalhes"
                           >
                             <FileText size={16} />
                           </button>
                           <button 
-                            onClick={() => handleToggleStatus(leave.id, leave.status)}
+                            onClick={async () => handleToggleStatus(leave.id, leave.status)}
                             className={`p-2 rounded-lg transition-colors cursor-pointer ${
                               leave.status === 'APPROVED' 
                                 ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' 
@@ -268,7 +269,7 @@ export default function LeavesList() {
                             <Power size={16} />
                           </button>
                           <button 
-                            onClick={() => handleDelete(leave.id)}
+                            onClick={async () => handleDelete(leave.id)}
                             className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                             title="Excluir"
                           >
@@ -318,7 +319,7 @@ export default function LeavesList() {
                 Detalhes do Afastamento
               </h2>
               <button
-                onClick={() => setSelectedLeaveView(null)}
+                onClick={async () => setSelectedLeaveView(null)}
                 className="text-slate-400 hover:text-slate-700"
               >
                 <X size={20} />
@@ -390,7 +391,7 @@ export default function LeavesList() {
             </div>
             <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
               <button
-                onClick={() => setSelectedLeaveView(null)}
+                onClick={async () => setSelectedLeaveView(null)}
                 className="btn-secondary"
               >
                 Fechar

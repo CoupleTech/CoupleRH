@@ -3,8 +3,16 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import { AppRoutes } from './routes'
 
+import { Toaster } from 'sonner';
+import { ConfirmDialogProvider } from './components/ConfirmDialogProvider';
+import { UpdateNotifier } from './components/UpdateNotifier';
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AppRoutes />
+    <ConfirmDialogProvider>
+      <AppRoutes />
+      <Toaster position="top-right" richColors closeButton />
+      <UpdateNotifier />
+    </ConfirmDialogProvider>
   </StrictMode>,
 )

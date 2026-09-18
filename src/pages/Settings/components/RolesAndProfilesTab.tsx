@@ -3,6 +3,7 @@ import { Users, Plus, Shield, Edit, Trash2, Mail, UserPlus, Key, Check } from "l
 import { supabase } from "../../../lib/supabase";
 import InviteUserModal from "./InviteUserModal";
 import RoleModal from "./RoleModal";
+import { toast } from 'sonner';
 
 interface Role {
   id: string;
@@ -28,7 +29,7 @@ interface TenantUser {
   created_at: string;
 }
 
-export default function RolesAndProfilesTab() {
+export default async function RolesAndProfilesTab() {
   const [activeSubTab, setActiveSubTab] = useState<'usuarios' | 'perfis'>('usuarios');
   
   const [users, setUsers] = useState<TenantUser[]>([]);
@@ -137,10 +138,10 @@ export default function RolesAndProfilesTab() {
 
   const handleDeleteRole = async (role: Role) => {
     if (role.is_system_role) {
-      alert("Não é possível excluir um perfil de sistema.");
+      toast.error("Não é possível excluir um perfil de sistema.");
       return;
     }
-    if (confirm(`Tem certeza que deseja excluir o perfil '${role.name}'?`)) {
+    if (await confirmDialog(`Tem certeza que deseja excluir o perfil '${role.name}'?`)) {
       await supabase.from('roles').delete().eq('id', role.id);
       if (selectedRoleId === role.id) setSelectedRoleId(null);
       fetchData();
@@ -169,13 +170,13 @@ export default function RolesAndProfilesTab() {
           
           <div className="flex items-center bg-slate-100 p-1 rounded-lg">
             <button 
-              onClick={() => setActiveSubTab('usuarios')}
+              onClick={async () => setActiveSubTab('usuarios')}
               className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${activeSubTab === 'usuarios' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               Usuários
             </button>
             <button 
-              onClick={() => setActiveSubTab('perfis')}
+              onClick={async () => setActiveSubTab('perfis')}
               className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${activeSubTab === 'perfis' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               Perfis de Acesso
@@ -192,7 +193,7 @@ export default function RolesAndProfilesTab() {
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold text-slate-800">Usuários Ativos</h3>
               <button 
-                onClick={() => setIsInviteModalOpen(true)}
+                onClick={async () => setIsInviteModalOpen(true)}
                 className="btn-primary py-2 px-4 shadow-md text-sm">
                 <UserPlus size={16} />
                 <span>Convidar Usuário</span>
@@ -254,7 +255,7 @@ export default function RolesAndProfilesTab() {
               <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
                 <span className="font-bold text-sm text-slate-700">Perfis Cadastrados</span>
                 <button 
-                  onClick={() => { setEditingRole(null); setIsRoleModalOpen(true); }}
+                  onClick={async () => { setEditingRole(null); setIsRoleModalOpen(true); }}
                   className="text-primary-600 hover:text-primary-700 p-1">
                   <Plus size={18} />
                 </button>
@@ -263,7 +264,7 @@ export default function RolesAndProfilesTab() {
                 {roles.map(r => (
                   <div 
                     key={r.id} 
-                    onClick={() => setSelectedRoleId(r.id)}
+                    onClick={async () => setSelectedRoleId(r.id)}
                     className={`px-4 py-3 cursor-pointer transition-colors border-l-4 ${selectedRoleId === r.id ? 'bg-primary-50 border-primary-500' : 'hover:bg-slate-50 border-transparent'}`}
                   >
                     <div className={`font-bold text-sm ${selectedRoleId === r.id ? 'text-primary-900' : 'text-slate-700'}`}>
@@ -290,12 +291,12 @@ export default function RolesAndProfilesTab() {
                 ) : selectedRole ? (
                   <div className="flex gap-2">
                     <button 
-                      onClick={() => { setEditingRole(selectedRole); setIsRoleModalOpen(true); }}
+                      onClick={async () => { setEditingRole(selectedRole); setIsRoleModalOpen(true); }}
                       className="text-slate-400 hover:text-primary-600 transition-colors p-1" title="Editar Perfil">
                       <Edit size={16} />
                     </button>
                     <button 
-                      onClick={() => handleDeleteRole(selectedRole)}
+                      onClick={async () => handleDeleteRole(selectedRole)}
                       className="text-slate-400 hover:text-rose-600 transition-colors p-1" title="Excluir Perfil">
                       <Trash2 size={16} />
                     </button>

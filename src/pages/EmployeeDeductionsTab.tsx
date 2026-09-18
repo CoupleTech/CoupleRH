@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { formatDate } from "../lib/dateUtils";
+import { toast } from 'sonner';
 
 interface Rubric {
   id: string;
@@ -37,7 +38,7 @@ interface Deduction {
   payroll_rubrics: Rubric;
 }
 
-export default function EmployeeDeductionsTab({
+export default async function EmployeeDeductionsTab({
   contractId,
 }: {
   contractId: string;
@@ -114,7 +115,7 @@ export default function EmployeeDeductionsTab({
     }
   };
 
-  const openModal = () => {
+  const openModal = async () => {
     setEditingId(null);
     setType("LOAN");
     setAmountType("FIXED");
@@ -128,7 +129,7 @@ export default function EmployeeDeductionsTab({
     setIsModalOpen(true);
   };
 
-  const openEditModal = (d: Deduction) => {
+  const openEditModal = async (d: Deduction) => {
     setEditingId(d.id);
     setType(d.deduction_type);
     setAmountType(d.amount_type);
@@ -180,14 +181,14 @@ export default function EmployeeDeductionsTab({
       fetchData();
     } catch (err: any) {
       console.error("Erro ao salvar o desconto:", err);
-      alert("Erro ao salvar o desconto: " + err.message);
+      toast.error("Erro ao salvar o desconto: " + err.message);
     } finally {
       setSaving(false);
     }
   };
 
   const handleRemove = async (id: string) => {
-    if (!confirm("Tem certeza que deseja inativar/remover este desconto?")) return;
+    if (!await confirmDialog("Tem certeza que deseja inativar/remover este desconto?")) return;
     try {
       // Marcamos como inativo em vez de deletar para manter histórico
       await supabase.from("employee_deductions").update({ is_active: false }).eq("id", id);
@@ -197,7 +198,7 @@ export default function EmployeeDeductionsTab({
     }
   };
 
-  const getTypeIcon = (t: string) => {
+  const getTypeIcon = async (t: string) => {
     switch (t) {
       case "ALIMONY":
         return <Scale size={18} className="text-violet-500" />;
@@ -212,7 +213,7 @@ export default function EmployeeDeductionsTab({
     }
   };
 
-  const getTypeLabel = (t: string) => {
+  const getTypeLabel = async (t: string) => {
     switch (t) {
       case "ALIMONY":
         return "Pensão Alimentícia";
@@ -293,14 +294,14 @@ export default function EmployeeDeductionsTab({
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
-                      onClick={() => openEditModal(d)}
+                      onClick={async () => openEditModal(d)}
                       className="text-slate-300 hover:text-blue-600 transition-colors p-1"
                       title="Editar Desconto"
                     >
                       <Edit size={16} />
                     </button>
                     <button
-                      onClick={() => handleRemove(d.id)}
+                      onClick={async () => handleRemove(d.id)}
                       className="text-slate-300 hover:text-rose-600 transition-colors p-1"
                       title="Remover Desconto"
                     >
@@ -356,7 +357,7 @@ export default function EmployeeDeductionsTab({
                 Novo Desconto / Retenção
               </h3>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={async () => setIsModalOpen(false)}
                 className="text-slate-400 hover:text-slate-700"
               >
                 <X size={20} />
@@ -511,7 +512,7 @@ export default function EmployeeDeductionsTab({
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 rounded-b-lg">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={async () => setIsModalOpen(false)}
                   className="btn-secondary"
                 >
                   Cancelar

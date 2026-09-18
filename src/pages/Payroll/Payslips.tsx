@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { Pagination } from "../../components/Pagination";
+import { toast } from 'sonner';
 
 interface PayrollPeriod {
   id: string;
@@ -387,7 +388,7 @@ export default function Payslips() {
                               setSelectedPayslip(slip);
                               // Um set timeout rápido apenas para garantir que a interface atualiza (ou imprimiríamos o dom atual).
                               // Numa versão final, teríamos uma lib de PDF (ex: react-to-pdf).
-                              alert("Recurso de baixar PDF será ativado após integração com a lib de relatórios. Por enquanto use a Visualização e imprima.");
+                              toast.error("Recurso de baixar PDF será ativado após integração com a lib de relatórios. Por enquanto use a Visualização e imprima.");
                             }}
                             className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
                             title="Baixar PDF"

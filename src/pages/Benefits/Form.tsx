@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { toast } from 'sonner';
 
 interface Rubric {
   id: string;
@@ -65,7 +66,7 @@ export default function BenefitForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name) {
-      alert("Preencha o nome do benefício.");
+      toast.error("Preencha o nome do benefício.");
       return;
     }
 
@@ -104,7 +105,7 @@ export default function BenefitForm() {
       navigate("/beneficios");
     } catch (err) {
       console.error(err);
-      alert("Erro ao salvar o benefício.");
+      toast.error("Erro ao salvar o benefício.");
     } finally {
       setSaving(false);
     }

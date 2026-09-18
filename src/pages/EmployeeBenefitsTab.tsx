@@ -12,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { toast } from 'sonner';
 
 interface Benefit {
   id: string;
@@ -32,7 +33,7 @@ interface EmployeeBenefit {
   benefit_catalogs: Benefit;
 }
 
-export default function EmployeeBenefitsTab({
+export default async function EmployeeBenefitsTab({
   contractId,
 }: {
   contractId: string;
@@ -105,7 +106,7 @@ export default function EmployeeBenefitsTab({
     }
   };
 
-  const openModal = () => {
+  const openModal = async () => {
     setSelectedBenefitId("");
     setCustomDiscount("");
     setCardNumber("");
@@ -115,7 +116,7 @@ export default function EmployeeBenefitsTab({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedBenefitId) return alert("Selecione um benefício do catálogo");
+    if (!selectedBenefitId) return toast.error("Selecione um benefício do catálogo");
 
     setSaving(true);
     try {
@@ -143,7 +144,7 @@ export default function EmployeeBenefitsTab({
       if (error) {
         if (error.code === "23505") {
           // unique violation
-          alert("O colaborador já possui este benefício cadastrado.");
+          toast.error("O colaborador já possui este benefício cadastrado.");
         } else {
           throw error;
         }
@@ -153,7 +154,7 @@ export default function EmployeeBenefitsTab({
       }
     } catch (e: any) {
       console.error(e);
-      alert(`Erro ao vincular benefício: ${e.message}`);
+      toast.error(`Erro ao vincular benefício: ${e.message}`);
     } finally {
       setSaving(false);
     }
@@ -161,7 +162,7 @@ export default function EmployeeBenefitsTab({
 
   const handleRemove = async (id: string) => {
     if (
-      !confirm("Tem certeza que deseja remover este benefício do colaborador?")
+      !await confirmDialog("Tem certeza que deseja remover este benefício do colaborador?")
     )
       return;
     try {
@@ -173,7 +174,7 @@ export default function EmployeeBenefitsTab({
     }
   };
 
-  const getBenefitIcon = (type: string) => {
+  const getBenefitIcon = async (type: string) => {
     switch (type) {
       case "VT":
         return <Bus size={18} className="text-emerald-500" />;
@@ -269,7 +270,7 @@ export default function EmployeeBenefitsTab({
                       </div>
                     </div>
                     <button
-                      onClick={() => handleRemove(eb.id)}
+                      onClick={async () => handleRemove(eb.id)}
                       className="text-slate-300 hover:text-rose-600 transition-colors opacity-0 group-hover:opacity-100 p-1"
                       title="Remover Benefício"
                     >
@@ -328,7 +329,7 @@ export default function EmployeeBenefitsTab({
                 Vincular Benefício
               </h3>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={async () => setIsModalOpen(false)}
                 className="text-slate-400 hover:text-slate-700"
               >
                 <X size={20} />

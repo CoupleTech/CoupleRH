@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { ArrowLeft, TrendingUp, Loader2, Save } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { toast } from 'sonner';
 
 interface MovementsProps {
   inline?: boolean;
@@ -75,7 +76,7 @@ export default function Movements({ inline = false, preselectedContractId, onSav
 
   const handleSave = async () => {
     if (!selectedEmployee || !newValue || !reason) {
-      alert(
+      toast.error(
         "Preencha todos os campos obrigatórios (Colaborador, Novo Valor, Motivo).",
       );
       return;
@@ -102,7 +103,7 @@ export default function Movements({ inline = false, preselectedContractId, onSav
       .eq("id", selectedEmployee);
 
     if (updateError) {
-      alert("Erro ao atualizar dados do funcionário.");
+      toast.error("Erro ao atualizar dados do funcionário.");
       setLoading(false);
       return;
     }
@@ -122,12 +123,12 @@ export default function Movements({ inline = false, preselectedContractId, onSav
 
     if (historyError) {
       console.error(historyError);
-      alert(
+      toast.error(
         `Erro ao salvar histórico: ${historyError.message} - ${historyError.details}`,
       );
     } else {
       if (!inline) {
-        alert("Movimentação registrada com sucesso!");
+        toast.error("Movimentação registrada com sucesso!");
         setSelectedEmployee("");
       }
       setNewValue("");

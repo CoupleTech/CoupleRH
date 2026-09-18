@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../contexts/CompanyContext";
 import { Pagination } from "../../../components/Pagination";
+import { toast } from 'sonner';
 
 interface WorkSchedule {
   id: string;
@@ -28,7 +29,7 @@ interface WorkSchedule {
   };
 }
 
-export default function WorkSchedulesList() {
+export default async function WorkSchedulesList() {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");
@@ -87,14 +88,14 @@ export default function WorkSchedulesList() {
       .eq("id", id);
       
     if (error) {
-      alert("Erro ao alterar status.");
+      toast.error("Erro ao alterar status.");
     } else {
       setSchedules(schedules.map(s => s.id === id ? { ...s, status: newStatus } : s));
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir esta jornada? Só será possível se não houver vínculos.")) return;
+    if (!await confirmDialog("Deseja realmente excluir esta jornada? Só será possível se não houver vínculos.")) return;
     
     const { error } = await supabase
       .from("work_schedules")
@@ -103,9 +104,9 @@ export default function WorkSchedulesList() {
       
     if (error) {
       if (error.code === '23503') {
-        alert("Não é possível excluir esta jornada pois ela está vinculada a um ou mais colaboradores.");
+        toast.error("Não é possível excluir esta jornada pois ela está vinculada a um ou mais colaboradores.");
       } else {
-        alert("Erro ao excluir jornada.");
+        toast.error("Erro ao excluir jornada.");
       }
     } else {
       setSchedules(schedules.filter(s => s.id !== id));
@@ -139,7 +140,7 @@ export default function WorkSchedulesList() {
         </div>
         
         <button 
-          onClick={() => navigate('/jornadas/nova')}
+          onClick={async () => navigate('/jornadas/nova')}
           className="btn-primary"
         >
           <Plus size={18} />
@@ -223,14 +224,14 @@ export default function WorkSchedulesList() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => navigate(`/jornadas/${item.id}`)}
+                          onClick={async () => navigate(`/jornadas/${item.id}`)}
                           className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors cursor-pointer"
                           title="Editar"
                         >
                           <Edit2 size={16} />
                         </button>
                         <button 
-                          onClick={() => handleToggleStatus(item.id, item.status)}
+                          onClick={async () => handleToggleStatus(item.id, item.status)}
                           className={`p-2 rounded-lg transition-colors cursor-pointer ${
                             item.status === 'ACTIVE' 
                               ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' 
@@ -241,7 +242,7 @@ export default function WorkSchedulesList() {
                           <Power size={16} />
                         </button>
                         <button 
-                          onClick={() => handleDelete(item.id)}
+                          onClick={async () => handleDelete(item.id)}
                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                           title="Excluir"
                         >
@@ -279,7 +280,7 @@ export default function WorkSchedulesList() {
             </p>
             {!searchTerm && (
               <button 
-                onClick={() => navigate('/jornadas/nova')}
+                onClick={async () => navigate('/jornadas/nova')}
                 className="btn-primary"
               >
                 <Plus size={18} />

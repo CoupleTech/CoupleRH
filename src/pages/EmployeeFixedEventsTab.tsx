@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { formatDate } from "../lib/dateUtils";
+import { toast } from 'sonner';
 
 interface Rubric {
   id: string;
@@ -31,7 +32,7 @@ interface FixedEvent {
   payroll_rubrics: Rubric;
 }
 
-export default function EmployeeFixedEventsTab({
+export default async function EmployeeFixedEventsTab({
   contractId,
 }: {
   contractId: string;
@@ -107,7 +108,7 @@ export default function EmployeeFixedEventsTab({
     }
   };
 
-  const openModal = () => {
+  const openModal = async () => {
     setValue("");
     setQuantity("1");
     setStartDate(new Date().toISOString().split("T")[0]);
@@ -147,14 +148,14 @@ export default function EmployeeFixedEventsTab({
       fetchData();
     } catch (err: any) {
       console.error("Erro ao salvar o adicional fixo:", err);
-      alert("Erro ao salvar: " + err.message);
+      toast.error("Erro ao salvar: " + err.message);
     } finally {
       setSaving(false);
     }
   };
 
   const handleRemove = async (id: string) => {
-    if (!confirm("Tem certeza que deseja inativar/remover este adicional permanente?")) return;
+    if (!await confirmDialog("Tem certeza que deseja inativar/remover este adicional permanente?")) return;
     try {
       await supabase.from("employee_fixed_events").update({ is_active: false }).eq("id", id);
       fetchData();
@@ -223,7 +224,7 @@ export default function EmployeeFixedEventsTab({
                     </div>
                   </div>
                   <button
-                    onClick={() => handleRemove(ev.id)}
+                    onClick={async () => handleRemove(ev.id)}
                     className="text-slate-300 hover:text-rose-600 transition-colors opacity-0 group-hover:opacity-100 p-1"
                     title="Remover Adicional"
                   >
@@ -276,7 +277,7 @@ export default function EmployeeFixedEventsTab({
                 Vincular Adicional Fixo
               </h3>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={async () => setIsModalOpen(false)}
                 className="text-slate-400 hover:text-slate-700"
               >
                 <X size={20} />
@@ -383,7 +384,7 @@ export default function EmployeeFixedEventsTab({
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 rounded-b-lg">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={async () => setIsModalOpen(false)}
                   className="btn-secondary"
                 >
                   Cancelar

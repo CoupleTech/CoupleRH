@@ -14,6 +14,7 @@ import { supabase } from "../../lib/supabase";
 import { vacationService } from "../../services/vacationService";
 import { useCompany } from "../../contexts/CompanyContext";
 import { Pagination } from "../../components/Pagination";
+import { toast } from 'sonner';
 
 interface VacationVesting {
   id: string;
@@ -139,13 +140,13 @@ export default function VacationsList() {
           }
         }
       }
-      alert(
+      toast.error(
         `Processamento concluído. ${count} novos períodos aquisitivos gerados.`,
       );
       fetchVacations();
     } catch (e: any) {
       console.error(e);
-      alert(`Erro ao gerar períodos: ${e.message}`);
+      toast.error(`Erro ao gerar períodos: ${e.message}`);
     } finally {
       setGenerating(false);
     }

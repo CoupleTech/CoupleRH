@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { toast } from 'sonner';
 
 // ── Types ──
 interface EmployeeAuth {
@@ -424,7 +425,7 @@ export default function EmployeePortal() {
     // Se não for imagem (ex: PDF), checar tamanho máx 3MB
     if (!file.type.startsWith("image/")) {
       if (file.size > 3 * 1024 * 1024) {
-        alert("O documento deve ter no máximo 3MB.");
+        toast.error("O documento deve ter no máximo 3MB.");
         setUploadingDocType(null);
         return;
       }
@@ -466,7 +467,7 @@ export default function EmployeePortal() {
       await fetchDocsData();
     } catch (error) {
       console.error("Erro no upload:", error);
-      alert("Ocorreu um erro ao enviar o arquivo. Tente novamente.");
+      toast.error("Ocorreu um erro ao enviar o arquivo. Tente novamente.");
     } finally {
       setUploadingDocType(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -501,11 +502,11 @@ export default function EmployeePortal() {
       });
       if (error) throw error;
       
-      alert("Documento assinado com sucesso!");
+      toast.error("Documento assinado com sucesso!");
       setDocumentToView(null);
       await fetchDocsData();
     } catch (err: any) {
-      alert("Falha ao assinar documento: " + err.message);
+      toast.error("Falha ao assinar documento: " + err.message);
     } finally {
       setSigningDocId(null);
     }

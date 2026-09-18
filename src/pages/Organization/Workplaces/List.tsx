@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../contexts/CompanyContext";
 import { Pagination } from "../../../components/Pagination";
+import { toast } from 'sonner';
 
 interface Workplace {
   id: string;
@@ -32,7 +33,7 @@ interface Workplace {
   };
 }
 
-export default function WorkplacesList() {
+export default async function WorkplacesList() {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");
@@ -95,14 +96,14 @@ export default function WorkplacesList() {
       .eq("id", id);
       
     if (error) {
-      alert("Erro ao alterar status.");
+      toast.error("Erro ao alterar status.");
     } else {
       setWorkplaces(workplaces.map(w => w.id === id ? { ...w, status: newStatus } : w));
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir esta lotação? Só será possível se não houver vínculos.")) return;
+    if (!await confirmDialog("Deseja realmente excluir esta lotação? Só será possível se não houver vínculos.")) return;
     
     const { error } = await supabase
       .from("workplaces")
@@ -111,9 +112,9 @@ export default function WorkplacesList() {
       
     if (error) {
       if (error.code === '23503') {
-        alert("Não é possível excluir esta lotação pois ela está vinculada a um ou mais colaboradores.");
+        toast.error("Não é possível excluir esta lotação pois ela está vinculada a um ou mais colaboradores.");
       } else {
-        alert("Erro ao excluir lotação.");
+        toast.error("Erro ao excluir lotação.");
       }
     } else {
       setWorkplaces(workplaces.filter(w => w.id !== id));
@@ -148,7 +149,7 @@ export default function WorkplacesList() {
         </div>
         
         <button 
-          onClick={() => navigate('/lotacoes/nova')}
+          onClick={async () => navigate('/lotacoes/nova')}
           className="btn-primary"
         >
           <Plus size={18} />
@@ -232,14 +233,14 @@ export default function WorkplacesList() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => navigate(`/lotacoes/${item.id}`)}
+                          onClick={async () => navigate(`/lotacoes/${item.id}`)}
                           className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors cursor-pointer"
                           title="Editar"
                         >
                           <Edit2 size={16} />
                         </button>
                         <button 
-                          onClick={() => handleToggleStatus(item.id, item.status)}
+                          onClick={async () => handleToggleStatus(item.id, item.status)}
                           className={`p-2 rounded-lg transition-colors cursor-pointer ${
                             item.status === 'ACTIVE' 
                               ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' 
@@ -250,7 +251,7 @@ export default function WorkplacesList() {
                           <Power size={16} />
                         </button>
                         <button 
-                          onClick={() => handleDelete(item.id)}
+                          onClick={async () => handleDelete(item.id)}
                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                           title="Excluir"
                         >
@@ -288,7 +289,7 @@ export default function WorkplacesList() {
             </p>
             {!searchTerm && (
               <button 
-                onClick={() => navigate('/lotacoes/nova')}
+                onClick={async () => navigate('/lotacoes/nova')}
                 className="btn-primary"
               >
                 <Plus size={18} />

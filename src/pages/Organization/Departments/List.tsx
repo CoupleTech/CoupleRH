@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../contexts/CompanyContext";
 import { Pagination } from "../../../components/Pagination";
+import { toast } from 'sonner';
 
 interface Department {
   id: string;
@@ -26,7 +27,7 @@ interface Department {
   } | null;
 }
 
-export default function DepartmentsList() {
+export default async function DepartmentsList() {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");
@@ -85,14 +86,14 @@ export default function DepartmentsList() {
       .eq("id", id);
       
     if (error) {
-      alert("Erro ao alterar status.");
+      toast.error("Erro ao alterar status.");
     } else {
       setDepartments(departments.map(d => d.id === id ? { ...d, status: newStatus } : d));
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir este departamento? Só será possível se não houver vínculos.")) return;
+    if (!await confirmDialog("Deseja realmente excluir este departamento? Só será possível se não houver vínculos.")) return;
     
     const { error } = await supabase
       .from("departments")
@@ -101,9 +102,9 @@ export default function DepartmentsList() {
       
     if (error) {
       if (error.code === '23503') {
-        alert("Não é possível excluir este departamento pois ele está vinculado a um ou mais colaboradores ou setores.");
+        toast.error("Não é possível excluir este departamento pois ele está vinculado a um ou mais colaboradores ou setores.");
       } else {
-        alert("Erro ao excluir departamento.");
+        toast.error("Erro ao excluir departamento.");
       }
     } else {
       setDepartments(departments.filter(d => d.id !== id));
@@ -140,7 +141,7 @@ export default function DepartmentsList() {
         </div>
         
         <button 
-          onClick={() => navigate('/departamentos/novo')}
+          onClick={async () => navigate('/departamentos/novo')}
           className="btn-primary"
         >
           <Plus size={18} />
@@ -222,14 +223,14 @@ export default function DepartmentsList() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => navigate(`/departamentos/${dept.id}`)}
+                          onClick={async () => navigate(`/departamentos/${dept.id}`)}
                           className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors cursor-pointer"
                           title="Editar"
                         >
                           <Edit2 size={16} />
                         </button>
                         <button 
-                          onClick={() => handleToggleStatus(dept.id, dept.status)}
+                          onClick={async () => handleToggleStatus(dept.id, dept.status)}
                           className={`p-2 rounded-lg transition-colors cursor-pointer ${
                             dept.status === 'ACTIVE' 
                               ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' 
@@ -240,7 +241,7 @@ export default function DepartmentsList() {
                           <Power size={16} />
                         </button>
                         <button 
-                          onClick={() => handleDelete(dept.id)}
+                          onClick={async () => handleDelete(dept.id)}
                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                           title="Excluir"
                         >

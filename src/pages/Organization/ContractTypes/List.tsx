@@ -16,6 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../contexts/CompanyContext";
 import { Pagination } from "../../../components/Pagination";
+import { toast } from 'sonner';
 
 interface ContractType {
   id: string;
@@ -43,7 +44,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   'OUTROS': 'bg-slate-50 text-slate-700 border-slate-200',
 };
 
-export default function ContractTypesList() {
+export default async function ContractTypesList() {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");
@@ -97,14 +98,14 @@ export default function ContractTypesList() {
       .eq("id", id);
       
     if (error) {
-      alert("Erro ao alterar status.");
+      toast.error("Erro ao alterar status.");
     } else {
       setContractTypes(contractTypes.map(c => c.id === id ? { ...c, status: newStatus } : c));
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir este tipo de contrato? Só será possível se não houver vínculos.")) return;
+    if (!await confirmDialog("Deseja realmente excluir este tipo de contrato? Só será possível se não houver vínculos.")) return;
     
     const { error } = await supabase
       .from("contract_types")
@@ -113,9 +114,9 @@ export default function ContractTypesList() {
       
     if (error) {
       if (error.code === '23503') {
-        alert("Não é possível excluir este tipo de contrato pois ele está vinculado a um ou mais colaboradores.");
+        toast.error("Não é possível excluir este tipo de contrato pois ele está vinculado a um ou mais colaboradores.");
       } else {
-        alert("Erro ao excluir tipo de contrato.");
+        toast.error("Erro ao excluir tipo de contrato.");
       }
     } else {
       setContractTypes(contractTypes.filter(c => c.id !== id));
@@ -149,7 +150,7 @@ export default function ContractTypesList() {
         </div>
         
         <button 
-          onClick={() => navigate('/tipos-de-contrato/novo')}
+          onClick={async () => navigate('/tipos-de-contrato/novo')}
           className="btn-primary"
         >
           <Plus size={18} />
@@ -251,14 +252,14 @@ export default function ContractTypesList() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => navigate(`/tipos-de-contrato/${item.id}`)}
+                          onClick={async () => navigate(`/tipos-de-contrato/${item.id}`)}
                           className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors cursor-pointer"
                           title="Editar"
                         >
                           <Edit2 size={16} />
                         </button>
                         <button 
-                          onClick={() => handleToggleStatus(item.id, item.status)}
+                          onClick={async () => handleToggleStatus(item.id, item.status)}
                           className={`p-2 rounded-lg transition-colors cursor-pointer ${
                             item.status === 'ACTIVE' 
                               ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' 
@@ -269,7 +270,7 @@ export default function ContractTypesList() {
                           <Power size={16} />
                         </button>
                         <button 
-                          onClick={() => handleDelete(item.id)}
+                          onClick={async () => handleDelete(item.id)}
                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                           title="Excluir"
                         >
@@ -307,7 +308,7 @@ export default function ContractTypesList() {
             </p>
             {!searchTerm && (
               <button 
-                onClick={() => navigate('/tipos-de-contrato/novo')}
+                onClick={async () => navigate('/tipos-de-contrato/novo')}
                 className="btn-primary"
               >
                 <Plus size={18} />

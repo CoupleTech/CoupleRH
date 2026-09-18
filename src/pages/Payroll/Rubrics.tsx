@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { Pagination } from "../../components/Pagination";
+import { toast } from 'sonner';
 
 interface Rubric {
   id: string;
@@ -45,7 +46,7 @@ interface Rubric {
   is_active: boolean;
 }
 
-export default function PayrollRubrics() {
+export default async function PayrollRubrics() {
   const [rubrics, setRubrics] = useState<Rubric[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -125,7 +126,7 @@ export default function PayrollRubrics() {
     setLoading(false);
   };
 
-  const openModal = (r?: Rubric) => {
+  const openModal = async (r?: Rubric) => {
     if (r) {
       setEditingId(r.id);
       setCode(r.code);
@@ -243,7 +244,7 @@ export default function PayrollRubrics() {
       fetchRubrics();
     } catch (err) {
       console.error(err);
-      alert(
+      toast.error(
         "Erro ao salvar a rubrica. Verifique se o código já não está em uso.",
       );
     } finally {
@@ -253,7 +254,7 @@ export default function PayrollRubrics() {
 
   const handleDelete = async () => {
     if (!editingId) return;
-    if (!window.confirm("Tem certeza que deseja excluir esta rubrica?")) return;
+    if (!await confirmDialog("Tem certeza que deseja excluir esta rubrica?")) return;
 
     setSaving(true);
     try {
@@ -268,7 +269,7 @@ export default function PayrollRubrics() {
           .update({ is_active: false })
           .eq("id", editingId);
         if (softError) throw softError;
-        alert(
+        toast.error(
           "Esta rubrica já foi utilizada em cálculos e não pode ser apagada fisicamente para não quebrar o histórico. Ela foi desativada e removida da lista com sucesso.",
         );
       } else if (error) {
@@ -279,7 +280,7 @@ export default function PayrollRubrics() {
       fetchRubrics();
     } catch (err) {
       console.error(err);
-      alert("Erro ao excluir a rubrica.");
+      toast.error("Erro ao excluir a rubrica.");
     } finally {
       setSaving(false);
     }
@@ -310,7 +311,7 @@ export default function PayrollRubrics() {
           </p>
         </div>
 
-        <button onClick={() => openModal()} className="btn-primary">
+        <button onClick={async () => openModal()} className="btn-primary">
           <Plus size={18} />
           <span>Nova Rubrica</span>
         </button>
@@ -364,7 +365,7 @@ export default function PayrollRubrics() {
                 paginated.map((r) => (
                   <tr
                     key={r.id}
-                    onClick={() => openModal(r)}
+                    onClick={async () => openModal(r)}
                     className="hover:bg-slate-50 transition-colors group cursor-pointer"
                   >
                     <td className="px-6 py-4">
@@ -461,7 +462,7 @@ export default function PayrollRubrics() {
                 {editingId ? `Editar Rubrica [${code}]` : "Configurar Nova Rubrica"}
               </h3>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={async () => setIsModalOpen(false)}
                 className="text-slate-400 hover:text-slate-700 transition-colors"
               >
                 <X size={20} />
@@ -471,21 +472,21 @@ export default function PayrollRubrics() {
             <div className="flex border-b border-slate-200 px-6 shrink-0 bg-white pt-2 overflow-x-auto">
               <button
                 type="button"
-                onClick={() => setActiveTab("basico")}
+                onClick={async () => setActiveTab("basico")}
                 className={`whitespace-nowrap px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === "basico" ? "border-primary-600 text-primary-600" : "border-transparent text-slate-500 hover:text-slate-700"}`}
               >
                 1. Dados Básicos
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab("calculo")}
+                onClick={async () => setActiveTab("calculo")}
                 className={`whitespace-nowrap px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === "calculo" ? "border-primary-600 text-primary-600" : "border-transparent text-slate-500 hover:text-slate-700"}`}
               >
                 2. Motor de Cálculo
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab("tributacao")}
+                onClick={async () => setActiveTab("tributacao")}
                 className={`whitespace-nowrap px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === "tributacao" ? "border-primary-600 text-primary-600" : "border-transparent text-slate-500 hover:text-slate-700"}`}
               >
                 3. Incidências e Bases
@@ -857,7 +858,7 @@ export default function PayrollRubrics() {
                 )}
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={async () => setIsModalOpen(false)}
                   className="btn-secondary"
                 >
                   Cancelar

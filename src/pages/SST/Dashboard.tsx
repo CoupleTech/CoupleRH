@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { Pagination } from "../../components/Pagination";
+import { toast } from 'sonner';
 
 interface HealthExam {
   id: string;
@@ -30,7 +31,7 @@ interface HealthExam {
   } | null;
 }
 
-export default function SstDashboard() {
+export default async function SstDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [exams, setExams] = useState<HealthExam[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,7 +72,7 @@ export default function SstDashboard() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir este ASO?")) return;
+    if (!await confirmDialog("Deseja realmente excluir este ASO?")) return;
     
     const { error } = await supabase
       .from("sst_health_exams")
@@ -79,7 +80,7 @@ export default function SstDashboard() {
       .eq("id", id);
       
     if (error) {
-      alert("Erro ao excluir ASO.");
+      toast.error("Erro ao excluir ASO.");
     } else {
       setExams(exams.filter(e => e.id !== id));
     }
@@ -109,7 +110,7 @@ export default function SstDashboard() {
         </div>
 
         <button
-          onClick={() => setIsModalOpen(true)}
+          onClick={async () => setIsModalOpen(true)}
           className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-lg font-bold shadow-sm hover:bg-emerald-700 transition-colors"
         >
           <HeartPulse size={18} />
@@ -256,7 +257,7 @@ export default function SstDashboard() {
                             Ver PDF
                           </button>
                           <button 
-                            onClick={() => handleDelete(exam.id)}
+                            onClick={async () => handleDelete(exam.id)}
                             className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                             title="Excluir"
                           >
@@ -297,7 +298,7 @@ export default function SstDashboard() {
                 Registrar Novo ASO
               </h2>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={async () => setIsModalOpen(false)}
                 className="text-slate-400 hover:text-slate-700"
               >
                 <X size={20} />
@@ -368,13 +369,13 @@ export default function SstDashboard() {
             </div>
             <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 rounded-b-lg">
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={async () => setIsModalOpen(false)}
                 className="btn-secondary"
               >
                 Cancelar
               </button>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={async () => setIsModalOpen(false)}
                 className="btn-primary"
               >
                 Salvar ASO (Gerar S-2220)

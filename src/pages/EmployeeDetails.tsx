@@ -20,6 +20,7 @@ import { formatDate } from "../lib/dateUtils";
 import EmployeeBenefitsTab from "./EmployeeBenefitsTab";
 import EmployeeDeductionsTab from "./EmployeeDeductionsTab";
 import EmployeeFixedEventsTab from "./EmployeeFixedEventsTab";
+import { toast } from 'sonner';
 
 export default function EmployeeDetails() {
   const { id } = useParams();
@@ -91,7 +92,7 @@ export default function EmployeeDetails() {
       setShowEditModal(false);
       fetchEmployee();
     } else {
-      alert("Erro ao salvar os dados.");
+      toast.error("Erro ao salvar os dados.");
     }
     setSavingEdit(false);
   };

@@ -10,6 +10,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { leaveService } from "../../services/leaveService";
+import { toast } from 'sonner';
 
 interface LeaveWizardProps {
   inline?: boolean;
@@ -84,15 +85,15 @@ export default function LeaveWizard({ inline = false, preselectedContractId, onS
 
   const handleNext = () => {
     if (step === 1 && !selectedEmployee) {
-      alert("Selecione um colaborador antes de prosseguir.");
+      toast.error("Selecione um colaborador antes de prosseguir.");
       return;
     }
     if (step === 2 && !leaveType) {
-      alert("Selecione o tipo de afastamento.");
+      toast.error("Selecione o tipo de afastamento.");
       return;
     }
     if (step === 3 && !startDate) {
-      alert("Informe a data de início do afastamento.");
+      toast.error("Informe a data de início do afastamento.");
       return;
     }
     setStep((s) => s + 1);
@@ -142,7 +143,7 @@ export default function LeaveWizard({ inline = false, preselectedContractId, onS
       if (onSaved) onSaved();
     } catch (error) {
       console.error("Erro ao salvar afastamento:", error);
-      alert("Ocorreu um erro ao salvar o afastamento.");
+      toast.error("Ocorreu um erro ao salvar o afastamento.");
     } finally {
       setSaving(false);
     }

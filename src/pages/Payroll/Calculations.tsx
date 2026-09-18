@@ -18,6 +18,7 @@ import { supabase } from "../../lib/supabase";
 import { useCompany } from "../../contexts/CompanyContext";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { toast } from 'sonner';
 
 interface PayrollPeriod {
   id: string;
@@ -63,7 +64,7 @@ interface MemoryCalcItem {
   engine_version: string;
 }
 
-export default function PayrollCalculations() {
+export default async function PayrollCalculations() {
   const { selectedCompanyId } = useCompany();
   const [periods, setPeriods] = useState<PayrollPeriod[]>([]);
   const [activePeriod, setActivePeriod] = useState<PayrollPeriod | null>(null);
@@ -197,7 +198,7 @@ export default function PayrollCalculations() {
 
   const createComplementaryPeriod = async () => {
     if (!selectedParentPeriodId || !complementReason) {
-      alert("Selecione a folha origem e preencha a justificativa.");
+      toast.error("Selecione a folha origem e preencha a justificativa.");
       return;
     }
     const { data: userData } = await supabase.auth.getUser();
@@ -299,7 +300,7 @@ export default function PayrollCalculations() {
       await fetchPayslips(activePeriod.id);
     } catch (err: any) {
       console.error(err);
-      alert(`Erro no motor de folha: ${err.message}`);
+      toast.error(`Erro no motor de folha: ${err.message}`);
     } finally {
       setProcessing(false);
     }
@@ -354,7 +355,7 @@ export default function PayrollCalculations() {
     }
 
     if (newStatus === 'CANCELED') {
-      const confirm = window.confirm("Tem certeza que deseja cancelar esta folha?");
+      const confirm = await confirmDialog("Tem certeza que deseja cancelar esta folha?");
       if (!confirm) return;
     }
 
@@ -370,7 +371,7 @@ export default function PayrollCalculations() {
       await fetchPeriods();
     } catch (err: any) {
       console.error(err);
-      alert(`Erro ao ${actionName.toLowerCase()}: ${err.message}`);
+      toast.error(`Erro ao ${actionName.toLowerCase()}: ${err.message}`);
     } finally {
       setProcessing(false);
     }
@@ -397,13 +398,13 @@ export default function PayrollCalculations() {
     setLoadingMemory(prev => ({...prev, [payslipId]: false}));
   };
 
-  const formatCurrency = (val: number) =>
+  const formatCurrency = async (val: number) =>
     new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",
     }).format(val);
 
-  const getMonthName = (month: number) => {
+  const getMonthName = async (month: number) => {
     const date = new Date(2000, month - 1, 1);
     return format(date, "MMMM", { locale: ptBR }).toUpperCase();
   };
@@ -427,35 +428,35 @@ export default function PayrollCalculations() {
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
                     <button
-            onClick={() => setShowNewPeriodModal(true)}
+            onClick={async () => setShowNewPeriodModal(true)}
             className="btn-primary flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium shadow-sm transition-all"
             title="Abrir Nova Competência"
           >
             + Nova Competência
           </button>
           <button
-            onClick={() => createPeriodByType("ADVANCE")}
+            onClick={async () => createPeriodByType("ADVANCE")}
             className="btn-secondary whitespace-nowrap bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium shadow-sm transition-all"
             title="Gerar Competência de Adiantamento (Dia 15/20)"
           >
             + Adiantamento
           </button>
           <button
-            onClick={() => createPeriodByType("THIRTEENTH_1")}
+            onClick={async () => createPeriodByType("THIRTEENTH_1")}
             className="btn-secondary whitespace-nowrap bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium shadow-sm transition-all"
             title="Gerar 1ª Parcela do 13º Salário (até 30/Nov)"
           >
             + 13º (1ª Parc)
           </button>
           <button
-            onClick={() => createPeriodByType("THIRTEENTH_2")}
+            onClick={async () => createPeriodByType("THIRTEENTH_2")}
             className="btn-secondary whitespace-nowrap bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium shadow-sm transition-all"
             title="Gerar 2ª Parcela do 13º Salário (até 20/Dez)"
           >
             + 13º (2ª Parc)
           </button>
           <button
-            onClick={() => setShowComplementModal(true)}
+            onClick={async () => setShowComplementModal(true)}
             className="btn-secondary whitespace-nowrap bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium shadow-sm transition-all"
             title="Gerar Folha Complementar"
           >
@@ -480,7 +481,7 @@ export default function PayrollCalculations() {
                 periods.map((p) => (
                   <button
                     key={p.id}
-                    onClick={() => selectPeriod(p)}
+                    onClick={async () => selectPeriod(p)}
                     className={`w-full text-left p-4 hover:bg-slate-50 transition-colors ${activePeriod?.id === p.id ? "bg-primary-50 border-l-4 border-primary-600" : "border-l-4 border-transparent"}`}
                   >
                     <div className="font-bold text-slate-900">
@@ -545,7 +546,7 @@ export default function PayrollCalculations() {
                     {/* CALCULATED -> Permite enviar para Conferência */}
                     {activePeriod.status === 'CALCULATED' && (
                       <button
-                        onClick={() => changePeriodStatus('CONFERENCE', 'Enviar para Conferência')}
+                        onClick={async () => changePeriodStatus('CONFERENCE', 'Enviar para Conferência')}
                         disabled={processing}
                         className="flex items-center gap-2 bg-amber-100 text-amber-700 border border-amber-200 px-6 py-2.5 rounded-lg font-bold shadow-sm hover:bg-amber-200 transition-colors disabled:opacity-50"
                       >
@@ -557,7 +558,7 @@ export default function PayrollCalculations() {
                     {activePeriod.status === 'CONFERENCE' && (
                       <>
                         <button
-                          onClick={() => changePeriodStatus('CLOSED', 'Fechar Folha')}
+                          onClick={async () => changePeriodStatus('CLOSED', 'Fechar Folha')}
                           disabled={processing}
                           className="flex items-center gap-2 bg-emerald-600 text-white px-6 py-2.5 rounded-lg font-bold shadow-md hover:bg-emerald-700 transition-colors disabled:opacity-50"
                         >
@@ -565,7 +566,7 @@ export default function PayrollCalculations() {
                           Aprovar e Fechar Folha
                         </button>
                         <button
-                          onClick={() => changePeriodStatus('CALCULATED', 'Voltar para Cálculo')}
+                          onClick={async () => changePeriodStatus('CALCULATED', 'Voltar para Cálculo')}
                           disabled={processing}
                           className="flex items-center gap-2 bg-white text-slate-700 border border-slate-200 px-6 py-2.5 rounded-lg font-bold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
                         >
@@ -577,7 +578,7 @@ export default function PayrollCalculations() {
                     {/* CLOSED -> Permite Reabrir */}
                     {activePeriod.status === 'CLOSED' && (
                       <button
-                        onClick={() => changePeriodStatus('REOPENED', 'Reabrir Folha')}
+                        onClick={async () => changePeriodStatus('REOPENED', 'Reabrir Folha')}
                         disabled={processing}
                         className="flex items-center gap-2 bg-rose-100 text-rose-700 border border-rose-200 px-6 py-2.5 rounded-lg font-bold shadow-sm hover:bg-rose-200 transition-colors disabled:opacity-50"
                       >
@@ -659,7 +660,7 @@ export default function PayrollCalculations() {
                         {/* Header do Holerite (Resumo) */}
                         <div
                           className="px-6 py-4 hover:bg-slate-50 transition-colors cursor-pointer flex justify-between items-center"
-                          onClick={() => togglePayslip(p.id)}
+                          onClick={async () => togglePayslip(p.id)}
                         >
                           <div className="flex items-center gap-4">
                             <div className="w-10 h-10 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-sm">
@@ -813,7 +814,7 @@ export default function PayrollCalculations() {
                             {/* Memória de Cálculo Button */}
                             <div className="mt-4 flex justify-end">
                               <button 
-                                onClick={() => toggleMemory(p.id)}
+                                onClick={async () => toggleMemory(p.id)}
                                 className="flex items-center gap-2 text-sm text-primary-600 hover:text-primary-800 font-bold bg-primary-50 px-4 py-2 rounded-lg transition-colors"
                               >
                                 <Calculator size={16} />
@@ -894,7 +895,7 @@ export default function PayrollCalculations() {
                 Nova Competência
               </h2>
               <button
-                onClick={() => setShowNewPeriodModal(false)}
+                onClick={async () => setShowNewPeriodModal(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
               >
                 <X size={20} />
@@ -941,7 +942,7 @@ export default function PayrollCalculations() {
             </div>
             <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
               <button
-                onClick={() => setShowNewPeriodModal(false)}
+                onClick={async () => setShowNewPeriodModal(false)}
                 className="px-4 py-2 font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
               >
                 Cancelar
@@ -966,7 +967,7 @@ export default function PayrollCalculations() {
                 Nova Folha Complementar
               </h2>
               <button
-                onClick={() => setShowComplementModal(false)}
+                onClick={async () => setShowComplementModal(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
               >
                 <X size={20} />
@@ -1007,7 +1008,7 @@ export default function PayrollCalculations() {
             </div>
             <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
               <button
-                onClick={() => setShowComplementModal(false)}
+                onClick={async () => setShowComplementModal(false)}
                 className="px-4 py-2 font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
               >
                 Cancelar

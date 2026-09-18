@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useCompany } from "../../contexts/CompanyContext";
+import { toast } from 'sonner';
 
 interface PayrollPeriod {
   id: string;
@@ -52,7 +53,7 @@ interface PayrollEvent {
   notes: string;
 }
 
-export default function PayrollEvents() {
+export default async function PayrollEvents() {
   const { selectedCompanyId } = useCompany();
   const [periods, setPeriods] = useState<PayrollPeriod[]>([]);
   const [activePeriod, setActivePeriod] = useState<PayrollPeriod | null>(null);
@@ -109,7 +110,7 @@ export default function PayrollEvents() {
 
       if (pError) {
         console.error("Erro ao buscar payroll_periods:", pError);
-        alert(`Erro Períodos: ${pError.message || '400 Bad Request'}`);
+        toast.error(`Erro Períodos: ${pError.message || '400 Bad Request'}`);
       }
 
       let currentPeriods = pData as PayrollPeriod[] || [];
@@ -125,7 +126,7 @@ export default function PayrollEvents() {
         
         if (insertError) {
           console.error("ERRO NO INSERT DO PERIODO:", insertError);
-          alert(`Erro ao criar período atual no banco: ${insertError.message}`);
+          toast.error(`Erro ao criar período atual no banco: ${insertError.message}`);
         }
         
         let updateQuery = supabase
@@ -223,7 +224,7 @@ export default function PayrollEvents() {
 
     if (error) {
       console.error("Erro na busca de eventos:", error);
-      alert(`Erro Supabase: ${error.message || '400 Bad Request'}. Dica: Se acabou de criar a tabela, rode 'NOTIFY pgrst, "reload schema";' no SQL Editor.`);
+      toast.error(`Erro Supabase: ${error.message || '400 Bad Request'}. Dica: Se acabou de criar a tabela, rode 'NOTIFY pgrst, "reload schema";' no SQL Editor.`);
     }
 
     if (!error && data) {
@@ -247,7 +248,7 @@ export default function PayrollEvents() {
     setLoadingEvents(false);
   };
 
-  const openModal = () => {
+  const openModal = async () => {
     setSelectedContractId("");
     setSelectedRubricId("");
     setQuantity("");
@@ -259,7 +260,7 @@ export default function PayrollEvents() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activePeriod || !selectedContractId || !selectedRubricId) {
-      alert("Por favor, preencha todos os campos obrigatórios.");
+      toast.error("Por favor, preencha todos os campos obrigatórios.");
       return;
     }
 
@@ -290,14 +291,14 @@ export default function PayrollEvents() {
       fetchEvents(activePeriod.id);
     } catch (error) {
       console.error(error);
-      alert("Erro ao salvar lançamento.");
+      toast.error("Erro ao salvar lançamento.");
     } finally {
       setSaving(false);
     }
   };
 
   const deleteEvent = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir este lançamento?")) return;
+    if (!await confirmDialog("Deseja realmente excluir este lançamento?")) return;
     
     try {
       await supabase.from("payroll_variable_events").delete().eq("id", id);
@@ -306,16 +307,16 @@ export default function PayrollEvents() {
       }
     } catch (error) {
       console.error(error);
-      alert("Erro ao excluir lançamento.");
+      toast.error("Erro ao excluir lançamento.");
     }
   };
 
-  const getMonthName = (month: number) => {
+  const getMonthName = async (month: number) => {
     const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     return months[month - 1];
   };
 
-  const getPeriodTypeLabel = (type: string) => {
+  const getPeriodTypeLabel = async (type: string) => {
     switch(type) {
       case 'MONTHLY': return 'Mensal';
       case 'ADVANCE': return 'Adiantamento';
@@ -371,7 +372,7 @@ export default function PayrollEvents() {
                 {periods.map((p) => (
                   <button
                     key={p.id}
-                    onClick={() => selectPeriod(p)}
+                    onClick={async () => selectPeriod(p)}
                     className={`w-full flex items-center justify-between p-3 rounded-lg text-sm transition-all ${
                       activePeriod?.id === p.id 
                         ? 'bg-primary-50 border border-primary-200 text-primary-700 shadow-sm' 
@@ -486,7 +487,7 @@ export default function PayrollEvents() {
                         </td>
                         <td className="px-6 py-4 text-right">
                           <button 
-                            onClick={() => deleteEvent(evt.id)}
+                            onClick={async () => deleteEvent(evt.id)}
                             className="text-slate-400 hover:text-rose-600 p-2 rounded-lg hover:bg-rose-50 transition-colors"
                             title="Excluir"
                           >
@@ -512,7 +513,7 @@ export default function PayrollEvents() {
                 Lançar Evento Variável
               </h3>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={async () => setIsModalOpen(false)}
                 className="text-slate-400 hover:text-slate-700 transition-colors"
               >
                 <X size={20} />
@@ -613,7 +614,7 @@ export default function PayrollEvents() {
               <div className="px-6 py-4 bg-slate-100 border-t border-slate-200 flex justify-end gap-3 rounded-b-xl">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={async () => setIsModalOpen(false)}
                   className="btn-secondary"
                 >
                   Cancelar

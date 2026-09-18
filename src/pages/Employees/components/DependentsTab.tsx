@@ -3,6 +3,7 @@ import { Plus, Users, Loader2, AlertCircle, Pencil, Trash2, Calendar, FileText }
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
 import { format, parseISO } from "date-fns";
+import { toast } from 'sonner';
 
 const RELATIONSHIPS = [
   { value: "FILHO", label: "Filho(a)" },
@@ -12,7 +13,7 @@ const RELATIONSHIPS = [
   { value: "OUTRO", label: "Outro" }
 ];
 
-export default function DependentsTab({ workerId, onSaved }: any) {
+export default async function DependentsTab({ workerId, onSaved }: any) {
   const { user } = useAuth();
   const [dependents, setDependents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +63,7 @@ export default function DependentsTab({ workerId, onSaved }: any) {
     }
   };
 
-  const resetForm = () => {
+  const resetForm = async () => {
     setFormData({
       id: null,
       name: "",
@@ -81,7 +82,7 @@ export default function DependentsTab({ workerId, onSaved }: any) {
     setErrorMsg("");
   };
 
-  const handleEdit = (dep: any) => {
+  const handleEdit = async (dep: any) => {
     setFormData({
       id: dep.id,
       name: dep.name,
@@ -101,7 +102,7 @@ export default function DependentsTab({ workerId, onSaved }: any) {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Tem certeza que deseja excluir este dependente? Esta ação apagará o histórico folha para ele.")) return;
+    if (!await confirmDialog("Tem certeza que deseja excluir este dependente? Esta ação apagará o histórico folha para ele.")) return;
     try {
       const { error } = await supabase.from("dependents").delete().eq("id", id);
       if (error) throw error;
@@ -109,7 +110,7 @@ export default function DependentsTab({ workerId, onSaved }: any) {
       onSaved();
     } catch (err) {
       console.error("Erro ao excluir", err);
-      alert("Erro ao excluir dependente.");
+      toast.error("Erro ao excluir dependente.");
     }
   };
 
@@ -188,7 +189,7 @@ export default function DependentsTab({ workerId, onSaved }: any) {
           </div>
         </div>
         <button
-          onClick={() => {
+          onClick={async () => {
             resetForm();
             setIsModalOpen(true);
           }}
@@ -219,10 +220,10 @@ export default function DependentsTab({ workerId, onSaved }: any) {
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => handleEdit(dep)} className="p-1.5 text-slate-400 hover:text-primary-600 rounded-md hover:bg-primary-50">
+                  <button onClick={async () => handleEdit(dep)} className="p-1.5 text-slate-400 hover:text-primary-600 rounded-md hover:bg-primary-50">
                     <Pencil size={16} />
                   </button>
-                  <button onClick={() => handleDelete(dep.id)} className="p-1.5 text-slate-400 hover:text-red-600 rounded-md hover:bg-red-50">
+                  <button onClick={async () => handleDelete(dep.id)} className="p-1.5 text-slate-400 hover:text-red-600 rounded-md hover:bg-red-50">
                     <Trash2 size={16} />
                   </button>
                 </div>
@@ -273,7 +274,7 @@ export default function DependentsTab({ workerId, onSaved }: any) {
               <h2 className="text-xl font-bold text-slate-800">
                 {formData.id ? "Editar Dependente" : "Novo Dependente"}
               </h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={async () => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 &times;
               </button>
             </div>
@@ -372,7 +373,7 @@ export default function DependentsTab({ workerId, onSaved }: any) {
               </div>
 
               <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary">Cancelar</button>
+                <button type="button" onClick={async () => setIsModalOpen(false)} className="btn-secondary">Cancelar</button>
                 <button type="submit" disabled={saving} className="btn-primary">
                   {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                   Salvar Dependente

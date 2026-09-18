@@ -17,6 +17,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { useCompany } from "../../contexts/CompanyContext";
+import { toast } from 'sonner';
 
 export interface TRCTResult {
   proventos: any;
@@ -94,11 +95,11 @@ export default function OffboardingWizard() {
 
   const handleNext = () => {
     if (step === 1 && !selectedEmployee) {
-      alert("Selecione um colaborador antes de prosseguir.");
+      toast.error("Selecione um colaborador antes de prosseguir.");
       return;
     }
     if (step === 2 && (!resignationDate || !resignationReason)) {
-      alert("Preencha o motivo e a data efetiva do desligamento.");
+      toast.error("Preencha o motivo e a data efetiva do desligamento.");
       return;
     }
     setStep((s) => s + 1);
@@ -106,7 +107,7 @@ export default function OffboardingWizard() {
 
   const handleSimulate = async () => {
     if (!selectedEmployee || !resignationDate) {
-      alert("Preencha a Data Efetiva do Desligamento no Passo 2.");
+      toast.error("Preencha a Data Efetiva do Desligamento no Passo 2.");
       return;
     }
     
@@ -140,7 +141,7 @@ export default function OffboardingWizard() {
       setShowTRCT(true);
     } catch (err: any) {
       console.error("Erro ao calcular rescisão:", err);
-      alert("Erro ao calcular rescisão: " + err.message);
+      toast.error("Erro ao calcular rescisão: " + err.message);
     } finally {
       setIsSimulating(false);
     }
@@ -200,12 +201,12 @@ export default function OffboardingWizard() {
 
         if (contractError) throw contractError;
 
-        alert("Rescisão calculada e salva com sucesso!");
+        toast.error("Rescisão calculada e salva com sucesso!");
         navigate("/desligamentos");
       }
     } catch (err: any) {
       console.error(err);
-      alert(`Erro ao salvar a rescisão: ${err.message}`);
+      toast.error(`Erro ao salvar a rescisão: ${err.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -552,7 +553,7 @@ export default function OffboardingWizard() {
           <button
             onClick={() => {
               if (!trctResult) {
-                alert("Por favor, clique em 'Simular TRCT (Prévia)' acima primeiro para gerar os cálculos da rescisão.");
+                toast.error("Por favor, clique em 'Simular TRCT (Prévia)' acima primeiro para gerar os cálculos da rescisão.");
                 return;
               }
               handleSaveTRCT();

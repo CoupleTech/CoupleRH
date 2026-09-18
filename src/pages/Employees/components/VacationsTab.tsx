@@ -3,6 +3,7 @@ import { Plus, Calendar, AlertCircle } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
 import { vacationService } from "../../../services/vacationService";
 import VacationWizard from "../../Vacations/Wizard";
+import { toast } from 'sonner';
 
 interface VacationsTabProps {
   workerId: string | null;
@@ -76,7 +77,7 @@ export default function VacationsTab({ workerId, contract, onSaved }: VacationsT
 
       await fetchVestingPeriods();
     } catch (e: any) {
-      alert("Erro ao gerar período: " + e.message);
+      toast.error("Erro ao gerar período: " + e.message);
     } finally {
       setLoading(false);
     }

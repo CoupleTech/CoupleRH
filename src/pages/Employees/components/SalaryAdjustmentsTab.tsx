@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
 import { Plus, X, Loader2, Save } from "lucide-react";
 import { createPortal } from "react-dom";
+import { toast } from 'sonner';
 
 export default function SalaryAdjustmentsTab({ contractId, onSaved }: { contractId?: string | null, onSaved?: () => void }) {
   const [adjustments, setAdjustments] = useState<any[]>([]);
@@ -126,9 +127,9 @@ export default function SalaryAdjustmentsTab({ contractId, onSaved }: { contract
                  }
                }
             }
-          alert("Reajuste aplicado! Folhas complementares foram geradas para os meses fechados.");
+          toast.error("Reajuste aplicado! Folhas complementares foram geradas para os meses fechados.");
         } else {
-          alert("Reajuste aplicado com sucesso!");
+          toast.error("Reajuste aplicado com sucesso!");
         }
 
         setIsModalOpen(false);
@@ -138,7 +139,7 @@ export default function SalaryAdjustmentsTab({ contractId, onSaved }: { contract
       }
     } catch (err: any) {
       console.error(err);
-      alert(`Erro ao salvar reajuste: ${err.message}`);
+      toast.error(`Erro ao salvar reajuste: ${err.message}`);
     } finally {
       setSaving(false);
     }

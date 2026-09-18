@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import { Save, Loader2, AlertCircle, FileText, Plus, Trash2 } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
+import { toast } from 'sonner';
 
-export default function DocumentsTab({ workerId, initialData, onSaved }: any) {
+export default async function DocumentsTab({ workerId, initialData, onSaved }: any) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -97,7 +98,7 @@ export default function DocumentsTab({ workerId, initialData, onSaved }: any) {
   };
 
   const handleDelete = async (docId: string) => {
-    if (!confirm("Tem certeza que deseja remover este documento?")) return;
+    if (!await confirmDialog("Tem certeza que deseja remover este documento?")) return;
     
     try {
       const { error } = await supabase
@@ -109,7 +110,7 @@ export default function DocumentsTab({ workerId, initialData, onSaved }: any) {
       fetchDocuments();
     } catch (err) {
       console.error("Erro ao remover documento:", err);
-      alert("Erro ao remover documento.");
+      toast.error("Erro ao remover documento.");
     }
   };
 
@@ -142,7 +143,7 @@ export default function DocumentsTab({ workerId, initialData, onSaved }: any) {
               </p>
             </div>
             <button
-              onClick={() => setIsAdding(true)}
+              onClick={async () => setIsAdding(true)}
               className="btn-primary flex items-center gap-2"
               disabled={!workerId}
             >
@@ -185,7 +186,7 @@ export default function DocumentsTab({ workerId, initialData, onSaved }: any) {
                     </div>
                   </div>
                   <button
-                    onClick={() => handleDelete(doc.id)}
+                    onClick={async () => handleDelete(doc.id)}
                     className="text-slate-400 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-50"
                   >
                     <Trash2 size={18} />
@@ -266,7 +267,7 @@ export default function DocumentsTab({ workerId, initialData, onSaved }: any) {
           <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-slate-100">
             <button
               type="button"
-              onClick={() => setIsAdding(false)}
+              onClick={async () => setIsAdding(false)}
               className="btn-secondary"
               disabled={saving}
             >

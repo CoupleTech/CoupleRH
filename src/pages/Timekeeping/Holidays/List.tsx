@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../contexts/CompanyContext";
 import { Pagination } from "../../../components/Pagination";
+import { toast } from 'sonner';
 
 interface Holiday {
   id: string;
@@ -35,7 +36,7 @@ const HOLIDAY_TYPES: Record<string, { label: string, color: string }> = {
   'EMPRESA': { label: 'Empresa', color: 'bg-orange-50 text-orange-700 border-orange-200' },
 };
 
-export default function HolidaysList() {
+export default async function HolidaysList() {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");
@@ -104,14 +105,14 @@ export default function HolidaysList() {
       .eq("id", id);
       
     if (error) {
-      alert("Erro ao alterar status.");
+      toast.error("Erro ao alterar status.");
     } else {
       setHolidays(holidays.map(h => h.id === id ? { ...h, status: newStatus } : h));
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir este feriado? Só será possível se não houver vínculos.")) return;
+    if (!await confirmDialog("Deseja realmente excluir este feriado? Só será possível se não houver vínculos.")) return;
     
     const { error } = await supabase
       .from("holidays")
@@ -120,9 +121,9 @@ export default function HolidaysList() {
       
     if (error) {
       if (error.code === '23503') {
-        alert("Não é possível excluir este feriado pois ele está vinculado a outros registros.");
+        toast.error("Não é possível excluir este feriado pois ele está vinculado a outros registros.");
       } else {
-        alert("Erro ao excluir feriado.");
+        toast.error("Erro ao excluir feriado.");
       }
     } else {
       setHolidays(holidays.filter(h => h.id !== id));
@@ -156,7 +157,7 @@ export default function HolidaysList() {
         </div>
         
         <button 
-          onClick={() => navigate('/feriados/novo')}
+          onClick={async () => navigate('/feriados/novo')}
           className="btn-primary"
         >
           <Plus size={18} />
@@ -256,14 +257,14 @@ export default function HolidaysList() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => navigate(`/feriados/${item.id}`)}
+                          onClick={async () => navigate(`/feriados/${item.id}`)}
                           className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors cursor-pointer"
                           title="Editar"
                         >
                           <Edit2 size={16} />
                         </button>
                         <button 
-                          onClick={() => handleToggleStatus(item.id, item.status)}
+                          onClick={async () => handleToggleStatus(item.id, item.status)}
                           className={`p-2 rounded-lg transition-colors cursor-pointer ${
                             item.status === 'ACTIVE' 
                               ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' 
@@ -274,7 +275,7 @@ export default function HolidaysList() {
                           <Power size={16} />
                         </button>
                         <button 
-                          onClick={() => handleDelete(item.id)}
+                          onClick={async () => handleDelete(item.id)}
                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                           title="Excluir"
                         >
@@ -312,7 +313,7 @@ export default function HolidaysList() {
             </p>
             {!searchTerm && (
               <button 
-                onClick={() => navigate('/feriados/novo')}
+                onClick={async () => navigate('/feriados/novo')}
                 className="btn-primary"
               >
                 <Plus size={18} />

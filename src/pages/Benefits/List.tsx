@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { Pagination } from "../../components/Pagination";
+import { toast } from 'sonner';
 
 interface Benefit {
   id: string;
@@ -27,7 +28,7 @@ interface Benefit {
   rubric_id?: string;
 }
 
-export default function BenefitsList() {
+export default async function BenefitsList() {
   const [benefits, setBenefits] = useState<Benefit[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -76,7 +77,7 @@ export default function BenefitsList() {
 
       if (error) {
         console.error("ERRO LISTAGEM SUPABASE:", error);
-        alert(`Erro Supabase (Listagem Benefícios): ${error.message}`);
+        toast.error(`Erro Supabase (Listagem Benefícios): ${error.message}`);
       }
 
       if (!error && data) {
@@ -96,7 +97,7 @@ export default function BenefitsList() {
     setLoading(false);
   };
 
-  const getBenefitIcon = (type: string) => {
+  const getBenefitIcon = async (type: string) => {
     switch (type) {
       case "TRANSPORTATION":
         return <Bus size={18} className="text-emerald-500" />;
@@ -111,7 +112,7 @@ export default function BenefitsList() {
     }
   };
 
-  const getBenefitTypeLabel = (type: string) => {
+  const getBenefitTypeLabel = async (type: string) => {
     switch (type) {
       case "TRANSPORTATION":
         return "Vale Transporte";
@@ -130,7 +131,7 @@ export default function BenefitsList() {
     }
   };
 
-  const openModal = (b?: Benefit) => {
+  const openModal = async (b?: Benefit) => {
     if (b) {
       setEditingId(b.id);
       setName(b.name);
@@ -195,14 +196,14 @@ export default function BenefitsList() {
       fetchBenefits();
       } catch (err: any) {
         console.error("Erro ao salvar:", err);
-        alert("Erro ao salvar o benefício: " + err.message);
+        toast.error("Erro ao salvar o benefício: " + err.message);
       } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir este benefício?")) return;
+    if (!await confirmDialog("Deseja realmente excluir este benefício?")) return;
     
     const { error } = await supabase
       .from("benefit_catalogs")
@@ -211,9 +212,9 @@ export default function BenefitsList() {
       
     if (error) {
       if (error.code === '23503') {
-        alert("Não é possível excluir este benefício pois ele está vinculado a colaboradores.");
+        toast.error("Não é possível excluir este benefício pois ele está vinculado a colaboradores.");
       } else {
-        alert("Erro ao excluir benefício.");
+        toast.error("Erro ao excluir benefício.");
       }
     } else {
       setBenefits(benefits.filter(b => b.id !== id));
@@ -245,7 +246,7 @@ export default function BenefitsList() {
           <p className="text-sm text-slate-500 mt-1">Gerencie os benefícios oferecidos pela empresa aos colaboradores.</p>
         </div>
 
-        <button onClick={() => openModal()} className="btn-primary">
+        <button onClick={async () => openModal()} className="btn-primary">
           <Plus size={18} />
           <span>Novo Benefício</span>
         </button>
@@ -322,14 +323,14 @@ export default function BenefitsList() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
-                          onClick={() => openModal(b)}
+                          onClick={async () => openModal(b)}
                           className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors cursor-pointer"
                           title="Editar Benefício"
                         >
                           <Pencil size={16} />
                         </button>
                         <button 
-                          onClick={() => handleDelete(b.id)}
+                          onClick={async () => handleDelete(b.id)}
                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                           title="Excluir"
                         >
@@ -514,7 +515,7 @@ export default function BenefitsList() {
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 rounded-b-lg">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={async () => setIsModalOpen(false)}
                   className="btn-secondary"
                 >
                   Cancelar

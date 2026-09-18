@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { Pagination } from "../../components/Pagination";
+import { toast } from 'sonner';
 
 interface PersonalDocument {
   id: string;
@@ -27,7 +28,7 @@ interface PersonalDocument {
   } | null;
 }
 
-export default function PersonalDocsInbox() {
+export default async function PersonalDocsInbox() {
   const [searchTerm, setSearchTerm] = useState("");
   const [docs, setDocs] = useState<PersonalDocument[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,7 +75,7 @@ export default function PersonalDocsInbox() {
 
   const handleUpdateStatus = async (id: string, status: string) => {
     if (status === 'REJECTED') {
-      const confirmed = window.confirm("Tem certeza que deseja rejeitar este documento? O colaborador terá que reenviar.");
+      const confirmed = await confirmDialog("Tem certeza que deseja rejeitar este documento? O colaborador terá que reenviar.");
       if (!confirmed) return;
     }
 
@@ -88,13 +89,13 @@ export default function PersonalDocsInbox() {
       if (error) throw error;
       await fetchDocs();
     } catch (err) {
-      alert("Erro ao atualizar o documento.");
+      toast.error("Erro ao atualizar o documento.");
     } finally {
       setProcessingId(null);
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = async (status: string) => {
     switch (status) {
       case "SUBMITTED":
         return (
@@ -231,7 +232,7 @@ export default function PersonalDocsInbox() {
                             <>
                               <button
                                 disabled={processingId === doc.id}
-                                onClick={() => handleUpdateStatus(doc.id, 'APPROVED')}
+                                onClick={async () => handleUpdateStatus(doc.id, 'APPROVED')}
                                 className="flex items-center justify-center w-8 h-8 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50"
                                 title="Aprovar"
                               >
@@ -239,7 +240,7 @@ export default function PersonalDocsInbox() {
                               </button>
                               <button
                                 disabled={processingId === doc.id}
-                                onClick={() => handleUpdateStatus(doc.id, 'REJECTED')}
+                                onClick={async () => handleUpdateStatus(doc.id, 'REJECTED')}
                                 className="flex items-center justify-center w-8 h-8 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
                                 title="Rejeitar"
                               >
