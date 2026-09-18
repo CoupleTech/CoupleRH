@@ -31,8 +31,8 @@ import {
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { toast } from 'sonner';
-
-// ── Types ──
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";// ── Types ──
 interface EmployeeAuth {
   isAuthenticated: boolean;
   workerId: string;
@@ -360,6 +360,67 @@ export default function EmployeePortal() {
     } finally {
       setLoadingPayslipDetails(false);
     }
+  };
+
+  const handleDownloadPDF = () => {
+    if (!payslipDetails || !profile) return;
+    
+    // Find the payslip to get period details
+    const currentPayslip = payslips.find(p => p.id === selectedPayslipId) || payslips[0];
+    if (!currentPayslip) return;
+
+    const doc = new jsPDF('portrait');
+    
+    // Header
+    doc.setFontSize(16);
+    doc.text("Recibo de Pagamento de Salário", 14, 20);
+    
+    doc.setFontSize(10);
+    doc.text(`Colaborador: ${profile.full_name}`, 14, 30);
+    doc.text(`Cargo: ${profile.contract?.position_title || 'N/A'}`, 14, 36);
+    doc.text(`Competência: ${String(currentPayslip.period_month).padStart(2, '0')}/${currentPayslip.period_year}`, 14, 42);
+
+    // Items
+    const tableData = payslipDetails.items?.map((item: any) => [
+      item.code || "—",
+      item.name,
+      item.reference || "—",
+      item.type === 'EARNING' ? formatCurrency(item.amount) : "",
+      item.type === 'DEDUCTION' ? formatCurrency(item.amount) : ""
+    ]) || [];
+
+    autoTable(doc, {
+      startY: 50,
+      head: [['Cód.', 'Descrição', 'Ref.', 'Vencimentos', 'Descontos']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [241, 245, 249], textColor: [71, 85, 105], fontStyle: 'bold' },
+      styles: { fontSize: 9 },
+      columnStyles: {
+        3: { halign: 'right', textColor: [5, 150, 105] },
+        4: { halign: 'right', textColor: [225, 29, 72] }
+      }
+    });
+
+    // Totals
+    const finalY = (doc as any).lastAutoTable.finalY || 50;
+    
+    autoTable(doc, {
+      startY: finalY + 5,
+      body: [
+        ['Total de Vencimentos', formatCurrency(payslipDetails.totals?.total_earnings)],
+        ['Total de Descontos', formatCurrency(payslipDetails.totals?.total_deductions)],
+        ['Líquido a Receber', formatCurrency(payslipDetails.totals?.net_salary)]
+      ],
+      theme: 'plain',
+      styles: { fontSize: 10, fontStyle: 'bold' },
+      columnStyles: {
+        0: { halign: 'right' },
+        1: { halign: 'right', cellWidth: 40 }
+      }
+    });
+
+    doc.save(`holerite_${currentPayslip.period_month}_${currentPayslip.period_year}.pdf`);
   };
 
   const compressImage = (file: File): Promise<File> => {
@@ -1183,6 +1244,7 @@ export default function EmployeePortal() {
             {/* Modal Footer */}
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3">
               <button 
+                onClick={handleDownloadPDF}
                 className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-sm font-semibold rounded-xl transition-colors shadow-sm"
               >
                 <FileDown size={16} /> Baixar PDF
