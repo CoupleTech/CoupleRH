@@ -28,7 +28,7 @@ interface Benefit {
   rubric_id?: string;
 }
 
-export default async function BenefitsList() {
+export default function () {
   const [benefits, setBenefits] = useState<Benefit[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");

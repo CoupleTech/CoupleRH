@@ -28,7 +28,7 @@ interface PersonalDocument {
   } | null;
 }
 
-export default async function PersonalDocsInbox() {
+export default function () {
   const [searchTerm, setSearchTerm] = useState("");
   const [docs, setDocs] = useState<PersonalDocument[]>([]);
   const [loading, setLoading] = useState(true);

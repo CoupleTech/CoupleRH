@@ -38,7 +38,7 @@ interface Leave {
   } | null;
 }
 
-export default async function LeavesList() {
+export default function () {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");

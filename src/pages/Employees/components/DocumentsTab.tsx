@@ -4,7 +4,7 @@ import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
 import { toast } from 'sonner';
 
-export default async function DocumentsTab({ workerId, initialData, onSaved }: any) {
+export default function ({ workerId, initialData, onSaved }: any) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

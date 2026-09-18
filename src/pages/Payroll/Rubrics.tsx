@@ -46,7 +46,7 @@ interface Rubric {
   is_active: boolean;
 }
 
-export default async function PayrollRubrics() {
+export default function () {
   const [rubrics, setRubrics] = useState<Rubric[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");

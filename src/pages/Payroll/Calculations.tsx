@@ -64,7 +64,7 @@ interface MemoryCalcItem {
   engine_version: string;
 }
 
-export default async function PayrollCalculations() {
+export default function () {
   const { selectedCompanyId } = useCompany();
   const [periods, setPeriods] = useState<PayrollPeriod[]>([]);
   const [activePeriod, setActivePeriod] = useState<PayrollPeriod | null>(null);

@@ -38,7 +38,7 @@ interface Deduction {
   payroll_rubrics: Rubric;
 }
 
-export default async function EmployeeDeductionsTab({
+export default function ({
   contractId,
 }: {
   contractId: string;

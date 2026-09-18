@@ -33,7 +33,7 @@ interface Workplace {
   };
 }
 
-export default async function WorkplacesList() {
+export default function () {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");

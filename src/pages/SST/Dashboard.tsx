@@ -31,7 +31,7 @@ interface HealthExam {
   } | null;
 }
 
-export default async function SstDashboard() {
+export default function () {
   const [searchTerm, setSearchTerm] = useState("");
   const [exams, setExams] = useState<HealthExam[]>([]);
   const [loading, setLoading] = useState(true);

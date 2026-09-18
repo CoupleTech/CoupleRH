@@ -13,7 +13,7 @@ const RELATIONSHIPS = [
   { value: "OUTRO", label: "Outro" }
 ];
 
-export default async function DependentsTab({ workerId, onSaved }: any) {
+export default function ({ workerId, onSaved }: any) {
   const { user } = useAuth();
   const [dependents, setDependents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

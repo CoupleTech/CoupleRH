@@ -19,7 +19,7 @@ interface Position {
   };
 }
 
-export default async function PositionsList() {
+export default function () {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");

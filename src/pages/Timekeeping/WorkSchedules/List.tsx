@@ -29,7 +29,7 @@ interface WorkSchedule {
   };
 }
 
-export default async function WorkSchedulesList() {
+export default function () {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");

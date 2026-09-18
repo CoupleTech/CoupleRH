@@ -29,7 +29,7 @@ interface TenantUser {
   created_at: string;
 }
 
-export default async function RolesAndProfilesTab() {
+export default function () {
   const [activeSubTab, setActiveSubTab] = useState<'usuarios' | 'perfis'>('usuarios');
   
   const [users, setUsers] = useState<TenantUser[]>([]);

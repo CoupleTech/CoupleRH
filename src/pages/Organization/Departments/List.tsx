@@ -27,7 +27,7 @@ interface Department {
   } | null;
 }
 
-export default async function DepartmentsList() {
+export default function () {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");

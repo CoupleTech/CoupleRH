@@ -36,7 +36,7 @@ const HOLIDAY_TYPES: Record<string, { label: string, color: string }> = {
   'EMPRESA': { label: 'Empresa', color: 'bg-orange-50 text-orange-700 border-orange-200' },
 };
 
-export default async function HolidaysList() {
+export default function () {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");

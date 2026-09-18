@@ -32,7 +32,7 @@ interface Sector {
   };
 }
 
-export default async function SectorsList() {
+export default function () {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");

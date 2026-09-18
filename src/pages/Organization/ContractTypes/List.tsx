@@ -44,7 +44,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   'OUTROS': 'bg-slate-50 text-slate-700 border-slate-200',
 };
 
-export default async function ContractTypesList() {
+export default function () {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");

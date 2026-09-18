@@ -33,7 +33,7 @@ interface EmployeeBenefit {
   benefit_catalogs: Benefit;
 }
 
-export default async function EmployeeBenefitsTab({
+export default function ({
   contractId,
 }: {
   contractId: string;

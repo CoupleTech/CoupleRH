@@ -28,7 +28,7 @@ interface CostCenter {
   };
 }
 
-export default async function CostCentersList() {
+export default function () {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const [searchTerm, setSearchTerm] = useState("");

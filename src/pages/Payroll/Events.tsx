@@ -53,7 +53,7 @@ interface PayrollEvent {
   notes: string;
 }
 
-export default async function PayrollEvents() {
+export default function () {
   const { selectedCompanyId } = useCompany();
   const [periods, setPeriods] = useState<PayrollPeriod[]>([]);
   const [activePeriod, setActivePeriod] = useState<PayrollPeriod | null>(null);

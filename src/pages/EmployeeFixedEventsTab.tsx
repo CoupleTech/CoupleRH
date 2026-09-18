@@ -32,7 +32,7 @@ interface FixedEvent {
   payroll_rubrics: Rubric;
 }
 
-export default async function EmployeeFixedEventsTab({
+export default function ({
   contractId,
 }: {
   contractId: string;
