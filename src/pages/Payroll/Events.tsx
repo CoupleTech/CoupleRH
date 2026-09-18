@@ -15,6 +15,7 @@ import {
 import { supabase } from "../../lib/supabase";
 import { useCompany } from "../../contexts/CompanyContext";
 import { toast } from 'sonner';
+import { confirmDialog } from '..\..\components\ConfirmDialogProvider';
 
 interface PayrollPeriod {
   id: string;

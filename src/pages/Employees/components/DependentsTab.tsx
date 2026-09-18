@@ -4,6 +4,7 @@ import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
 import { format, parseISO } from "date-fns";
 import { toast } from 'sonner';
+import { confirmDialog } from '..\..\..\components\ConfirmDialogProvider';
 
 const RELATIONSHIPS = [
   { value: "FILHO", label: "Filho(a)" },

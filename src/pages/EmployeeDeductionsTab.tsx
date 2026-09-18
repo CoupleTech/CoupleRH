@@ -16,6 +16,7 @@ import {
 import { supabase } from "../lib/supabase";
 import { formatDate } from "../lib/dateUtils";
 import { toast } from 'sonner';
+import { confirmDialog } from '..\components\ConfirmDialogProvider';
 
 interface Rubric {
   id: string;

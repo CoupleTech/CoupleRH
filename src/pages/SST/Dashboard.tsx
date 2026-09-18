@@ -14,6 +14,7 @@ import {
 import { supabase } from "../../lib/supabase";
 import { Pagination } from "../../components/Pagination";
 import { toast } from 'sonner';
+import { confirmDialog } from '..\..\components\ConfirmDialogProvider';
 
 interface HealthExam {
   id: string;
