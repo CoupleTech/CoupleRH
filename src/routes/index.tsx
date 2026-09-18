@@ -4,6 +4,7 @@ import ProtectedRoute from '../components/ProtectedRoute';
 import { AuthProvider } from '../contexts/AuthContext';
 import { CompanyProvider } from '../contexts/CompanyContext';
 import Login from '../pages/Login';
+import UpdatePassword from '../pages/UpdatePassword';
 import Templates from '../pages/Documents/Templates';
 import SignaturesVault from '../pages/Documents/SignaturesVault';
 import PersonalDocsInbox from '../pages/Documents/PersonalDocsInbox';
@@ -61,6 +62,7 @@ export function AppRoutes() {
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/update-password" element={<UpdatePassword />} />
           <Route path="/portal/login" element={<EmployeePortalLogin />} />
           <Route path="/portal/dashboard" element={<EmployeePortal />} />
           

@@ -60,12 +60,17 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
+    // Determina a URL de origem baseada no header da requisição
+    const origin = req.headers.get("origin") || req.headers.get("referer") || "http://localhost:5173";
+    const redirectTo = `${origin.replace(/\/$/, '')}/update-password`;
+
     // 1. Invitar o usuário no auth
     // O Supabase enviará um email com link mágico para o usuário
     const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       email,
       {
         data: { full_name },
+        redirectTo,
       }
     );
 
