@@ -77,6 +77,8 @@ export const vacationService = {
       // @ts-ignore
       w.employment_contracts?.forEach(c => {
         contractToWorker.set(c.id, {
+          worker_id: w.id,
+          company_id: c.company_id,
           // @ts-ignore
           full_name: w.people?.full_name,
           // @ts-ignore
@@ -90,6 +92,7 @@ export const vacationService = {
       employment_contracts: {
         company_id: contractToWorker.get(p.contract_id)?.company_id || null,
         workers: {
+          id: contractToWorker.get(p.contract_id)?.worker_id || null,
           people: contractToWorker.get(p.contract_id) || null
         }
       }
@@ -121,6 +124,8 @@ export const vacationService = {
       // @ts-ignore
       w.employment_contracts?.forEach(c => {
         contractToWorker.set(c.id, {
+          worker_id: w.id,
+          company_id: c.company_id,
           // @ts-ignore
           full_name: w.people?.full_name,
           // @ts-ignore
@@ -140,6 +145,7 @@ export const vacationService = {
         employment_contracts: {
           company_id: periodToWorker.get(r.vesting_period_id)?.company_id || null,
           workers: {
+            id: periodToWorker.get(r.vesting_period_id)?.worker_id || null,
             people: periodToWorker.get(r.vesting_period_id) || null
           }
         }

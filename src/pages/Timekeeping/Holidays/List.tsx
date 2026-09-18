@@ -13,6 +13,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../contexts/CompanyContext";
+import { Pagination } from "../../../components/Pagination";
 
 interface Holiday {
   id: string;
@@ -40,6 +41,13 @@ export default function HolidaysList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   // Filtros de Mês/Ano
   const currentYear = new Date().getFullYear();
@@ -126,6 +134,12 @@ export default function HolidaysList() {
       item.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const totalPages = Math.ceil(filteredHolidays.length / pageSize);
+  const paginatedHolidays = filteredHolidays.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -183,7 +197,8 @@ export default function HolidaysList() {
             <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
           </div>
         ) : filteredHolidays.length > 0 ? (
-          <div className="overflow-x-auto">
+          <>
+            <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-200">
@@ -196,7 +211,7 @@ export default function HolidaysList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filteredHolidays.map((item) => (
+                {paginatedHolidays.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-6 py-4">
                       <span className="font-mono text-sm text-slate-700">
@@ -272,6 +287,18 @@ export default function HolidaysList() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredHolidays.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        </>
         ) : (
           <div className="flex flex-col items-center justify-center p-12 text-center">
             <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">

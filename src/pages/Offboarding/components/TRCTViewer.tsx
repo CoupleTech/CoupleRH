@@ -9,7 +9,10 @@ export default function TRCTViewer({ termination, onClose }: TRCTViewerProps) {
   const trctResult = termination.calculated_trct;
   const contract = termination.employment_contracts;
   const workerName = contract?.workers?.people?.full_name || "Desconhecido";
+  const workerCpf = contract?.workers?.people?.cpf || "Não informado";
   const baseSalary = contract?.base_salary || 0;
+  const companyName = contract?.companies?.corporate_name || "Desconhecida";
+  const companyCnpj = contract?.companies?.cnpj || "Não informado";
 
   const handlePrint = () => {
     window.print();
@@ -72,12 +75,15 @@ export default function TRCTViewer({ termination, onClose }: TRCTViewerProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div className="p-4 border border-slate-300 rounded-lg">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Dados do Empregador</h3>
-              <p className="font-semibold text-slate-900">Empresa de Teste Ltda (Demo)</p>
-              <p className="text-sm text-slate-600 mt-1">CNPJ: 00.000.000/0001-00</p>
+              <p className="font-semibold text-slate-900">{companyName}</p>
+              <p className="text-sm text-slate-600 mt-1">CNPJ: {companyCnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5")}</p>
             </div>
             <div className="p-4 border border-slate-300 rounded-lg">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Dados do Trabalhador</h3>
               <p className="font-semibold text-slate-900">{workerName}</p>
+              <p className="text-sm text-slate-600 mt-1">
+                CPF: {workerCpf.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}
+              </p>
               <p className="text-sm text-slate-600 mt-1">
                 Data de Afastamento: {new Date(termination.last_working_day).toLocaleDateString("pt-BR")}
               </p>
@@ -279,7 +285,7 @@ export default function TRCTViewer({ termination, onClose }: TRCTViewerProps) {
                <div className="text-center">
                   <div className="border-t border-slate-900 w-full mb-2 pt-2"></div>
                   <p className="font-bold text-sm text-slate-800">Empregador</p>
-                  <p className="text-xs text-slate-500">Empresa de Teste Ltda</p>
+                  <p className="text-xs text-slate-500">{companyName}</p>
                </div>
                <div className="text-center">
                   <div className="border-t border-slate-900 w-full mb-2 pt-2"></div>

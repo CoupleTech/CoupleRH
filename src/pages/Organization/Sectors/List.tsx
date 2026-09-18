@@ -14,6 +14,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../contexts/CompanyContext";
+import { Pagination } from "../../../components/Pagination";
 
 interface Sector {
   id: string;
@@ -36,6 +37,13 @@ export default function SectorsList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchSectors();
@@ -115,6 +123,12 @@ export default function SectorsList() {
       sector.departments?.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const totalPages = Math.ceil(filteredSectors.length / pageSize);
+  const paginatedSectors = filteredSectors.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -160,7 +174,8 @@ export default function SectorsList() {
             <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
           </div>
         ) : filteredSectors.length > 0 ? (
-          <div className="overflow-x-auto">
+          <>
+            <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-200">
@@ -172,7 +187,7 @@ export default function SectorsList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filteredSectors.map((sector) => (
+                {paginatedSectors.map((sector) => (
                   <tr key={sector.id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -241,6 +256,18 @@ export default function SectorsList() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredSectors.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        </>
         ) : (
           <div className="flex flex-col items-center justify-center p-12 text-center">
             <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">

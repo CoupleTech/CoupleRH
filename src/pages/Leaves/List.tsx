@@ -19,6 +19,7 @@ import { useNavigate } from "react-router-dom";
 import { leaveService } from "../../services/leaveService";
 import { useCompany } from "../../contexts/CompanyContext";
 import { supabase } from "../../lib/supabase";
+import { Pagination } from "../../components/Pagination";
 
 interface Leave {
   id: string;
@@ -42,6 +43,13 @@ export default function LeavesList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [leaves, setLeaves] = useState<Leave[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
   const [selectedLeaveView, setSelectedLeaveView] = useState<Leave | null>(null);
 
   useEffect(() => {
@@ -124,6 +132,12 @@ export default function LeavesList() {
     return name.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
+  const totalPages = Math.ceil(filteredLeaves.length / pageSize);
+  const paginatedLeaves = filteredLeaves.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -169,7 +183,8 @@ export default function LeavesList() {
             <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
           </div>
         ) : filteredLeaves.length > 0 ? (
-          <div className="overflow-x-auto">
+          <>
+            <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-200">
@@ -182,7 +197,7 @@ export default function LeavesList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filteredLeaves.map((leave) => {
+                {paginatedLeaves.map((leave) => {
                   const name = leave.employment_contracts?.workers?.people?.full_name || "Desconhecido";
                   const days = calculateDays(leave.start_date, leave.end_date);
 
@@ -267,6 +282,18 @@ export default function LeavesList() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredLeaves.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        </>
         ) : (
           <div className="flex flex-col items-center justify-center p-12 text-center">
             <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">

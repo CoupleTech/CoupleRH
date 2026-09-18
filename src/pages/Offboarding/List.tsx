@@ -3,6 +3,7 @@ import { Search, UserMinus, ChevronRight, Loader2, Edit2, FileText } from "lucid
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import TRCTViewer from "./components/TRCTViewer";
+import { Pagination } from "../../components/Pagination";
 
 interface Termination {
   id: string;
@@ -11,10 +12,16 @@ interface Termination {
   status: string;
   calculated_trct: any;
   employment_contracts: {
+    base_salary: number;
     workers: {
       people: {
         full_name: string;
+        cpf: string;
       };
+    } | null;
+    companies: {
+      corporate_name: string;
+      cnpj: string;
     } | null;
   } | null;
 }
@@ -24,6 +31,13 @@ export default function TerminationsList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [terminations, setTerminations] = useState<Termination[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
   const [selectedTRCT, setSelectedTRCT] = useState<Termination | null>(null);
 
   useEffect(() => {
@@ -52,10 +66,16 @@ export default function TerminationsList() {
         .from("employment_contracts")
         .select(`
           id,
+          base_salary,
           workers (
             people (
-              full_name
+              full_name,
+              cpf
             )
+          ),
+          companies (
+            corporate_name,
+            cnpj
           )
         `)
         .in("id", contractIds);
@@ -82,6 +102,12 @@ export default function TerminationsList() {
     const name = t.employment_contracts?.workers?.people?.full_name || "";
     return name.toLowerCase().includes(searchTerm.toLowerCase());
   });
+
+  const totalPages = Math.ceil(filteredTerminations.length / pageSize);
+  const paginatedTerminations = filteredTerminations.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   return (
     <div className="space-y-6">
@@ -128,7 +154,8 @@ export default function TerminationsList() {
             <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
           </div>
         ) : filteredTerminations.length > 0 ? (
-          <div className="overflow-x-auto">
+          <>
+            <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-200">
@@ -139,7 +166,7 @@ export default function TerminationsList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filteredTerminations.map((term) => {
+                {paginatedTerminations.map((term) => {
                   const name = term.employment_contracts?.workers?.people?.full_name || "Desconhecido";
                   return (
                     <tr key={term.id} className="hover:bg-slate-50/50 transition-colors group">
@@ -182,6 +209,18 @@ export default function TerminationsList() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredTerminations.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        </>
         ) : (
           <div className="flex flex-col items-center justify-center p-12 text-center">
             <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">

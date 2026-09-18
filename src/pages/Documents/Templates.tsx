@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, FileText, Edit3, Trash2, Loader2 } from "lucide-react";
+import { Search, Plus, FileText, Edit3, Trash2, Loader2, MoreVertical } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { Pagination } from "../../components/Pagination";
 
 interface DocumentTemplate {
   id: string;
@@ -15,6 +16,13 @@ export default function Templates() {
   const [searchTerm, setSearchTerm] = useState("");
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchTemplates();
@@ -49,6 +57,12 @@ export default function Templates() {
 
   const filteredTemplates = templates.filter((t) =>
     t.title.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+
+  const totalPages = Math.ceil(filteredTemplates.length / pageSize);
+  const paginatedTemplates = filteredTemplates.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
   );
 
   return (
@@ -108,15 +122,12 @@ export default function Templates() {
                 </tr>
               ) : filteredTemplates.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={4}
-                    className="px-6 py-12 text-center text-slate-500 font-bold"
-                  >
-                    Nenhum modelo de documento encontrado.
+                  <td colSpan={3} className="px-6 py-12 text-center text-slate-500 font-bold">
+                    Nenhum template encontrado.
                   </td>
                 </tr>
               ) : (
-                filteredTemplates.map((template) => (
+                paginatedTemplates.map((template) => (
                   <tr
                     key={template.id}
                     className="hover:bg-slate-50 transition-colors group"
@@ -171,6 +182,20 @@ export default function Templates() {
             </tbody>
           </table>
         </div>
+        
+        {!loading && filteredTemplates.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredTemplates.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        )}
       </div>
     </div>
   );

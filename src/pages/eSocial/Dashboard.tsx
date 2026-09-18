@@ -9,6 +9,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { Pagination } from "../../components/Pagination";
 
 interface ESocialTransmission {
   id: string;
@@ -25,6 +26,13 @@ export default function ESocialDashboard() {
   const [transmissions, setTransmissions] = useState<ESocialTransmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [isTransmitting, setIsTransmitting] = useState(false);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchTransmissions();
@@ -105,7 +113,13 @@ export default function ESocialDashboard() {
   const filteredTransmissions = transmissions.filter(
     (t) =>
       t.event_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (t.receipt_number && t.receipt_number.includes(searchTerm)),
+      t.status.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+
+  const totalPages = Math.ceil(filteredTransmissions.length / pageSize);
+  const paginatedTransmissions = filteredTransmissions.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
   );
 
   const stats = {
@@ -227,13 +241,13 @@ export default function ESocialDashboard() {
                 <tr>
                   <td
                     colSpan={5}
-                    className="px-6 py-12 text-center text-slate-500 font-medium"
+                    className="px-6 py-12 text-center text-slate-500 font-bold"
                   >
-                    Nenhuma transmissão eSocial encontrada.
+                    Nenhum evento encontrado.
                   </td>
                 </tr>
               ) : (
-                filteredTransmissions.map((t) => (
+                paginatedTransmissions.map((t) => (
                   <tr
                     key={t.id}
                     className="hover:bg-slate-50 transition-colors group"
@@ -259,6 +273,20 @@ export default function ESocialDashboard() {
             </tbody>
           </table>
         </div>
+        
+        {!loading && filteredTransmissions.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredTransmissions.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        )}
       </div>
     </div>
   );

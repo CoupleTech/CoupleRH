@@ -15,6 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { Pagination } from "../../components/Pagination";
 
 interface Benefit {
   id: string;
@@ -30,6 +31,13 @@ export default function BenefitsList() {
   const [benefits, setBenefits] = useState<Benefit[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -216,6 +224,12 @@ export default function BenefitsList() {
     b.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paginated = filtered.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       {/* Header */}
@@ -258,8 +272,9 @@ export default function BenefitsList() {
             <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
           </div>
         ) : filtered.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-200">
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Benefício / Tipo</th>
@@ -269,7 +284,7 @@ export default function BenefitsList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filtered.map((b) => (
+                {paginated.map((b) => (
                   <tr key={b.id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -327,6 +342,18 @@ export default function BenefitsList() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filtered.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        </>
         ) : (
           <div className="flex flex-col items-center justify-center p-12 text-center">
             <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">

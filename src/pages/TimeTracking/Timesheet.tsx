@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useCompany } from "../../contexts/CompanyContext";
+import { Pagination } from "../../components/Pagination";
 
 interface PayrollPeriod {
   id: string;
@@ -30,10 +31,12 @@ interface Rubric {
 
 // Mapa de códigos que usaremos na UI
 const TARGET_CODES = {
-  FALTAS: '210',
-  ATRASOS: '211',
+  FALTAS: '801',
+  ATRASOS: '802',
   HE50: '150',
-  HE100: '160'
+  HE60: '151',
+  HE100: '160',
+  ADICIONAL_NOTURNO: '301'
 };
 
 export default function Timesheet() {
@@ -43,6 +46,13 @@ export default function Timesheet() {
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   const [periods, setPeriods] = useState<PayrollPeriod[]>([]);
   const [activePeriodId, setActivePeriodId] = useState<string>("");
@@ -148,7 +158,9 @@ export default function Timesheet() {
         [TARGET_CODES.FALTAS]: 0,
         [TARGET_CODES.ATRASOS]: 0,
         [TARGET_CODES.HE50]: 0,
-        [TARGET_CODES.HE100]: 0
+        [TARGET_CODES.HE60]: 0,
+        [TARGET_CODES.HE100]: 0,
+        [TARGET_CODES.ADICIONAL_NOTURNO]: 0
       };
     });
 
@@ -245,6 +257,12 @@ export default function Timesheet() {
     c.worker_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const totalPages = Math.ceil(filteredContracts.length / pageSize);
+  const paginatedContracts = filteredContracts.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
     <div className="animate-fade-up">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
@@ -320,74 +338,102 @@ export default function Timesheet() {
       </div>
 
       <div className="panel rounded-t-none overflow-x-auto shadow-sm min-h-[400px]">
-        <table className="w-full text-left border-collapse">
+        <table className="w-full text-left border-collapse whitespace-nowrap">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-              <th className="px-6 py-4">Colaborador</th>
-              <th className="px-4 py-4 w-32 text-center text-rose-600">Faltas (Dias)</th>
-              <th className="px-4 py-4 w-32 text-center text-orange-600">Atrasos (Horas)</th>
-              <th className="px-4 py-4 w-32 text-center text-emerald-600">H.E 50% (Horas)</th>
-              <th className="px-4 py-4 w-32 text-center text-emerald-700">H.E 100% (Horas)</th>
+              <th className="px-6 py-4 sticky left-0 bg-slate-50 z-10 shadow-[inset_-1px_0_0_0_#e2e8f0]">Colaborador</th>
+              <th className="px-4 py-4 w-28 text-center text-rose-600">Faltas (Dias)</th>
+              <th className="px-4 py-4 w-28 text-center text-orange-600">Atrasos (Hs)</th>
+              <th className="px-4 py-4 w-28 text-center text-emerald-600">H.E 50% (Hs)</th>
+              <th className="px-4 py-4 w-28 text-center text-emerald-600">H.E 60% (Hs)</th>
+              <th className="px-4 py-4 w-28 text-center text-emerald-700">H.E 100% (Hs)</th>
+              <th className="px-4 py-4 w-28 text-center text-indigo-600">Adic. Noturno (Hs)</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
                   <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary-500 mb-2" />
                   Carregando contratos e lançamentos...
                 </td>
               </tr>
             ) : filteredContracts.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-slate-500 font-bold">
+                <td colSpan={7} className="px-6 py-12 text-center text-slate-500 font-bold">
                   Nenhum colaborador encontrado para esta empresa.
                 </td>
               </tr>
             ) : (
-              filteredContracts.map((c) => (
-                <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4 font-bold text-slate-800">
+              paginatedContracts.map((c) => (
+                <tr key={c.id} className="hover:bg-slate-50 transition-colors group">
+                  <td className="px-6 py-3 font-bold text-slate-800 sticky left-0 bg-white group-hover:bg-slate-50 z-10 shadow-[inset_-1px_0_0_0_#e2e8f0]">
                     {c.worker_name}
                   </td>
-                  <td className="px-4 py-2 text-center">
+                  <td className="px-2 py-2 text-center">
                     <input 
                       type="number" 
                       min="0" 
-                      step="1"
-                      className="w-full text-center py-1.5 border border-slate-200 rounded-md focus:ring-rose-500 focus:border-rose-500" 
+                      step="any"
+                      placeholder="0"
+                      className="w-full text-center py-1.5 px-1 border border-slate-200 rounded-md focus:ring-rose-500 focus:border-rose-500" 
                       value={eventsData[c.id]?.[TARGET_CODES.FALTAS] || ""}
                       onChange={(e) => handleInputChange(c.id, TARGET_CODES.FALTAS, e.target.value)}
                     />
                   </td>
-                  <td className="px-4 py-2 text-center">
+                  <td className="px-2 py-2 text-center">
                     <input 
                       type="number" 
                       min="0" 
-                      step="1"
-                      className="w-full text-center py-1.5 border border-slate-200 rounded-md focus:ring-orange-500 focus:border-orange-500" 
+                      step="any"
+                      placeholder="0"
+                      className="w-full text-center py-1.5 px-1 border border-slate-200 rounded-md focus:ring-orange-500 focus:border-orange-500" 
                       value={eventsData[c.id]?.[TARGET_CODES.ATRASOS] || ""}
                       onChange={(e) => handleInputChange(c.id, TARGET_CODES.ATRASOS, e.target.value)}
                     />
                   </td>
-                  <td className="px-4 py-2 text-center">
+                  <td className="px-2 py-2 text-center">
                     <input 
                       type="number" 
                       min="0" 
-                      step="1"
-                      className="w-full text-center py-1.5 border border-slate-200 rounded-md focus:ring-emerald-500 focus:border-emerald-500" 
+                      step="any"
+                      placeholder="0"
+                      className="w-full text-center py-1.5 px-1 border border-slate-200 rounded-md focus:ring-emerald-500 focus:border-emerald-500" 
                       value={eventsData[c.id]?.[TARGET_CODES.HE50] || ""}
                       onChange={(e) => handleInputChange(c.id, TARGET_CODES.HE50, e.target.value)}
                     />
                   </td>
-                  <td className="px-4 py-2 text-center">
+                  <td className="px-2 py-2 text-center">
                     <input 
                       type="number" 
                       min="0" 
-                      step="1"
-                      className="w-full text-center py-1.5 border border-slate-200 rounded-md focus:ring-emerald-700 focus:border-emerald-700" 
+                      step="any"
+                      placeholder="0"
+                      className="w-full text-center py-1.5 px-1 border border-slate-200 rounded-md focus:ring-emerald-600 focus:border-emerald-600" 
+                      value={eventsData[c.id]?.[TARGET_CODES.HE60] || ""}
+                      onChange={(e) => handleInputChange(c.id, TARGET_CODES.HE60, e.target.value)}
+                    />
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    <input 
+                      type="number" 
+                      min="0" 
+                      step="any"
+                      placeholder="0"
+                      className="w-full text-center py-1.5 px-1 border border-slate-200 rounded-md focus:ring-emerald-700 focus:border-emerald-700" 
                       value={eventsData[c.id]?.[TARGET_CODES.HE100] || ""}
                       onChange={(e) => handleInputChange(c.id, TARGET_CODES.HE100, e.target.value)}
+                    />
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    <input 
+                      type="number" 
+                      min="0" 
+                      step="any"
+                      placeholder="0"
+                      className="w-full text-center py-1.5 px-1 border border-slate-200 rounded-md focus:ring-indigo-500 focus:border-indigo-500" 
+                      value={eventsData[c.id]?.[TARGET_CODES.ADICIONAL_NOTURNO] || ""}
+                      onChange={(e) => handleInputChange(c.id, TARGET_CODES.ADICIONAL_NOTURNO, e.target.value)}
                     />
                   </td>
                 </tr>
@@ -396,6 +442,20 @@ export default function Timesheet() {
           </tbody>
         </table>
       </div>
+      
+      {!loading && filteredContracts.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={filteredContracts.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
+      )}
     </div>
   );
 }

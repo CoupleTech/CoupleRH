@@ -13,6 +13,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { vacationService } from "../../services/vacationService";
 import { useCompany } from "../../contexts/CompanyContext";
+import { Pagination } from "../../components/Pagination";
 
 interface VacationVesting {
   id: string;
@@ -57,6 +58,13 @@ export default function VacationsList() {
   const [requests, setRequests] = useState<VacationRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
   const [activeTab, setActiveTab] = useState<"aquisitivos" | "programadas">(
     "aquisitivos",
   );
@@ -196,6 +204,12 @@ export default function VacationsList() {
     return name.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
+  const totalPages = Math.ceil(filteredVacations.length / pageSize);
+  const paginatedVacations = filteredVacations.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   const filteredRequests = requests.filter((req) => {
     const contract = req.vacation_vesting_periods?.employment_contracts as any;
     if (selectedCompanyId && contract?.company_id !== selectedCompanyId) return false;
@@ -310,7 +324,7 @@ export default function VacationsList() {
                   </td>
                 </tr>
               ) : (
-                filteredVacations.map((vac) => {
+                paginatedVacations.map((vac) => {
                   const name =
                     vac.employment_contracts?.workers?.people?.full_name ||
                     "Desconhecido";

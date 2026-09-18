@@ -11,6 +11,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { useCompany } from "../../contexts/CompanyContext";
+import { Pagination } from "../../components/Pagination";
 
 interface WorkerData {
   id: string;
@@ -33,6 +34,13 @@ export default function EmployeesList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [workers, setWorkers] = useState<WorkerData[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   useEffect(() => {
     if (selectedCompanyId) {
@@ -106,6 +114,12 @@ export default function EmployeesList() {
       item.person.cpf.includes(searchTerm)
   );
 
+  const totalPages = Math.ceil(filteredWorkers.length / pageSize);
+  const paginatedWorkers = filteredWorkers.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -151,20 +165,21 @@ export default function EmployeesList() {
             <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
           </div>
         ) : filteredWorkers.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50/50 border-b border-slate-200">
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Colaborador</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Matrícula (eSocial)</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Cargo / Setor</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {filteredWorkers.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => navigate(`/funcionarios/${item.id}`)}>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/50 border-b border-slate-200">
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Colaborador</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Matrícula (eSocial)</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Cargo / Setor</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {paginatedWorkers.map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => navigate(`/funcionarios/${item.id}`)}>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold shrink-0">
@@ -208,8 +223,20 @@ export default function EmployeesList() {
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+              </table>
+            </div>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              totalItems={filteredWorkers.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size);
+                setCurrentPage(1);
+              }}
+            />
+          </>
         ) : (
           <div className="flex flex-col items-center justify-center p-12 text-center">
             <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">

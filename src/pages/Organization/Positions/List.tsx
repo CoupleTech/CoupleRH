@@ -3,6 +3,7 @@ import { Search, Plus, Loader2, Briefcase, Edit2, ChevronRight, Power, Trash2 } 
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../contexts/CompanyContext";
+import { Pagination } from "../../../components/Pagination";
 
 interface Position {
   id: string;
@@ -23,6 +24,13 @@ export default function PositionsList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchPositions();
@@ -101,6 +109,12 @@ export default function PositionsList() {
       (p.level && p.level.toLowerCase().includes(searchTerm.toLowerCase())),
   );
 
+  const totalPages = Math.ceil(filteredPositions.length / pageSize);
+  const paginatedPositions = filteredPositions.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -150,7 +164,8 @@ export default function PositionsList() {
             <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
           </div>
         ) : filteredPositions.length > 0 ? (
-          <div className="overflow-x-auto">
+          <>
+            <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-200">
@@ -163,7 +178,7 @@ export default function PositionsList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filteredPositions.map((p) => (
+                {paginatedPositions.map((p) => (
                   <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -235,6 +250,18 @@ export default function PositionsList() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredPositions.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        </>
         ) : (
           <div className="flex flex-col items-center justify-center p-12 text-center">
             <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">

@@ -22,34 +22,31 @@ export default function Dashboard() {
     companies: 0,
     rejectedEsocial: 0,
   });
-  const [recentTransmissions, setRecentTransmissions] = useState<any[]>([]);
+  const [biData, setBiData] = useState<any>({
+    headcount_evolution: [],
+    turnover: [],
+    absenteeism: [],
+    salary_distribution: []
+  });
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
+
 
   const fetchDashboardData = async () => {
     setLoading(true);
 
-    const { count: empCount } = await supabase
-      .from("employment_contracts")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "ACTIVE");
-
-    const { count: compCount } = await supabase
-      .from("companies")
-      .select("*", { count: "exact", head: true });
-
-    const { count: esocialFailed } = await supabase
-      .from("esocial_transmissions")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "REJECTED");
-
-    const { data: recentActivity } = await supabase
-      .from("esocial_transmissions")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(5);
+    const [
+      { count: empCount },
+      { count: compCount },
+      { count: esocialFailed },
+      { data: recentActivity },
+      { data: biAnalytics }
+    ] = await Promise.all([
+      supabase.from("employment_contracts").select("*", { count: "exact", head: true }).eq("status", "ACTIVE"),
+      supabase.from("companies").select("*", { count: "exact", head: true }),
+      supabase.from("esocial_transmissions").select("*", { count: "exact", head: true }).eq("status", "REJECTED"),
+      supabase.from("esocial_transmissions").select("*").order("created_at", { ascending: false }).limit(5),
+      supabase.rpc("get_bi_dashboard_analytics")
+    ]);
 
     setStats({
       activeEmployees: empCount || 0,
@@ -58,8 +55,14 @@ export default function Dashboard() {
     });
 
     if (recentActivity) setRecentTransmissions(recentActivity);
+    if (biAnalytics) setBiData(biAnalytics);
+    
     setLoading(false);
   };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
 
   const statusColor = (status: string) => {
     switch (status) {
@@ -187,22 +190,12 @@ export default function Dashboard() {
               </div>
               <div className="p-6 flex-1 flex flex-col justify-end min-h-[280px]">
                 <div className="flex items-end justify-between gap-3 h-44">
-                  {[45, 60, 55, 80, 95, 120, stats.activeEmployees || 130].map(
-                    (val, i) => {
-                      const months = [
-                        "Jan",
-                        "Fev",
-                        "Mar",
-                        "Abr",
-                        "Mai",
-                        "Jun",
-                        "Atual",
-                      ];
-                      const height = Math.max(
-                        10,
-                        Math.min(100, (val / 150) * 100),
-                      );
-                      const isCurrent = i === 6;
+                  {(biData.headcount_evolution.length > 0 ? biData.headcount_evolution : Array.from({length: 7}).map(() => ({month: '', count: 0}))).map(
+                    (item: any, i: number, arr: any[]) => {
+                      const maxHeadcount = Math.max(...arr.map(d => d.count), 10);
+                      const height = Math.max(10, Math.min(100, (item.count / maxHeadcount) * 100));
+                      const isCurrent = i === arr.length - 1;
+                      
                       return (
                         <div
                           key={i}
@@ -211,7 +204,7 @@ export default function Dashboard() {
                           <span
                             className={`text-[11px] font-bold tabular-nums transition-opacity ${isCurrent ? "text-primary-600 opacity-100" : "text-slate-400 opacity-0 group-hover:opacity-100"}`}
                           >
-                            {val}
+                            {item.count}
                           </span>
                           <div
                             className={`w-full rounded-t-md transition-all duration-300 ${
@@ -224,7 +217,7 @@ export default function Dashboard() {
                           <span
                             className={`text-[10px] font-semibold uppercase ${isCurrent ? "text-primary-600" : "text-slate-400"}`}
                           >
-                            {months[i]}
+                            {item.month.substring(0,2)}
                           </span>
                         </div>
                       );
@@ -302,6 +295,126 @@ export default function Dashboard() {
                 Ver central eSocial <ChevronRight size={14} />
               </Link>
             </div>
+          </div>
+
+          {/* Novos Painéis de BI */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+            
+            {/* Turnover */}
+            <div className="panel-flush flex flex-col">
+              <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-slate-900 font-display text-sm">Turnover</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Admissões vs Rescisões</p>
+                </div>
+                <div className="p-1.5 bg-indigo-50 text-indigo-500 rounded-md">
+                  <Activity size={14} />
+                </div>
+              </div>
+              <div className="p-5 flex-1 flex flex-col justify-center">
+                <div className="space-y-4">
+                  {(biData.turnover || []).slice(-4).map((item: any, i: number) => {
+                    const maxEvents = Math.max(...biData.turnover.map((d:any) => d.admissions + d.resignations), 10);
+                    const admWidth = (item.admissions / maxEvents) * 100;
+                    const resWidth = (item.resignations / maxEvents) * 100;
+                    
+                    return (
+                      <div key={i} className="flex flex-col gap-1.5">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="font-semibold text-slate-700">{item.month}</span>
+                          <span className="font-medium text-slate-500">{item.rate}% Tx</span>
+                        </div>
+                        <div className="flex w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="bg-emerald-400 h-full transition-all" style={{width: `${admWidth}%`}} title={`Admissões: ${item.admissions}`} />
+                          <div className="bg-rose-400 h-full transition-all" style={{width: `${resWidth}%`}} title={`Demissões: ${item.resignations}`} />
+                        </div>
+                        <div className="flex justify-between text-[10px] text-slate-400">
+                          <span>{item.admissions} adm</span>
+                          <span>{item.resignations} dem</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Absenteísmo */}
+            <div className="panel-flush flex flex-col">
+              <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-slate-900 font-display text-sm">Absenteísmo</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Afastamentos e Faltas</p>
+                </div>
+                <div className="p-1.5 bg-rose-50 text-rose-500 rounded-md">
+                  <Clock size={14} />
+                </div>
+              </div>
+              <div className="p-5 flex-1 flex flex-col justify-end min-h-[220px]">
+                <div className="flex items-end justify-between gap-2 h-36">
+                  {(biData.absenteeism || []).slice(-6).map((item: any, i: number, arr: any[]) => {
+                      const maxRate = Math.max(...arr.map(d => d.rate), 5);
+                      const height = Math.max(5, Math.min(100, (item.rate / maxRate) * 100));
+                      
+                      return (
+                        <div key={i} className="flex flex-col items-center gap-2 flex-1 group">
+                          <span className="text-[10px] font-bold text-slate-400 tabular-nums opacity-0 group-hover:opacity-100 transition-opacity">
+                            {item.rate}%
+                          </span>
+                          <div
+                            className="w-full rounded-t-sm bg-rose-200 group-hover:bg-rose-400 transition-all duration-300"
+                            style={{ height: `${height}%` }}
+                          />
+                          <span className="text-[10px] font-semibold text-slate-400 uppercase">
+                            {item.month.substring(0,2)}
+                          </span>
+                        </div>
+                      );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Distribuição Salarial */}
+            <div className="panel-flush flex flex-col">
+              <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-slate-900 font-display text-sm">Salários</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Distribuição do quadro ativo</p>
+                </div>
+                <div className="p-1.5 bg-amber-50 text-amber-500 rounded-md">
+                  <Building2 size={14} />
+                </div>
+              </div>
+              <div className="p-5 flex-1 flex flex-col justify-center">
+                <div className="space-y-4">
+                  {biData.salary_distribution && biData.salary_distribution.length > 0 ? (
+                    biData.salary_distribution.map((item: any, i: number) => {
+                      const maxCount = Math.max(...biData.salary_distribution.map((d:any) => d.count), 1);
+                      const width = Math.max(5, (item.count / maxCount) * 100);
+                      
+                      return (
+                        <div key={i} className="flex flex-col gap-1.5">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="font-semibold text-slate-600">{item.range}</span>
+                            <span className="font-bold text-slate-800">{item.count}</span>
+                          </div>
+                          <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div 
+                              className="bg-amber-400 h-full rounded-full transition-all duration-500" 
+                              style={{width: `${width}%`}}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })
+                  ) : (
+                    <div className="text-center text-slate-400 text-sm">Sem dados salariais</div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
           </div>
 
           {/* Quick Actions */}

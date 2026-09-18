@@ -7,10 +7,10 @@ import {
   Settings,
   Check,
   X,
-  ShieldAlert,
   Cpu,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { Pagination } from "../../components/Pagination";
 
 interface Rubric {
   id: string;
@@ -49,6 +49,13 @@ export default function PayrollRubrics() {
   const [rubrics, setRubrics] = useState<Rubric[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -281,7 +288,13 @@ export default function PayrollRubrics() {
   const filtered = rubrics.filter(
     (r) =>
       r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.code.includes(searchTerm),
+      r.code.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paginated = filtered.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
   );
 
   return (
@@ -343,15 +356,12 @@ export default function PayrollRubrics() {
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={5}
-                    className="px-6 py-12 text-center text-slate-500 font-bold"
-                  >
-                    Nenhuma rubrica cadastrada no sistema.
+                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500 font-bold">
+                    Nenhuma rubrica encontrada.
                   </td>
                 </tr>
               ) : (
-                filtered.map((r) => (
+                paginated.map((r) => (
                   <tr
                     key={r.id}
                     onClick={() => openModal(r)}
@@ -426,6 +436,20 @@ export default function PayrollRubrics() {
             </tbody>
           </table>
         </div>
+        
+        {!loading && filtered.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filtered.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        )}
       </div>
 
       {isModalOpen && createPortal(

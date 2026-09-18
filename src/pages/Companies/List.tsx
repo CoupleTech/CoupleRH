@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { Pagination } from "../../components/Pagination";
 
 interface Company {
   id: string;
@@ -25,6 +26,14 @@ export default function CompaniesList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Reset page when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchCompanies();
@@ -47,6 +56,12 @@ export default function CompaniesList() {
     (c) =>
       c.corporate_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.cnpj.includes(searchTerm),
+  );
+
+  const totalPages = Math.ceil(filteredCompanies.length / pageSize);
+  const paginatedCompanies = filteredCompanies.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
   );
 
   return (
@@ -126,7 +141,7 @@ export default function CompaniesList() {
                   </td>
                 </tr>
               ) : (
-                filteredCompanies.map((company) => (
+                paginatedCompanies.map((company) => (
                   <tr
                     key={company.id}
                     className="table-row group cursor-pointer"
@@ -173,18 +188,31 @@ export default function CompaniesList() {
                         {company.status === 'ACTIVE' ? 'Ativo' : company.status === 'SUSPENDED' ? 'Suspenso' : 'Inativo'}
                       </span>
                     </td>
-                    <td className="table-cell text-right">
-                      <button className="p-1.5 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
-                        <ChevronRight size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+// ... (código existente até o final da tabela)
+                      <td className="table-cell text-right">
+                        <button className="p-1.5 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+                          <ChevronRight size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredCompanies.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }

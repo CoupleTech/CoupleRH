@@ -5,9 +5,9 @@ import {
   History,
   Activity,
   Database,
-  Loader2,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { Pagination } from "../../components/Pagination";
 
 interface AuditLog {
   id: string;
@@ -24,6 +24,13 @@ export default function LogViewer() {
   const [searchTerm, setSearchTerm] = useState("");
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchLogs();
@@ -71,6 +78,18 @@ export default function LogViewer() {
       </span>
     );
   };
+
+  const filteredLogs = logs.filter(
+    (log) =>
+      log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      log.entity_type.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const totalPages = Math.ceil(filteredLogs.length / pageSize);
+  const paginatedLogs = filteredLogs.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   return (
     <div className="animate-fade-up">
@@ -162,8 +181,17 @@ export default function LogViewer() {
                     Buscando logs protegidos...
                   </td>
                 </tr>
+              ) : filteredLogs.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-6 py-12 text-center text-slate-500 font-bold"
+                  >
+                    Nenhum log encontrado.
+                  </td>
+                </tr>
               ) : (
-                logs.map((log) => (
+                paginatedLogs.map((log) => (
                   <tr
                     key={log.id}
                     className="hover:bg-slate-50 transition-colors font-mono text-sm"
@@ -197,6 +225,20 @@ export default function LogViewer() {
           </table>
         </div>
       </div>
+
+      {!loading && filteredLogs.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={filteredLogs.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1,0 +1,137 @@
+CATÁLOGO INICIAL DE RUBRICAS - SISTEMA DE FOLHA CLT
+Referência: eSocial S-1.3 / Tabela 03 - Natureza das Rubricas
+Observação: catálogo inicial de rubricas comuns. As incidências devem ser validadas conforme legislação, natureza da verba, regime e regras vigentes.
+
+FORMATO:
+CÓDIGO | NOME | TIPO | NATUREZA ESOCIAL | REGRA
+
+=== SALÁRIO E REMUNERAÇÃO ===
+SAL001 | Salário Base | PROVENTO | 1000 | SALARIO_BASE
+SAL002 | Salário Proporcional | PROVENTO | 1000 | SALARIO_PROPORCIONAL
+SAL003 | DSR | PROVENTO | 1012 | DSR
+SAL004 | DSR sobre Variáveis | PROVENTO | 1012 | DSR_VARIAVEIS
+SAL005 | Salário Maternidade | PROVENTO | 4050 | SALARIO_MATERNIDADE
+SAL006 | Complementação de Salário | PROVENTO | 1099 | COMPLEMENTO_SALARIO
+SAL007 | Adicional de Função | PROVENTO | 1201 | ADICIONAL_FUNCAO
+SAL008 | Quebra de Caixa | PROVENTO | 1225 | QUEBRA_CAIXA
+
+=== HORAS EXTRAS E BANCO DE HORAS ===
+HE050 | Hora Extra 50% | PROVENTO | 1003 | HORA_EXTRA
+HE060 | Hora Extra 60% | PROVENTO | 1003 | HORA_EXTRA
+HE070 | Hora Extra 70% | PROVENTO | 1003 | HORA_EXTRA
+HE100 | Hora Extra 100% | PROVENTO | 1003 | HORA_EXTRA
+HEOUT | Hora Extra - Outros Percentuais | PROVENTO | 1003 | HORA_EXTRA
+HEBANCO | Hora Extra - Banco de Horas Paga | PROVENTO | 1004 | BANCO_HORAS
+DSRHE | DSR sobre Horas Extras | PROVENTO | 1012 | DSR_HORA_EXTRA
+
+=== ADICIONAIS ===
+ADNOT | Adicional Noturno | PROVENTO | 1205 | ADICIONAL_NOTURNO
+ADINS | Adicional de Insalubridade | PROVENTO | 1202 | INSALUBRIDADE
+ADPER | Adicional de Periculosidade | PROVENTO | 1203 | PERICULOSIDADE
+ADTRANS | Adicional de Transferência | PROVENTO | 1204 | TRANSFERENCIA
+ADTEMPO | Adicional por Tempo de Serviço | PROVENTO | 1206 | TEMPO_SERVICO
+ADPEN | Adicional de Penosidade | PROVENTO | 1214 | PENOSIDADE
+ADCARGO | Adicional de Função/Cargo | PROVENTO | 1201 | ADICIONAL_FUNCAO
+ADOUT | Outros Adicionais | PROVENTO | 1299 | OUTROS_ADICIONAIS
+
+=== COMISSÕES, GRATIFICAÇÕES, PRÊMIOS E VARIÁVEIS ===
+COM001 | Comissão | PROVENTO | 1207 | COMISSAO
+GRAT001 | Gratificação | PROVENTO | 1211 | GRATIFICACAO
+GRAT002 | Gratificação por CCT/ACT | PROVENTO | 1210 | GRATIFICACAO_CCT
+PROD001 | Prêmio por Produtividade | PROVENTO | 1211 | PRODUTIVIDADE
+PREM001 | Prêmio | PROVENTO | 2501 | PREMIO
+ABONO001 | Abono | PROVENTO | 1401 | ABONO
+PLR001 | Participação nos Lucros/Resultados | PROVENTO | 1300 | PLR
+GORJ001 | Gorjetas | PROVENTO | 1208 | GORJETA
+GORJ002 | Gorjetas - Repasse | PROVENTO | 1209 | GORJETA_REPASSE
+
+=== FÉRIAS ===
+FER001 | Férias | PROVENTO | 1016 | FERIAS
+FER002 | 1/3 Constitucional de Férias | PROVENTO | 1017 | TERCO_FERIAS
+FER003 | Abono Pecuniário | PROVENTO | 1023 | ABONO_PECUNIARIO
+FER004 | 1/3 sobre Abono Pecuniário | PROVENTO | 1023 | TERCO_ABONO
+FER005 | Férias em Dobro | PROVENTO | 1024 | FERIAS_DOBRO
+FER006 | Abono/Gratificação de Férias > 20 dias | PROVENTO | 1018 | ABONO_FERIAS
+FER007 | 1/3 sobre Abono > 20 dias | PROVENTO | 1019 | TERCO_ABONO_FERIAS
+FER008 | Desconto de Férias | DESCONTO | 9221 | DESCONTO_FERIAS
+FER009 | Desconto de Abono de Férias | DESCONTO | 9226 | DESCONTO_ABONO_FERIAS
+FER010 | Adiantamento de Férias | PROVENTO | 1015 | ADIANTAMENTO_FERIAS
+
+=== 13º SALÁRIO ===
+13SAL | 13º Salário | PROVENTO | 5001 | DECIMO_TERCEIRO
+13MED | Média 13º Salário | PROVENTO | 5001 | MEDIA_13
+13ADI | Adiantamento 13º | PROVENTO | 5504 | ADIANTAMENTO_13
+13COM | 13º Complementar | PROVENTO | 5005 | COMPLEMENTO_13
+13RES | 13º Proporcional na Rescisão | PROVENTO | 6002 | 13_RES_PROPORCIONAL
+13AVI | 13º sobre Aviso Indenizado | PROVENTO | 6001 | 13_AVISO
+13DESC | Desconto de Adiantamento 13º | DESCONTO | 9214 | DESCONTO_ADIANTAMENTO_13
+
+=== DESCONTOS PREVIDENCIÁRIOS E FISCAIS ===
+DESCINSS | INSS | DESCONTO | 9201 | INSS
+DESCIRRF | IRRF | DESCONTO | 9203 | IRRF
+
+=== FALTAS, ATRASOS E DSR ===
+FALTA | Faltas | DESCONTO | 9207 | FALTA
+ATRASO | Atrasos | DESCONTO | 9208 | ATRASO
+FALATR | Faltas/Atrasos | DESCONTO | 9209 | FALTA_ATRASO
+DSRFALTA | DSR sobre Falta | DESCONTO | 9211 | DSR_FALTA
+DSRATR | DSR sobre Atrasos | DESCONTO | 9212 | DSR_ATRASO
+DSRFALATR | DSR sobre Faltas/Atrasos | DESCONTO | 9210 | DSR_FALTA_ATRASO
+
+=== BENEFÍCIOS E DESCONTOS DE EMPREGADO ===
+VTDESC | Vale-Transporte | DESCONTO | 9216 | VALE_TRANSPORTE
+MEDDESC | Plano Médico | DESCONTO | 9219 | PLANO_MEDICO
+ODODESC | Plano Odontológico | DESCONTO | 9219 | PLANO_ODONTOLOGICO
+ALIMDESC | Desconto Alimentação | DESCONTO | 9241 | ALIMENTACAO
+SEGVIDA | Seguro de Vida | DESCONTO | 9250 | SEGURO_VIDA
+EMPREST | Empréstimo Empresa | DESCONTO | 9255 | EMPRESTIMO
+CONSIG | Empréstimo Consignado | DESCONTO | 9254 | CONSIGNADO
+ECONSIG | eConsignado | DESCONTO | 9253 | ECONSIGNADO
+CONVENIO | Convênios | DESCONTO | 9258 | CONVENIO
+
+=== OUTROS DESCONTOS ===
+PENSAO | Pensão Alimentícia | DESCONTO | 9213 | PENSAO_ALIMENTICIA
+JUDICIAL | Retenção Judicial | DESCONTO | 9218 | RETENCAO_JUDICIAL
+SINDICAL | Mensalidade Sindical | DESCONTO | 9231 | MENSALIDADE_SINDICAL
+ASSIST | Contribuição Assistencial | DESCONTO | 9232 | CONTRIBUICAO_ASSISTENCIAL
+CONFED | Contribuição Confederativa | DESCONTO | 9233 | CONTRIBUICAO_CONFEDERATIVA
+DANO | Danos/Prejuízos | DESCONTO | 9270 | DANOS_PREJUIZOS
+DEVOLUCAO | Pagamento Indevido Anterior | DESCONTO | 9290 | DEVOLUCAO
+OUTDESC | Outros Descontos | DESCONTO | 9299 | OUTROS_DESCONTOS
+
+=== RESCISÃO ===
+RES001 | Saldo de Salário | PROVENTO | 6000 | SALDO_SALARIO
+RES002 | 13º Proporcional | PROVENTO | 6002 | 13_RES_PROPORCIONAL
+RES003 | 13º sobre Aviso Indenizado | PROVENTO | 6001 | 13_AVISO
+RES004 | Férias Vencidas | PROVENTO | 6007 | FERIAS_VENCIDAS
+RES005 | Férias Proporcionais | PROVENTO | 6006 | FERIAS_PROPORCIONAIS
+RES006 | Férias em Dobro | PROVENTO | 6004 | FERIAS_DOBRO_RESCISAO
+RES007 | Aviso Prévio Indenizado | PROVENTO | 6003 | AVISO_INDENIZADO
+RES008 | Multa Rescisória FGTS | PROVENTO | 6101 | MULTA_FGTS
+RES009 | Indenização Data-Base | PROVENTO | 6102 | INDENIZACAO_DATA_BASE
+RES010 | Indenização Art. 479 | PROVENTO | 6104 | INDENIZACAO_ART_479
+RES011 | Multa Art. 477 | PROVENTO | 6106 | MULTA_ART_477
+RES012 | Desconto Aviso Prévio | DESCONTO | 6901 | DESCONTO_AVISO
+RES013 | Multa Art. 480 | DESCONTO | 6904 | MULTA_ART_480
+
+=== INFORMATIVAS ===
+BASEINSS | Base INSS | INFORMATIVA | 9901 | BASE_INSS
+BASEFGTS | Base FGTS | INFORMATIVA | 9902 | BASE_FGTS
+BASEIRRF | Base IRRF | INFORMATIVA | 9903 | BASE_IRRF
+FGTS | FGTS Depositado | INFORMATIVA | 9908 | FGTS
+INFMED | Assistência Médica | INFORMATIVA | 9911 | ASSISTENCIA_MEDICA
+INFSEG | Seguro de Vida | INFORMATIVA | 9910 | SEGURO_VIDA
+INFOUT | Outros Valores Informativos | INFORMATIVA | 9989 | OUTROS_INFORMATIVOS
+
+=== ARQUITETURA RECOMENDADA ===
+1. O código interno da rubrica é definido pelo seu sistema e não precisa ser igual ao código da natureza eSocial.
+2. A natureza eSocial deve ser armazenada separadamente.
+3. Cada rubrica deve possuir configurações de incidência previdenciária, FGTS e IRRF.
+4. Também é recomendável armazenar se a rubrica integra férias, 13º, aviso prévio, DSR, médias e rescisão.
+5. A regra de cálculo deve ficar separada da rubrica.
+6. Evite criar regras fixas de INSS/IRRF dentro das rubricas; essas tabelas devem ser versionadas por competência.
+7. Rubricas específicas podem ser habilitadas por empresa conforme sua atividade, CCT/ACT e realidade operacional.
+8. Antes de enviar eventos ao eSocial, validar natureza, incidências e compatibilidades contra as tabelas oficiais vigentes.
+
+IMPORTANTE:
+Este arquivo é um catálogo inicial de desenvolvimento e não substitui a validação jurídica/contábil das incidências de cada verba. Natureza eSocial, incidências e regras podem depender do contexto da verba e da legislação vigente.

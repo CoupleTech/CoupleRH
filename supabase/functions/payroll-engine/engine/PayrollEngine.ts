@@ -37,16 +37,32 @@ export class PayrollEngine {
             }
         } 
 
-        // Override inteligente caso a rubrica venha como FIXED mas seja de categorias que calculam sobre base
-        if (calcForm === 'FIXO' || calcForm === 'FIXED') {
+        // Override inteligente caso a rubrica venha como FIXED ou FORMULA mas seja de categorias que calculam sobre base
+        if (calcForm === 'FIXO' || calcForm === 'FIXED' || calcForm === 'FORMULA') {
             if (rubric.category === 'OVERTIME') {
                 calcForm = 'HORAS';
                 if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
                 if (!rubric.factor) rubric.factor = 1.5;
-            } else if (rubric.category === 'DSR' || rubric.code === '1011') {
+            } else if (rubric.category === 'DSR' || rubric.code === '1011' || rubric.code === '170') {
                 calcForm = 'PERCENTUAL';
                 if (!rubric.calculation_base) rubric.calculation_base = 'BASE_DSR';
                 if (!rubric.percentage) rubric.percentage = 20;
+            } else if (rubric.code === '302') {
+                calcForm = 'PERCENTUAL';
+                if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_MINIMO';
+                if (!rubric.percentage) rubric.percentage = 20; // 20% por padrão (grau médio)
+            } else if (rubric.code === '303') {
+                calcForm = 'PERCENTUAL';
+                if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
+                if (!rubric.percentage) rubric.percentage = 30; // 30% padrão
+            } else if (rubric.code === '301') {
+                calcForm = 'HORAS';
+                if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
+                if (!rubric.factor) rubric.factor = 0.20; // 20%
+            } else if (rubric.code === '502' || rubric.code === '504') {
+                calcForm = 'PERCENTUAL';
+                if (!rubric.calculation_base) rubric.calculation_base = rubric.code === '502' ? 'R501' : 'R503';
+                if (!rubric.percentage) rubric.percentage = 33.3333; // 1/3
             }
         }
         

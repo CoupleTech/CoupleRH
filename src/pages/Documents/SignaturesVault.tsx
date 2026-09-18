@@ -7,8 +7,10 @@ import {
   ShieldCheck,
   Download,
   Loader2,
+  Lock
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { Pagination } from "../../components/Pagination";
 
 interface EmployeeDocument {
   id: string;
@@ -27,6 +29,13 @@ export default function SignaturesVault() {
   const [searchTerm, setSearchTerm] = useState("");
   const [docs, setDocs] = useState<EmployeeDocument[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchDocs();
@@ -98,6 +107,12 @@ export default function SignaturesVault() {
     );
   });
 
+  const totalPages = Math.ceil(filteredDocs.length / pageSize);
+  const paginatedDocs = filteredDocs.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
     <div className="animate-fade-up">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
@@ -159,7 +174,7 @@ export default function SignaturesVault() {
                   </td>
                 </tr>
               ) : (
-                filteredDocs.map((doc) => {
+                paginatedDocs.map((doc) => {
                   const name = doc.workers?.people?.full_name || "Colaborador";
                   return (
                     <tr
@@ -212,6 +227,20 @@ export default function SignaturesVault() {
             </tbody>
           </table>
         </div>
+        
+        {!loading && filteredDocs.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredDocs.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        )}
       </div>
     </div>
   );

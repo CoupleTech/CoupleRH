@@ -13,6 +13,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../contexts/CompanyContext";
+import { Pagination } from "../../../components/Pagination";
 
 interface Department {
   id: string;
@@ -31,6 +32,13 @@ export default function DepartmentsList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchDepartments();
@@ -110,6 +118,12 @@ export default function DepartmentsList() {
     return matchName || matchCode || matchCompany;
   });
 
+  const totalPages = Math.ceil(filteredDepartments.length / pageSize);
+  const paginatedDepartments = filteredDepartments.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -155,8 +169,9 @@ export default function DepartmentsList() {
             <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
           </div>
         ) : filteredDepartments.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-200">
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Departamento</th>
@@ -167,7 +182,7 @@ export default function DepartmentsList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filteredDepartments.map((dept) => (
+                {paginatedDepartments.map((dept) => (
                   <tr key={dept.id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -238,6 +253,19 @@ export default function DepartmentsList() {
               </tbody>
             </table>
           </div>
+          
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredDepartments.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        </>
         ) : (
           <div className="flex flex-col items-center justify-center p-12 text-center">
             <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">

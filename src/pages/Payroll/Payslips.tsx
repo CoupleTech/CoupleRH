@@ -12,6 +12,7 @@ import {
   Code
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { Pagination } from "../../components/Pagination";
 
 interface PayrollPeriod {
   id: string;
@@ -58,6 +59,13 @@ export default function Payslips() {
   const [searchTerm, setSearchTerm] = useState("");
   const [periods, setPeriods] = useState<PayrollPeriod[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>("");
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
   const [payslips, setPayslips] = useState<PayslipPreview[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingPeriods, setLoadingPeriods] = useState(true);
@@ -240,6 +248,12 @@ export default function Payslips() {
     return name.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
+  const totalPages = Math.ceil(filteredPayslips.length / pageSize);
+  const paginatedPayslips = filteredPayslips.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
     <div className="animate-fade-up max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
@@ -326,7 +340,7 @@ export default function Payslips() {
                   </td>
                 </tr>
               ) : (
-                filteredPayslips.map((slip) => {
+                paginatedPayslips.map((slip) => {
                   const name =
                     slip.employment_contracts?.workers?.people?.full_name || "Desconhecido";
                   return (
@@ -389,6 +403,20 @@ export default function Payslips() {
             </tbody>
           </table>
         </div>
+        
+        {!loading && filteredPayslips.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredPayslips.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        )}
       </div>
 
       {/* MODAL DE HOLERITE */}

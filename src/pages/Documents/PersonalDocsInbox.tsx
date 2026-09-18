@@ -10,6 +10,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { Pagination } from "../../components/Pagination";
 
 interface PersonalDocument {
   id: string;
@@ -31,6 +32,13 @@ export default function PersonalDocsInbox() {
   const [docs, setDocs] = useState<PersonalDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchDocs();
@@ -123,6 +131,12 @@ export default function PersonalDocsInbox() {
     );
   });
 
+  const totalPages = Math.ceil(filteredDocs.length / pageSize);
+  const paginatedDocs = filteredDocs.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
     <div className="animate-fade-up">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
@@ -177,7 +191,7 @@ export default function PersonalDocsInbox() {
                   </td>
                 </tr>
               ) : (
-                filteredDocs.map((doc) => {
+                paginatedDocs.map((doc) => {
                   const name = doc.workers?.people?.full_name || "Desconhecido";
                   return (
                     <tr key={doc.id} className="hover:bg-slate-50 transition-colors group">
@@ -242,6 +256,20 @@ export default function PersonalDocsInbox() {
             </tbody>
           </table>
         </div>
+        
+        {!loading && filteredDocs.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredDocs.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        )}
       </div>
     </div>
   );

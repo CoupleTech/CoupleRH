@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, Edit2, Calculator, Calendar } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import { Pagination } from '../../../components/Pagination';
 
 interface LegalVersion {
   id: string;
@@ -14,6 +15,9 @@ interface LegalVersion {
 export default function LegalTablesList() {
   const [versions, setVersions] = useState<LegalVersion[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     fetchVersions();
@@ -92,8 +96,8 @@ export default function LegalTablesList() {
                   <th className="px-6 py-4 text-right">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {versions.map((version) => (
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {versions.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((version) => (
                   <tr key={version.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="font-bold text-slate-900">{version.version_name}</div>
@@ -123,6 +127,20 @@ export default function LegalTablesList() {
               </tbody>
             </table>
           </div>
+        )}
+        
+        {!loading && versions.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={Math.ceil(versions.length / pageSize)}
+            pageSize={pageSize}
+            totalItems={versions.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
         )}
       </div>
     </div>

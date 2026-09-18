@@ -194,6 +194,52 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
         if (invokeError) throw new Error("Erro ao gerar recibo de férias: " + invokeError.message);
       }
 
+      // 3. RH Paperless - Gerar Documentos de Férias para Assinatura
+      const workerId = selectedPeriod.employment_contracts?.workers?.id;
+      if (workerId) {
+        const documents = [
+          {
+            tenant_id: tenantData.tenant_id,
+            worker_id: workerId,
+            title: `Aviso de Férias - ${new Date(startDate).toLocaleDateString("pt-BR")}`,
+            status: 'PENDING_SIGNATURE',
+            requires_employee_signature: true,
+            document_type: 'VACATION_NOTICE',
+            metadata: {
+              vacationDays: actualDaysTaken,
+              sellDays,
+              startDate,
+              returnDate: calculateReturnDate(),
+              vestingPeriodId: selectedPeriod.id
+            }
+          }
+        ];
+
+        if (generateReceipt) {
+          documents.push({
+            tenant_id: tenantData.tenant_id,
+            worker_id: workerId,
+            title: `Recibo de Férias - ${new Date(startDate).toLocaleDateString("pt-BR")}`,
+            status: 'PENDING_SIGNATURE',
+            requires_employee_signature: true,
+            document_type: 'VACATION_RECEIPT',
+            metadata: {
+              vacationDays: actualDaysTaken,
+              sellDays,
+              startDate,
+              returnDate: calculateReturnDate(),
+              vestingPeriodId: selectedPeriod.id
+            }
+          });
+        }
+
+        const { error: docsError } = await supabase
+          .from('employee_documents')
+          .insert(documents);
+
+        if (docsError) throw new Error("Erro ao gerar documentos para assinatura: " + docsError.message);
+      }
+
       if (!inline) {
         alert("Férias programadas com sucesso!" + (generateReceipt ? " Recibo gerado com sucesso." : ""));
         navigate("/ferias");

@@ -12,6 +12,7 @@ import {
   Trash2
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { Pagination } from "../../components/Pagination";
 
 interface HealthExam {
   id: string;
@@ -33,7 +34,13 @@ export default function SstDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [exams, setExams] = useState<HealthExam[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchExams();
@@ -82,6 +89,12 @@ export default function SstDashboard() {
     const name = exam.employment_contracts?.workers?.people?.full_name || "";
     return name.toLowerCase().includes(searchTerm.toLowerCase());
   });
+
+  const totalPages = Math.ceil(filteredExams.length / pageSize);
+  const paginatedExams = filteredExams.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   return (
     <div className="animate-fade-up relative">
@@ -187,14 +200,14 @@ export default function SstDashboard() {
               ) : filteredExams.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
-                    className="px-6 py-12 text-center text-slate-500 font-medium"
+                    colSpan={5}
+                    className="px-6 py-12 text-center text-slate-500 font-bold"
                   >
                     Nenhum ASO encontrado.
                   </td>
                 </tr>
               ) : (
-                filteredExams.map((exam) => {
+                paginatedExams.map((exam) => {
                   const name =
                     exam.employment_contracts?.workers?.people?.full_name ||
                     "Funcionário Desconhecido";
@@ -258,6 +271,20 @@ export default function SstDashboard() {
             </tbody>
           </table>
         </div>
+
+        {!loading && filteredExams.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredExams.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
+        )}
       </div>
 
       {/* Modal Simples de Novo ASO */}

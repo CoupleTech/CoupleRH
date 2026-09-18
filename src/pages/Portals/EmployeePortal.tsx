@@ -256,6 +256,7 @@ export default function EmployeePortal() {
   const [docsActiveTab, setDocsActiveTab] = useState<"pessoais" | "assinaturas">("pessoais");
   const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
   const [signingDocId, setSigningDocId] = useState<string | null>(null);
+  const [documentToView, setDocumentToView] = useState<any | null>(null);
 
   // Payslip Selection & Details
   const [selectedPayslipId, setSelectedPayslipId] = useState<string | null>(null);
@@ -472,18 +473,39 @@ export default function EmployeePortal() {
     }
   };
 
-  const handleSignDocument = async (docId: string) => {
+  const handleSignDocument = async (docId: string, metadata: any) => {
     if (!auth) return;
     setSigningDocId(docId);
     try {
+      // Obter IP do usuário (para validade legal MP 2.200-2)
+      let ipAddress = '0.0.0.0';
+      try {
+        const ipRes = await fetch('https://api.ipify.org?format=json');
+        const ipData = await ipRes.json();
+        ipAddress = ipData.ip;
+      } catch (e) {
+        console.warn("Could not fetch IP", e);
+      }
+      
+      const userAgent = navigator.userAgent;
+      
+      // Hash simples do metadados para garantir que o que foi assinado era isso
+      const documentHash = btoa(JSON.stringify(metadata) + Date.now().toString());
+
       const { error } = await supabase.rpc('sign_worker_document', {
         p_document_id: docId,
-        p_worker_id: auth.workerId
+        p_worker_id: auth.workerId,
+        p_ip_address: ipAddress,
+        p_user_agent: userAgent,
+        p_document_hash: documentHash
       });
       if (error) throw error;
+      
+      alert("Documento assinado com sucesso!");
+      setDocumentToView(null);
       await fetchDocsData();
-    } catch (err) {
-      alert("Falha ao assinar documento.");
+    } catch (err: any) {
+      alert("Falha ao assinar documento: " + err.message);
     } finally {
       setSigningDocId(null);
     }
@@ -940,11 +962,14 @@ export default function EmployeePortal() {
                         
                         {sig.status === 'PENDING_SIGNATURE' ? (
                           <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100">
-                            <button className="flex-1 py-2 text-[11px] font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors">
+                            <button 
+                              onClick={() => setDocumentToView(sig)}
+                              className="flex-1 py-2 text-[11px] font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+                            >
                               Ler Documento
                             </button>
                             <button 
-                              onClick={() => handleSignDocument(sig.id)}
+                              onClick={() => handleSignDocument(sig.id, sig.metadata)}
                               disabled={signingDocId === sig.id}
                               className="flex-1 py-2 text-[11px] font-bold text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-sm shadow-primary-500/20 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
                             >
@@ -957,6 +982,12 @@ export default function EmployeePortal() {
                             <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">
                               <CheckCircle2 size={14} /> Assinado digitalmente
                             </span>
+                            <button 
+                              onClick={() => setDocumentToView(sig)}
+                              className="ml-auto py-1 px-3 text-[11px] font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+                            >
+                              Ver Documento
+                            </button>
                           </div>
                         )}
                       </div>
@@ -1113,6 +1144,115 @@ export default function EmployeePortal() {
               >
                 <FileDown size={16} /> Baixar PDF
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ━━━━ MODAL: Visualização de Documento (RH Paperless) ━━━━ */}
+      {documentToView && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 bg-slate-900/80 backdrop-blur-sm animate-fade-in">
+          <div 
+            className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary-50 flex items-center justify-center">
+                  <FileText size={20} className="text-primary-600" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-800">{documentToView.title}</h2>
+                  <p className="text-xs font-medium text-slate-500">Visualização do documento original</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setDocumentToView(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Content - Document Viewer */}
+            <div className="flex-1 overflow-y-auto p-6 bg-slate-100/50">
+              <div className="bg-white border border-slate-300 p-8 shadow-sm min-h-[500px] text-slate-800 font-serif leading-relaxed">
+                {documentToView.document_type === 'VACATION_NOTICE' && documentToView.metadata && (
+                  <div className="space-y-6">
+                    <h1 className="text-xl font-bold text-center underline uppercase mb-8">Aviso de Férias</h1>
+                    
+                    <p>Ao(à) Sr(a). <strong>{profile?.full_name}</strong></p>
+                    
+                    <p className="text-justify indent-8">
+                      Nos termos das disposições legais vigentes, comunicamos que lhe serão concedidas férias, 
+                      relativas ao período aquisitivo de <strong>{new Date(documentToView.metadata.startDate).toLocaleDateString('pt-BR')}</strong>, 
+                      num total de <strong>{documentToView.metadata.vacationDays}</strong> dias.
+                    </p>
+                    
+                    <p className="text-justify indent-8">
+                      Seu período de gozo de férias terá início em <strong>{new Date(documentToView.metadata.startDate).toLocaleDateString('pt-BR')}</strong> e 
+                      terminará em <strong>{new Date(new Date(documentToView.metadata.startDate).getTime() + (documentToView.metadata.vacationDays - 1) * 86400000).toLocaleDateString('pt-BR')}</strong>, 
+                      devendo retornar ao trabalho no dia <strong>{documentToView.metadata.returnDate}</strong>.
+                    </p>
+
+                    {documentToView.metadata.sellDays && (
+                      <p className="text-justify indent-8 font-semibold">
+                        Neste ato, fica também acordada a conversão de 1/3 (um terço) do período de férias a que tem direito 
+                        em abono pecuniário (10 dias).
+                      </p>
+                    )}
+
+                    <div className="mt-16 pt-8 border-t border-slate-400 text-center space-y-2">
+                      <p>Data do ciente: <strong>{new Date().toLocaleDateString('pt-BR')}</strong></p>
+                      <p>_________________________________________________</p>
+                      <p className="font-bold">{profile?.full_name}</p>
+                      <p className="text-sm text-slate-500">CPF: {maskCpf(profile?.cpf || '')}</p>
+                    </div>
+                  </div>
+                )}
+                
+                {documentToView.document_type === 'VACATION_RECEIPT' && documentToView.metadata && (
+                  <div className="space-y-6">
+                    <h1 className="text-xl font-bold text-center underline uppercase mb-8">Recibo de Férias</h1>
+                    
+                    <p>
+                      Recebi de minha empregadora, a importância líquida referente às minhas férias do período aquisitivo de 
+                      <strong> {new Date(documentToView.metadata.startDate).toLocaleDateString('pt-BR')}</strong>, 
+                      com início marcado para <strong>{new Date(documentToView.metadata.startDate).toLocaleDateString('pt-BR')}</strong> e 
+                      retorno ao trabalho no dia <strong>{documentToView.metadata.returnDate}</strong>.
+                    </p>
+                    
+                    <div className="mt-16 pt-8 border-t border-slate-400 text-center space-y-2">
+                      <p>Data do recibo: <strong>{new Date().toLocaleDateString('pt-BR')}</strong></p>
+                      <p>_________________________________________________</p>
+                      <p className="font-bold">{profile?.full_name}</p>
+                      <p className="text-sm text-slate-500">CPF: {maskCpf(profile?.cpf || '')}</p>
+                    </div>
+                  </div>
+                )}
+
+                {!['VACATION_NOTICE', 'VACATION_RECEIPT'].includes(documentToView.document_type) && (
+                  <div className="text-center py-20 text-slate-500">
+                    <AlertCircle className="mx-auto mb-4 opacity-50" size={48} />
+                    <p>Visualização não disponível para este tipo de documento.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-200 bg-white flex justify-end gap-3">
+              {documentToView.status === 'PENDING_SIGNATURE' && (
+                <button 
+                  onClick={() => handleSignDocument(documentToView.id, documentToView.metadata)}
+                  disabled={signingDocId === documentToView.id}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm disabled:opacity-50"
+                >
+                  {signingDocId === documentToView.id ? <Loader2 size={18} className="animate-spin" /> : <PenTool size={18} />}
+                  Assinar Eletronicamente
+                </button>
+              )}
             </div>
           </div>
         </div>
