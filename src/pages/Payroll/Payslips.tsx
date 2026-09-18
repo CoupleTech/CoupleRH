@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { Pagination } from "../../components/Pagination";
+import { useCompany } from "../../contexts/CompanyContext";
 import { toast } from 'sonner';
 
 interface PayrollPeriod {
@@ -36,8 +37,10 @@ interface PayslipPreview {
   employment_contracts: {
     positions?: {
       title: string;
+      cbo?: string;
     };
     workers: {
+      esocial_matricula?: string;
       people: {
         full_name: string;
       };
@@ -57,6 +60,8 @@ interface PayslipItem {
 }
 
 export default function Payslips() {
+  const { selectedCompanyId, companies } = useCompany();
+  const currentCompany = companies.find((c: any) => c.id === selectedCompanyId);
   const [searchTerm, setSearchTerm] = useState("");
   const [periods, setPeriods] = useState<PayrollPeriod[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>("");
@@ -143,9 +148,11 @@ export default function Payslips() {
           status,
           employment_contracts (
             positions (
-              title
+              title,
+              cbo
             ),
             workers (
+              esocial_matricula,
               people (
                 full_name
               )
@@ -457,8 +464,8 @@ export default function Payslips() {
                     </div>
                     <div>
                       <h2 className="font-display font-bold text-xl text-slate-900 print:text-lg">RECIBO DE PAGAMENTO DE SALÁRIO</h2>
-                      <p className="text-slate-500 font-medium mt-1 print:text-black">EMPRESA DEMONSTRAÇÃO LTDA</p>
-                      <p className="text-slate-400 text-xs mt-0.5 print:text-black">CNPJ: 00.000.000/0001-00</p>
+                      <p className="text-slate-500 font-medium mt-1 print:text-black">{currentCompany?.company_name || currentCompany?.trade_name || 'EMPRESA NÃO ENCONTRADA'}</p>
+                      <p className="text-slate-400 text-xs mt-0.5 print:text-black">CNPJ: {currentCompany?.cnpj?.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5") || '00.000.000/0001-00'}</p>
                     </div>
                   </div>
                   <div className="text-right bg-slate-50 p-4 rounded-xl border border-slate-100 print:bg-transparent print:border-none print:p-0">
@@ -477,7 +484,7 @@ export default function Payslips() {
                   <div className="space-y-1">
                     <div className="flex text-sm">
                       <span className="text-slate-400 w-16 print:text-black print:font-bold">Cód:</span>
-                      <span className="font-medium text-slate-900 print:text-black">0001</span>
+                      <span className="font-medium text-slate-900 print:text-black">{selectedPayslip.employment_contracts?.workers?.esocial_matricula || 'N/A'}</span>
                     </div>
                     <div className="flex text-sm">
                       <span className="text-slate-400 w-16 print:text-black print:font-bold">Nome:</span>
@@ -487,7 +494,7 @@ export default function Payslips() {
                   <div className="space-y-1">
                     <div className="flex text-sm">
                       <span className="text-slate-400 w-16 print:text-black print:font-bold">CBO:</span>
-                      <span className="font-medium text-slate-900 print:text-black">0000-00</span>
+                      <span className="font-medium text-slate-900 print:text-black">{selectedPayslip.employment_contracts?.positions?.cbo || '0000-00'}</span>
                     </div>
                     <div className="flex text-sm">
                       <span className="text-slate-400 w-16 print:text-black print:font-bold">Cargo:</span>
