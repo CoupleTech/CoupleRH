@@ -445,111 +445,147 @@ export default function Payslips() {
               </div>
             </div>
 
-            <div className="p-8 overflow-y-auto print:p-0 print:overflow-visible">
-              {/* Estilos específicos para impressão, garantindo o visual de holerite em A4 */}
-              <div className="border-2 border-black p-4 text-sm font-mono text-black print:border-none">
+            <div className="p-8 overflow-y-auto bg-slate-50 print:p-0 print:bg-white print:overflow-visible">
+              {/* Estilos modernos para tela, mas mantendo a simplicidade na impressão */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-sm text-slate-700 print:border-none print:shadow-none print:p-4 print:text-black print:font-mono">
                 
-                <div className="flex justify-between border-b-2 border-black pb-4 mb-4">
-                  <div>
-                    <h2 className="font-bold text-lg">RECIBO DE PAGAMENTO DE SALÁRIO</h2>
-                    <p>EMPRESA DEMONSTRAÇÃO LTDA</p>
-                    <p>CNPJ: 00.000.000/0001-00</p>
+                {/* Cabeçalho Empresa */}
+                <div className="flex justify-between items-start border-b border-slate-200 pb-6 mb-6 print:border-black print:pb-4 print:mb-4 print:border-b-2">
+                  <div className="flex gap-4 items-center">
+                    <div className="w-16 h-16 bg-primary-50 rounded-xl flex items-center justify-center border border-primary-100 print:hidden">
+                      <FileText className="text-primary-600 w-8 h-8" />
+                    </div>
+                    <div>
+                      <h2 className="font-display font-bold text-xl text-slate-900 print:text-lg">RECIBO DE PAGAMENTO DE SALÁRIO</h2>
+                      <p className="text-slate-500 font-medium mt-1 print:text-black">EMPRESA DEMONSTRAÇÃO LTDA</p>
+                      <p className="text-slate-400 text-xs mt-0.5 print:text-black">CNPJ: 00.000.000/0001-00</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold">Competência: {periods.find(p => p.id === selectedPeriod)?.month.toString().padStart(2, '0')}/{periods.find(p => p.id === selectedPeriod)?.year}</p>
-                    <p>Recibo No. {selectedPayslip.id.split('-')[0].toUpperCase()}</p>
+                  <div className="text-right bg-slate-50 p-4 rounded-xl border border-slate-100 print:bg-transparent print:border-none print:p-0">
+                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1 print:text-black">Competência</p>
+                    <p className="font-bold text-lg text-slate-900 print:text-base">
+                      {periods.find(p => p.id === selectedPeriod)?.month.toString().padStart(2, '0')}/{periods.find(p => p.id === selectedPeriod)?.year}
+                    </p>
+                    <p className="text-slate-400 text-xs mt-2 print:text-black print:mt-1">
+                      Recibo No. <span className="font-mono text-slate-600">{selectedPayslip.id.split('-')[0].toUpperCase()}</span>
+                    </p>
                   </div>
                 </div>
 
-                <div className="flex justify-between border-b-2 border-black pb-4 mb-4">
-                  <div>
-                    <p><span className="font-bold">Cód:</span> 0001</p>
-                    <p><span className="font-bold">Nome:</span> {selectedPayslip.employment_contracts?.workers?.people?.full_name}</p>
+                {/* Dados do Funcionário */}
+                <div className="grid grid-cols-2 gap-6 border-b border-slate-200 pb-6 mb-6 print:border-black print:pb-4 print:mb-4 print:border-b-2">
+                  <div className="space-y-1">
+                    <div className="flex text-sm">
+                      <span className="text-slate-400 w-16 print:text-black print:font-bold">Cód:</span>
+                      <span className="font-medium text-slate-900 print:text-black">0001</span>
+                    </div>
+                    <div className="flex text-sm">
+                      <span className="text-slate-400 w-16 print:text-black print:font-bold">Nome:</span>
+                      <span className="font-bold text-slate-900 print:text-black">{selectedPayslip.employment_contracts?.workers?.people?.full_name}</span>
+                    </div>
                   </div>
-                  <div>
-                    <p><span className="font-bold">CBO:</span> 0000-00</p>
-                    <p><span className="font-bold">Cargo:</span> {selectedPayslip.employment_contracts?.positions?.title}</p>
+                  <div className="space-y-1">
+                    <div className="flex text-sm">
+                      <span className="text-slate-400 w-16 print:text-black print:font-bold">CBO:</span>
+                      <span className="font-medium text-slate-900 print:text-black">0000-00</span>
+                    </div>
+                    <div className="flex text-sm">
+                      <span className="text-slate-400 w-16 print:text-black print:font-bold">Cargo:</span>
+                      <span className="font-medium text-slate-900 print:text-black">{selectedPayslip.employment_contracts?.positions?.title}</span>
+                    </div>
                   </div>
                 </div>
 
-                <table className="w-full text-left mb-4">
-                  <thead>
-                    <tr className="border-b border-black">
-                      <th className="py-2 w-16">Cód</th>
-                      <th className="py-2">Descrição</th>
-                      <th className="py-2 text-right w-24">Ref.</th>
-                      <th className="py-2 text-right w-32">Vencimentos</th>
-                      <th className="py-2 text-right w-32">Descontos</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loadingItems ? (
-                      <tr>
-                        <td colSpan={5} className="py-8 text-center text-slate-500">
-                          <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" /> Carregando itens...
-                        </td>
+                {/* Tabela de Rubricas */}
+                <div className="rounded-xl border border-slate-200 overflow-hidden mb-6 print:border-none print:rounded-none">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-50 print:bg-transparent">
+                      <tr className="border-b border-slate-200 print:border-black print:border-b">
+                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-16 print:text-black print:p-1">Cód</th>
+                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider print:text-black print:p-1">Descrição</th>
+                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right w-24 print:text-black print:p-1">Ref.</th>
+                        <th className="py-3 px-4 text-xs font-semibold text-emerald-600 uppercase tracking-wider text-right w-32 print:text-black print:p-1">Vencimentos</th>
+                        <th className="py-3 px-4 text-xs font-semibold text-rose-600 uppercase tracking-wider text-right w-32 print:text-black print:p-1">Descontos</th>
                       </tr>
-                    ) : payslipItems.filter(item => item.type !== 'BASE').map(item => (
-                      <tr key={item.id} className="border-b border-gray-200">
-                        <td className="py-1">{item.rubrics.code}</td>
-                        <td className="py-1">{item.rubrics.name}</td>
-                        <td className="py-1 text-right">{item.reference}</td>
-                        <td className="py-1 text-right">
-                          {item.type === 'EARNING' ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(item.amount) : ''}
-                        </td>
-                        <td className="py-1 text-right">
-                          {item.type === 'DEDUCTION' ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(item.amount) : ''}
-                        </td>
-                      </tr>
-                    ))}
-                    {/* Linhas de Preenchimento para manter o layout */}
-                    {[...Array(Math.max(0, 10 - payslipItems.length))].map((_, i) => (
-                       <tr key={`fill-${i}`}>
-                         <td className="py-1">&nbsp;</td><td></td><td></td><td></td><td></td>
-                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 print:divide-transparent">
+                      {loadingItems ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-slate-500">
+                            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" /> Carregando itens...
+                          </td>
+                        </tr>
+                      ) : payslipItems.filter(item => item.type !== 'BASE').map(item => (
+                        <tr key={item.id} className="hover:bg-slate-50/50 transition-colors print:hover:bg-transparent print:border-none">
+                          <td className="py-2.5 px-4 font-mono text-xs text-slate-500 print:text-black print:p-1">{item.rubrics.code}</td>
+                          <td className="py-2.5 px-4 font-medium text-slate-700 print:text-black print:p-1">{item.rubrics.name}</td>
+                          <td className="py-2.5 px-4 text-right text-slate-500 print:text-black print:p-1">{item.reference}</td>
+                          <td className="py-2.5 px-4 text-right text-emerald-600 font-medium print:text-black print:p-1">
+                            {item.type === 'EARNING' ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(item.amount) : ''}
+                          </td>
+                          <td className="py-2.5 px-4 text-right text-rose-600 font-medium print:text-black print:p-1">
+                            {item.type === 'DEDUCTION' ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(item.amount) : ''}
+                          </td>
+                        </tr>
+                      ))}
+                      {/* Linhas de Preenchimento para manter o layout */}
+                      {[...Array(Math.max(0, 8 - payslipItems.length))].map((_, i) => (
+                         <tr key={`fill-${i}`} className="print:hidden">
+                           <td className="py-2.5 px-4">&nbsp;</td><td></td><td></td><td></td><td></td>
+                         </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-                <div className="flex border-t-2 border-black pt-2 mb-4 justify-between">
-                  <div className="w-1/2 pr-4">
-                    <p className="font-bold mb-2">Mensagem:</p>
-                    <p className="text-xs text-gray-600">Reconheço ter recebido a importância líquida discriminada neste recibo.</p>
+                {/* Resumo e Totais */}
+                <div className="flex border border-slate-200 rounded-xl overflow-hidden mb-6 bg-slate-50 print:border-t-2 print:border-black print:rounded-none print:bg-transparent print:border-x-0 print:border-b-0">
+                  <div className="w-1/2 p-6 flex flex-col justify-center bg-white print:p-2 print:border-none">
+                    <p className="font-semibold text-slate-700 mb-2 print:text-black print:mb-1">Mensagem:</p>
+                    <p className="text-sm text-slate-500 italic print:text-black print:text-xs">Reconheço ter recebido a importância líquida discriminada neste recibo.</p>
                   </div>
-                  <div className="w-1/2 border-l-2 border-black pl-4">
-                    <div className="flex justify-between mb-1">
-                      <span>Total Vencimentos:</span>
-                      <span className="font-bold">{new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.total_earnings || 0)}</span>
+                  <div className="w-1/2 p-6 border-l border-slate-200 print:border-l-2 print:border-black print:p-2">
+                    <div className="flex justify-between items-center mb-3 text-sm print:mb-1">
+                      <span className="text-slate-500 font-medium print:text-black">Total Vencimentos:</span>
+                      <span className="font-bold text-emerald-600 print:text-black">
+                        {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.total_earnings || 0)}
+                      </span>
                     </div>
-                    <div className="flex justify-between mb-1">
-                      <span>Total Descontos:</span>
-                      <span className="font-bold">{new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.total_deductions || 0)}</span>
+                    <div className="flex justify-between items-center mb-4 text-sm print:mb-1">
+                      <span className="text-slate-500 font-medium print:text-black">Total Descontos:</span>
+                      <span className="font-bold text-rose-600 print:text-black">
+                        {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.total_deductions || 0)}
+                      </span>
                     </div>
-                    <div className="flex justify-between text-lg mt-2 pt-2 border-t border-black">
-                      <span className="font-bold">Líquido a Receber ⇨</span>
-                      <span className="font-bold">R$ {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.net_salary || 0)}</span>
+                    <div className="flex justify-between items-center pt-4 border-t border-slate-200 print:border-black print:pt-2">
+                      <span className="font-bold text-slate-900 text-lg print:text-black print:text-base">Líquido a Receber</span>
+                      <span className="font-bold text-primary-600 text-xl print:text-black print:text-lg">
+                        R$ {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.net_salary || 0)}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                <div className="border-t-2 border-black pt-2 flex text-xs justify-between mt-4">
-                  <div>
-                    <span className="font-bold">Base INSS: </span>
-                    {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.base_inss || 0)}
+                {/* Rodapé de Bases */}
+                <div className="bg-slate-100 rounded-xl p-4 flex justify-between text-sm border border-slate-200 print:bg-transparent print:border-t-2 print:border-black print:border-x-0 print:border-b-0 print:rounded-none print:p-2 print:mt-4">
+                  <div className="flex flex-col">
+                    <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1 print:text-black print:font-bold">Base INSS</span>
+                    <span className="font-medium text-slate-700 print:text-black">{new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.base_inss || 0)}</span>
                   </div>
-                  <div>
-                    <span className="font-bold">Base FGTS: </span>
-                    {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.base_fgts || 0)}
+                  <div className="flex flex-col">
+                    <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1 print:text-black print:font-bold">Base FGTS</span>
+                    <span className="font-medium text-slate-700 print:text-black">{new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.base_fgts || 0)}</span>
                   </div>
-                  <div>
-                    <span className="font-bold">FGTS Mês: </span>
-                    {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.fgts_month || 0)}
+                  <div className="flex flex-col">
+                    <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1 print:text-black print:font-bold">FGTS Mês</span>
+                    <span className="font-medium text-slate-700 print:text-black">{new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.fgts_month || 0)}</span>
                   </div>
-                  <div>
-                    <span className="font-bold">Base IRRF: </span>
-                    {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.base_irrf || 0)}
+                  <div className="flex flex-col">
+                    <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1 print:text-black print:font-bold">Base IRRF</span>
+                    <span className="font-medium text-slate-700 print:text-black">{new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPayslip.base_irrf || 0)}</span>
                   </div>
                 </div>
+
               </div>
             </div>
           </div>
