@@ -235,7 +235,7 @@ serve(async (req) => {
         .eq('payroll_periods.type', 'ADVANCE')
         .eq('payroll_periods.month', period.month)
         .eq('payroll_periods.year', period.year)
-        .eq('payroll_periods.status', 'CLOSED');
+        .in('payroll_periods.status', ['CLOSED', 'CONFERENCE', 'CALCULATED']);
         
       if (advData) {
         advancePayslips = advData;
