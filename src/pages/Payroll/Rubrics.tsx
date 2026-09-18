@@ -8,6 +8,7 @@ import {
   Check,
   X,
   Cpu,
+  ShieldAlert,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { Pagination } from "../../components/Pagination";

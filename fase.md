@@ -830,33 +830,33 @@ Resultado: 204,55
 ---
 
 ## 🧪 FASE 33 — Bateria de testes fundamentais
-**Status**: `[Pendente]`
+**Status**: `[Concluído]`
 
 **Referência:** 📐 Fluxo, Seção 44 (Testes fundamentais) | 📜 Pesquisa, todas as seções de cálculo
 
 **Testes obrigatórios:**
 
 ### Salário *(📐 Fluxo, Seção 44)*
-- [ ] Integral, proporcional, admissão no mês, demissão no mês, faltas
+- [x] Integral, proporcional, admissão no mês, demissão no mês, faltas
 
 ### Jornada
-- [ ] Horas normais, extras 50%, extras 100%, adicional noturno, DSR
+- [x] Horas normais, extras 50%, extras 100%, adicional noturno, DSR
 
 ### Tributos *(📜 Pesquisa, Seções 2 e 3)*
-- [ ] INSS: limite inferior, superior, mudança de faixa, teto R$ 8.475,55
-- [ ] IRRF: isento, cada faixa, redutor 2026, dependentes vs simplificado
+- [x] INSS: limite inferior, superior, mudança de faixa, teto R$ 8.475,55
+- [x] IRRF: isento, cada faixa, redutor 2026, dependentes vs simplificado
 
 ### Férias *(📜 Pesquisa, Seção 5)*
-- [ ] Integrais, proporcionais, vencidas (dobro), abono, 1/3
+- [x] Integrais, proporcionais, vencidas (dobro), abono, 1/3
 
 ### 13º *(📜 Pesquisa, Seção 6)*
-- [ ] Integral, proporcional, 1ª parcela, 2ª parcela, rescisão
+- [x] Integral, proporcional, 1ª parcela, 2ª parcela, rescisão
 
 ### Rescisão *(📜 Pesquisa, Seção 7)*
-- [ ] Sem justa causa, pedido, justa causa, prazo determinado, acordo
+- [x] Sem justa causa, pedido, justa causa, prazo determinado, acordo
 
 ### Outros
-- [ ] Adiantamento, complementar, dissídio
+- [x] Adiantamento, complementar, dissídio
 
 ---
 

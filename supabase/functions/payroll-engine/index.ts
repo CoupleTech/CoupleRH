@@ -270,7 +270,7 @@ serve(async (req) => {
         .select('amount, payslips!inner(contract_id, payroll_periods!inner(year, status)), payroll_rubrics!inner(code)')
         .eq('payslips.tenant_id', tenant_id)
         .eq('payslips.payroll_periods.year', period.year)
-        .in('payroll_rubrics.code', ['405', '501'])
+        .in('payroll_rubrics.code', ['602', '405'])
         .in('payslips.payroll_periods.status', ['CLOSED', 'CONFERENCE', 'CALCULATED']); // Aceita calculados para flexibilidade de recálculo no mesmo mês
       
       if (thirteenthData) {
@@ -397,20 +397,20 @@ serve(async (req) => {
          if (avos < 0) avos = 0;
          
          if (period.type === 'THIRTEENTH_1') {
-            applicableRubrics = rubricas.filter(r => r.code === '501');
-            const r501 = applicableRubrics[0];
-            if (r501 && avos > 0) {
-               eventos.push({ rubric_id: r501.id, manual_value: ((contract.base_salary / 12) * avos) / 2, quantity: avos });
+            applicableRubrics = rubricas.filter(r => r.code === '602');
+            const r602 = applicableRubrics[0];
+            if (r602 && avos > 0) {
+               eventos.push({ rubric_id: r602.id, manual_value: ((contract.base_salary / 12) * avos) / 2, quantity: avos });
             }
          } else if (period.type === 'THIRTEENTH_2') {
-            applicableRubrics = rubricas.filter(r => ['502', '803'].includes(r.code) || ['INSS_AUTO', 'IRRF_AUTO'].includes(r.code) || r.name.includes('INSS') || r.name.includes('IRRF'));
+            applicableRubrics = rubricas.filter(r => ['601', '608'].includes(r.code) || ['INSS_AUTO', 'IRRF_AUTO'].includes(r.code) || r.name.includes('INSS') || r.name.includes('IRRF'));
             
-            const r502 = applicableRubrics.find(r => r.code === '502');
-            if (r502 && avos > 0) {
-               eventos.push({ rubric_id: r502.id, manual_value: (contract.base_salary / 12) * avos, quantity: avos });
+            const r601 = applicableRubrics.find(r => r.code === '601');
+            if (r601 && avos > 0) {
+               eventos.push({ rubric_id: r601.id, manual_value: (contract.base_salary / 12) * avos, quantity: avos });
             }
             
-            // Verifica descontos de adiantamento de 13º (rubricas 405 e 501 pagas no ano)
+            // Verifica descontos de adiantamento de 13º (rubricas 405 e 602 pagas no ano)
             const contractAdvances = thirteenthAdvances.filter(a => a.payslips.contract_id === contract.id);
             let totalAdvance = 0;
             for (const adv of contractAdvances) {
@@ -418,9 +418,9 @@ serve(async (req) => {
             }
             
             if (totalAdvance > 0) {
-               const r803 = applicableRubrics.find(r => r.code === '803');
-               if (r803) {
-                  eventos.push({ rubric_id: r803.id, manual_value: totalAdvance, quantity: 1 });
+               const r608 = applicableRubrics.find(r => r.code === '608');
+               if (r608) {
+                  eventos.push({ rubric_id: r608.id, manual_value: totalAdvance, quantity: 1 });
                }
             }
          }
@@ -431,7 +431,7 @@ serve(async (req) => {
            if (!r.code && !r.name) return true;
            const c = r.code || '';
            const n = (r.name || '').toLowerCase();
-           if (['301', '401', '402', '403', '404', '405', '501', '502', '803'].includes(c)) return false;
+           if (['301', '401', '402', '403', '404', '405', '601', '602', '608'].includes(c)) return false;
            if (n.includes('adiantamento') || n.includes('férias') || n.includes('13º') || n.includes('décimo terceiro')) return false;
            return true;
         });
