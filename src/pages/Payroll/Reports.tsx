@@ -175,6 +175,15 @@ export default function PayrollReports() {
     return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
 
+  const formatCNPJ = (cnpj: string) => {
+    if (!cnpj) return "";
+    const clean = cnpj.replace(/\D/g, "");
+    if (clean.length === 14) {
+      return clean.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+    }
+    return cnpj;
+  };
+
   const getPeriodLabel = () => {
     const period = periods.find(p => p.id === selectedPeriod);
     if (!period) return "";
@@ -375,14 +384,27 @@ export default function PayrollReports() {
     
     const doc = new jsPDF('landscape');
     const periodLabel = getPeriodLabel();
+    const company = detailedPayslips[0]?.employment_contracts?.companies;
+    const companyText = company ? `${company.corporate_name} - CNPJ: ${formatCNPJ(company.cnpj)}` : "";
     
     // Header
     doc.setFontSize(18);
     doc.text("Relatório Financeiro de Pagamento", 14, 22);
     doc.setFontSize(11);
     doc.setTextColor(100);
-    doc.text(`Competência: ${periodLabel}`, 14, 30);
-    doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 36);
+    
+    let tableStartY = 45;
+    if (companyText) {
+      doc.setFont("helvetica", "bold");
+      doc.text(companyText, 14, 30);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Competência: ${periodLabel}`, 14, 36);
+      doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 42);
+      tableStartY = 50;
+    } else {
+      doc.text(`Competência: ${periodLabel}`, 14, 30);
+      doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 36);
+    }
 
     const tableColumn = ["Nome", "CPF", "Banco", "Agência", "Conta", "Tipo", "Pix", "Líquido (R$)"];
     const tableRows: any[] = [];
@@ -416,7 +438,7 @@ export default function PayrollReports() {
     autoTable(doc, {
       head: [tableColumn],
       body: tableRows,
-      startY: 45,
+      startY: tableStartY,
       styles: { fontSize: 9 },
       headStyles: { fillColor: [63, 81, 181] },
       alternateRowStyles: { fillColor: [245, 247, 250] },
@@ -436,14 +458,27 @@ export default function PayrollReports() {
     
     const doc = new jsPDF('landscape');
     const periodLabel = getPeriodLabel();
+    const company = detailedPayslips[0]?.employment_contracts?.companies;
+    const companyText = company ? `${company.corporate_name} - CNPJ: ${formatCNPJ(company.cnpj)}` : "";
     
     // Header
     doc.setFontSize(18);
     doc.text("Relatório Analítico Contábil - Folha de Pagamento", 14, 22);
     doc.setFontSize(11);
     doc.setTextColor(100);
-    doc.text(`Competência: ${periodLabel}`, 14, 30);
-    doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 36);
+    
+    let tableStartY = 45;
+    if (companyText) {
+      doc.setFont("helvetica", "bold");
+      doc.text(companyText, 14, 30);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Competência: ${periodLabel}`, 14, 36);
+      doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 42);
+      tableStartY = 50;
+    } else {
+      doc.text(`Competência: ${periodLabel}`, 14, 30);
+      doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 36);
+    }
 
     const tableColumn = [
       "Nome", 
@@ -514,7 +549,7 @@ export default function PayrollReports() {
     autoTable(doc, {
       head: [tableColumn],
       body: tableRows,
-      startY: 45,
+      startY: tableStartY,
       styles: { fontSize: 8 },
       headStyles: { fillColor: [15, 118, 110] },
       alternateRowStyles: { fillColor: [240, 253, 250] },
