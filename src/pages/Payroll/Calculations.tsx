@@ -329,6 +329,8 @@ export default function () {
       );
 
       if (error) throw error;
+      
+      console.log("ENGINE DEBUG LOGS:", data.debug);
 
       await fetchPeriods(); // Refresh period to get processing_date
       await fetchPayslips(activePeriod.id);

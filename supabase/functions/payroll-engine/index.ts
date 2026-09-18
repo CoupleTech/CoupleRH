@@ -36,6 +36,7 @@ function normalizeCalcForm(value: string): string {
 }
 
 serve(async (req) => {
+  const debugLogs: any[] = [];
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
