@@ -28,9 +28,7 @@ export default function Dashboard() {
     absenteeism: [],
     salary_distribution: []
   });
-
-
-
+  const [recentTransmissions, setRecentTransmissions] = useState<any[]>([]);
   const fetchDashboardData = async () => {
     setLoading(true);
 
