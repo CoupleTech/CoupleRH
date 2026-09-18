@@ -39,14 +39,20 @@ export class PayrollEngine {
 
         // Override inteligente caso a rubrica venha como FIXED ou FORMULA mas seja de categorias que calculam sobre base
         if (calcForm === 'FIXO' || calcForm === 'FIXED' || calcForm === 'FORMULA') {
-            if (rubric.category === 'OVERTIME') {
+            if (rubric.category === 'OVERTIME' || rubric.category === 'HORA_EXTRA') {
                 calcForm = 'HORAS';
                 if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
                 if (!rubric.factor) rubric.factor = 1.5;
             } else if (rubric.category === 'DSR' || rubric.code === '1011' || rubric.code === '170') {
                 calcForm = 'PERCENTUAL';
                 if (!rubric.calculation_base) rubric.calculation_base = 'BASE_DSR';
-                if (!rubric.percentage) rubric.percentage = 20;
+                if (!rubric.percentage) {
+                    if (this.context.dias_uteis > 0 && this.context.dias_inuteis > 0) {
+                        rubric.percentage = (this.context.dias_inuteis / this.context.dias_uteis) * 100;
+                    } else {
+                        rubric.percentage = 20; // 20% fallback (1/5)
+                    }
+                }
             } else if (rubric.code === '302') {
                 calcForm = 'PERCENTUAL';
                 if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_MINIMO';
@@ -88,19 +94,30 @@ export class PayrollEngine {
             else if (calcForm === 'PERCENTUAL' || calcForm === 'PERCENTAGE' || calcForm === 'PERCENTAGE_OF_BASE') {
                 if (rubric.calculation_base) {
                     const baseVal = this.context.getVariable(rubric.calculation_base);
-                    const perc = rubric.percentage || 0;
+                    let perc = rubric.percentage;
+                    
+                    if (!perc && (rubric.category === 'DSR' || rubric.code === '1011' || rubric.code === '170')) {
+                        if (this.context.dias_uteis > 0 && this.context.dias_inuteis > 0) {
+                            perc = (this.context.dias_inuteis / this.context.dias_uteis) * 100;
+                        } else {
+                            perc = 20;
+                        }
+                        rubric.percentage = perc;
+                    }
+                    
+                    perc = perc || 0;
                     
                     if (quantidade > 0) {
                         valorCalculado = baseVal * (perc / 100) * quantidade;
-                        
-                        if (this.context.dias_trabalhados < 30) {
-                            valorCalculado = (valorCalculado / 30) * this.context.dias_trabalhados;
-                            formulaUsada = `PROPORCIONAL(${rubric.calculation_base} * ${perc}% * ${quantidade} / 30 * ${this.context.dias_trabalhados})`;
-                        } else {
-                            formulaUsada = `PERCENTUAL(${rubric.calculation_base} * ${perc}% * ${quantidade})`;
-                        }
+                        formulaUsada = `PERCENTUAL(${rubric.calculation_base} * ${perc}% * ${quantidade})`;
                     }
                 }
+            }
+            else if (calcForm === 'AVOS' && rubric.calculation_base) {
+                const baseVal = this.context.getVariable(rubric.calculation_base);
+                const divisor = rubric.divisor || 12;
+                valorCalculado = (baseVal / divisor) * quantidade;
+                formulaUsada = `AVOS(${rubric.calculation_base} / ${divisor} * ${quantidade})`;
             }
             else if ((calcForm === 'DIAS' || calcForm === 'DAYS') && rubric.calculation_base) {
                 const baseVal = this.context.getVariable(rubric.calculation_base);
@@ -166,7 +183,7 @@ export class PayrollEngine {
             }
 
             // Acumula bases dinâmicas
-            if (rubric.category === 'OVERTIME' || rubric.category === 'COMMISSION') {
+            if (rubric.category === 'OVERTIME' || rubric.category === 'HORA_EXTRA' || rubric.category === 'COMMISSION') {
                 const currentBaseDSR = this.context.getVariable('BASE_DSR') || 0;
                 this.context.setVariable('BASE_DSR', currentBaseDSR + valorCalculado);
             }

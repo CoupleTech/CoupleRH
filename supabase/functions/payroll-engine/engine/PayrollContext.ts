@@ -145,9 +145,9 @@ export class PayrollContext {
     this.empregado_id = data.empregado_id;
     this.contrato_id = data.contrato_id;
     this.salario_base = data.salario_base || 0;
-    this.dias_trabalhados = data.dias_trabalhados || 30;
-    this.dias_uteis = data.dias_uteis || 26;
-    this.dias_inuteis = data.dias_inuteis || 4;
+    this.dias_trabalhados = data.dias_trabalhados !== undefined ? data.dias_trabalhados : 30;
+    this.dias_uteis = data.dias_uteis !== undefined ? data.dias_uteis : 26;
+    this.dias_inuteis = data.dias_inuteis !== undefined ? data.dias_inuteis : 4;
     this.divisor = data.divisor || 220;
     this.salario_minimo = data.salario_minimo || 1621;
     this.rubricas = new Map((data.rubricas || []).map((r: Rubric) => [r.id, r]));
