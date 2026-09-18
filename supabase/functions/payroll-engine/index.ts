@@ -305,7 +305,7 @@ serve(async (req) => {
         if (contract.receives_advance === false) continue;
 
         // Folha de Adiantamento: Filtra pela rubrica de Adiantamento
-        applicableRubrics = rubricas.filter(r => r.code === '301' || (r.name && r.name.toLowerCase().includes('adiantamento')));
+        applicableRubrics = rubricas.filter(r => r.code === '250' || (r.name && r.name.toLowerCase().includes('adiantamento')));
         // BUG 12 fix: Era 'const', causava TypeError ao reatribuir
         let rubricAdvEarning = applicableRubrics[0];
 
@@ -313,7 +313,7 @@ serve(async (req) => {
           // Cria a rubrica no BD para não estourar FK UUID e aparecer no recibo
           const newRub = {
             tenant_id,
-            code: '301',
+            code: '250',
             name: 'Adiantamento Quinzenal',
             type: 'EARNING',
             category: 'ADVANCE',
@@ -352,25 +352,25 @@ serve(async (req) => {
         const req = vacations.find(v => v.contract_id === contract.id);
         
         if (req) {
-           applicableRubrics = rubricas.filter(r => ['401', '402', '403', '404', '405'].includes(r.code) || ['INSS_AUTO', 'IRRF_AUTO'].includes(r.code) || r.name.includes('INSS') || r.name.includes('IRRF'));
+           applicableRubrics = rubricas.filter(r => ['501', '502', '503', '504', '602'].includes(r.code) || ['INSS_AUTO', 'IRRF_AUTO'].includes(r.code) || r.name.includes('INSS') || r.name.includes('IRRF'));
            
-           const r401 = applicableRubrics.find(r => r.code === '401');
-           if (r401) eventos.push({ rubric_id: r401.id, manual_value: (contract.base_salary / 30) * req.days_taken, quantity: req.days_taken });
+           const r501 = applicableRubrics.find(r => r.code === '501');
+           if (r501) eventos.push({ rubric_id: r501.id, manual_value: (contract.base_salary / 30) * req.days_taken, quantity: req.days_taken });
            
-           const r402 = applicableRubrics.find(r => r.code === '402');
-           if (r402) eventos.push({ rubric_id: r402.id, manual_value: ((contract.base_salary / 30) * req.days_taken) / 3, quantity: 1 });
+           const r502 = applicableRubrics.find(r => r.code === '502');
+           if (r502) eventos.push({ rubric_id: r502.id, manual_value: ((contract.base_salary / 30) * req.days_taken) / 3, quantity: 1 });
            
            if (req.cash_allowance_days > 0) {
-              const r403 = applicableRubrics.find(r => r.code === '403');
-              if (r403) eventos.push({ rubric_id: r403.id, manual_value: (contract.base_salary / 30) * req.cash_allowance_days, quantity: req.cash_allowance_days });
+              const r503 = applicableRubrics.find(r => r.code === '503');
+              if (r503) eventos.push({ rubric_id: r503.id, manual_value: (contract.base_salary / 30) * req.cash_allowance_days, quantity: req.cash_allowance_days });
               
-              const r404 = applicableRubrics.find(r => r.code === '404');
-              if (r404) eventos.push({ rubric_id: r404.id, manual_value: ((contract.base_salary / 30) * req.cash_allowance_days) / 3, quantity: 1 });
+              const r504 = applicableRubrics.find(r => r.code === '504');
+              if (r504) eventos.push({ rubric_id: r504.id, manual_value: ((contract.base_salary / 30) * req.cash_allowance_days) / 3, quantity: 1 });
            }
            
            if (req.advance_13th_salary) {
-              const r405 = applicableRubrics.find(r => r.code === '405');
-              if (r405) eventos.push({ rubric_id: r405.id, manual_value: contract.base_salary / 2, quantity: 1 });
+              const r602 = applicableRubrics.find(r => r.code === '602');
+              if (r602) eventos.push({ rubric_id: r602.id, manual_value: contract.base_salary / 2, quantity: 1 });
            }
         }
       } else if (period.type === 'THIRTEENTH_1' || period.type === 'THIRTEENTH_2') {
@@ -507,16 +507,16 @@ serve(async (req) => {
       if (period.type === 'MONTHLY') {
         const contractAdvance = advancePayslips.find(a => a.contract_id === contract.id);
         if (contractAdvance && contractAdvance.total_earnings > 0) {
-          let rubricAdvDeduction = applicableRubrics.find(r => r.code === '801');
+          let rubricAdvDeduction = applicableRubrics.find(r => r.code === '850');
           if (!rubricAdvDeduction) {
              // Procura na lista global pois applicableRubrics excluiu itens com "adiantamento" no nome antes
-             rubricAdvDeduction = rubricas.find(r => r.code === '801' || (r.name && r.name.toLowerCase().includes('desconto de adiantamento') && r.type === 'DEDUCTION'));
+             rubricAdvDeduction = rubricas.find(r => r.code === '850' || (r.name && r.name.toLowerCase().includes('desconto de adiantamento') && r.type === 'DEDUCTION'));
              if (rubricAdvDeduction) applicableRubrics.push(rubricAdvDeduction);
           }
           if (!rubricAdvDeduction) {
              const newRub = {
                 tenant_id,
-                code: '801',
+                code: '850',
                 name: 'Desconto de Adiantamento',
                 type: 'DEDUCTION',
                 category: 'ADVANCE',
