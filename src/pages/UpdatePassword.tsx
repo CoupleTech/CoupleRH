@@ -141,36 +141,30 @@ export default function UpdatePassword() {
               <label className="input-label" htmlFor="new-password">
                 Nova Senha
               </label>
-              <div className="relative">
-                <input
-                  id="new-password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="input pl-10"
-                  placeholder="Mínimo 6 caracteres"
-                />
-                <Lock className="absolute left-3 top-3 text-slate-400" size={18} />
-              </div>
+              <input
+                id="new-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="input"
+                placeholder="Mínimo 6 caracteres"
+              />
             </div>
 
             <div>
               <label className="input-label" htmlFor="confirm-password">
                 Confirmar Senha
               </label>
-              <div className="relative">
-                <input
-                  id="confirm-password"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  className="input pl-10"
-                  placeholder="Repita a senha"
-                />
-                <Lock className="absolute left-3 top-3 text-slate-400" size={18} />
-              </div>
+              <input
+                id="confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                className="input"
+                placeholder="Repita a senha"
+              />
             </div>
 
             <button
