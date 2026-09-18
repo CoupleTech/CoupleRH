@@ -834,7 +834,49 @@ export default function EmployeePortal() {
               </Section>
             </div>
 
-            {/* ━━━━ Dados Pessoais / Profissionais ... ━━━━ */}
+            {/* ━━━━ Dados Pessoais / Profissionais ━━━━ */}
+            {profile && (
+              <div className="animate-fade-up stagger-4 space-y-5">
+                <Section
+                  title="Dados Pessoais"
+                  icon={<User size={18} className="text-blue-600" />}
+                >
+                  <div className="pt-3 space-y-1">
+                    <DataRow label="Nome Completo" value={profile.full_name} />
+                    {profile.social_name && <DataRow label="Nome Social" value={profile.social_name} />}
+                    <DataRow label="CPF" value={maskCpf(profile.cpf)} />
+                    <DataRow label="Data de Nasc." value={formatDate(profile.birth_date)} />
+                  </div>
+                </Section>
+
+                <Section
+                  title="Contato e Endereço"
+                  icon={<MapPin size={18} className="text-indigo-600" />}
+                >
+                  <div className="pt-3 space-y-1">
+                    <DataRow label="E-mail" value={profile.email?.toLowerCase()} />
+                    <DataRow label="Celular" value={profile.mobile || profile.phone} />
+                    <DataRow 
+                      label="Endereço" 
+                      value={profile.address?.street ? `${profile.address.street}, ${profile.address.number || 'S/N'}${profile.address.complement ? ' - ' + profile.address.complement : ''} - ${profile.address.neighborhood || ''}, ${profile.address.city || ''}/${profile.address.state || ''}` : "—"} 
+                    />
+                  </div>
+                </Section>
+
+                <Section
+                  title="Dados Bancários"
+                  icon={<CreditCard size={18} className="text-purple-600" />}
+                >
+                  <div className="pt-3 space-y-1">
+                    <DataRow label="Banco" value={profile.bank?.bank_name} />
+                    <DataRow label="Agência" value={profile.bank?.agency} />
+                    <DataRow label="Conta" value={profile.bank?.account_number ? `${profile.bank.account_number}-${profile.bank.account_digit || ''}` : "—"} />
+                    <DataRow label="Tipo de Conta" value={profile.bank?.account_type === 'CURRENT' ? 'Conta Corrente' : profile.bank?.account_type === 'SAVINGS' ? 'Conta Poupança' : profile.bank?.account_type || "—"} />
+                    {profile.bank?.pix_key && <DataRow label="Chave PIX" value={profile.bank.pix_key} />}
+                  </div>
+                </Section>
+              </div>
+            )}
           </>
         )}
       </main>

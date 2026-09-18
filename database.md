@@ -154,7 +154,8 @@ CREATE TABLE public.workplaces (
 
 -- 10. Work Schedules (Jornadas e Horários)
 CREATE TABLE public.work_schedules (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    status TEXT DEFAULT 'ACTIVE',
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     company_id UUID REFERENCES public.companies(id) ON DELETE SET NULL,
     name TEXT NOT NULL,
@@ -480,11 +481,14 @@ CREATE TABLE public.workers (
 
 -- 3. Employment Contracts (Vínculos Contratuais)
 CREATE TABLE public.employment_contracts (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    contract_type TEXT,
+    workload_hours NUMERIC,
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     worker_id UUID NOT NULL REFERENCES public.workers(id) ON DELETE CASCADE,
     company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
     establishment_id UUID REFERENCES public.establishments(id) ON DELETE RESTRICT,
+    workplace_id UUID REFERENCES public.workplaces(id) ON DELETE SET NULL,
     department_id UUID REFERENCES public.departments(id) ON DELETE SET NULL,
     position_id UUID REFERENCES public.positions(id) ON DELETE RESTRICT,
     work_schedule_id UUID REFERENCES public.work_schedules(id) ON DELETE RESTRICT,
@@ -501,6 +505,7 @@ CREATE TABLE public.employment_contracts (
     vt_card_number TEXT,
     vt_tariff_value NUMERIC(10,2),
     vt_discount_percentage NUMERIC(5,2) DEFAULT 6.00,
+    receives_advance BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ
@@ -1121,7 +1126,13 @@ CREATE TABLE public.timesheets (
 );
 
 CREATE TABLE public.payroll_periods (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    month INTEGER,
+    year INTEGER,
+    type TEXT,
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    parent_period_id UUID REFERENCES public.payroll_periods(id) ON DELETE CASCADE,
+    complement_reason TEXT,
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     competence_month INTEGER NOT NULL CHECK (competence_month BETWEEN 1 AND 12),
     competence_year INTEGER NOT NULL,
@@ -1134,7 +1145,9 @@ CREATE TABLE public.payroll_periods (
 );
 
 CREATE TABLE public.payroll_rubrics (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    calculation_form TEXT,
+    type TEXT,
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     code TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -1192,7 +1205,8 @@ CREATE TABLE public.payroll_events (
 );
 
 CREATE TABLE public.payroll_memory_calc (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    logs JSONB,
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     event_id UUID NOT NULL REFERENCES public.payroll_events(id) ON DELETE CASCADE,
     formula_used TEXT NOT NULL,
     variables_snapshot JSONB NOT NULL,
@@ -1298,7 +1312,12 @@ CREATE TRIGGER audit_sst_exams_trigger AFTER INSERT OR UPDATE OR DELETE ON publi
 ### Script 11: `00011_architecture_fixes`
 ```sql
 CREATE TABLE public.employment_contract_history (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    employment_contract_id UUID REFERENCES public.employment_contracts(id) ON DELETE CASCADE,
+    event_type TEXT,
+    old_value JSONB,
+    new_value JSONB,
+    event_date DATE,
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     contract_id UUID NOT NULL REFERENCES public.employment_contracts(id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     valid_from DATE NOT NULL,
@@ -11064,7 +11083,7 @@ ADD COLUMN IF NOT EXISTS emergency_contact_name TEXT,
 ADD COLUMN IF NOT EXISTS emergency_contact_phone TEXT,
 ADD COLUMN IF NOT EXISTS emergency_contact_relation TEXT;
 
--- 2. Dados banc�rios na tabela workers
+-- 2. Dados banc�rios na tabela workers
 ALTER TABLE public.workers
 ADD COLUMN IF NOT EXISTS bank_code TEXT,
 ADD COLUMN IF NOT EXISTS bank_name TEXT,
@@ -11109,3 +11128,4 @@ CREATE TRIGGER audit_employee_documents_trigger
 AFTER INSERT OR UPDATE OR DELETE ON public.employee_documents
 FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
 ``
+\n\n## Functions (RPCs)\n\n### authenticate_employee\n`sql\nCREATE OR REPLACE FUNCTION public.authenticate_employee(p_cpf TEXT, p_birth_date TEXT)\nRETURNS TABLE (\n    worker_id UUID,\n    person_id UUID,\n    company_id UUID,\n    tenant_id UUID,\n    full_name TEXT\n)\n`\n

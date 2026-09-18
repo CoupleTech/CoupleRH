@@ -2,7 +2,7 @@
   "name": "coupleRH",
   "short_name": "cR",
   "description": "Plataforma completa de gestão de Recursos Humanos",
-  "start_url": "/",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#3b82f6",
