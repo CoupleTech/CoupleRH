@@ -188,7 +188,6 @@ export default function CompaniesList() {
                         {company.status === 'ACTIVE' ? 'Ativo' : company.status === 'SUSPENDED' ? 'Suspenso' : 'Inativo'}
                       </span>
                     </td>
-// ... (código existente até o final da tabela)
                       <td className="table-cell text-right">
                         <button className="p-1.5 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
                           <ChevronRight size={16} />
