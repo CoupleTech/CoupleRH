@@ -101,7 +101,10 @@ export default function EmployeeProfile() {
           people (*),
           employment_contracts (
             *,
-            employee_scales (*)
+            employee_scales (*),
+            companies (*),
+            positions (*),
+            departments (*)
           )
         `)
         .eq('id', id)
@@ -291,6 +294,7 @@ export default function EmployeeProfile() {
           <VacationsTab 
             workerId={id || null} 
             contract={workerData?.employment_contracts?.[0]}
+            workerData={workerData}
             onSaved={handleGenericSave}
           />
         </div>

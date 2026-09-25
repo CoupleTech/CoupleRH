@@ -9,10 +9,11 @@ import { toast } from 'sonner';
 interface VacationsTabProps {
   workerId: string | null;
   contract: any | null;
+  workerData?: any | null;
   onSaved: () => void;
 }
 
-export default function VacationsTab({ workerId, contract, onSaved }: VacationsTabProps) {
+export default function VacationsTab({ workerId, contract, workerData, onSaved }: VacationsTabProps) {
   const [vestingPeriods, setVestingPeriods] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedPeriodId, setExpandedPeriodId] = useState<string | null>(null);
@@ -103,21 +104,24 @@ export default function VacationsTab({ workerId, contract, onSaved }: VacationsT
 
     const formatDt = (d: Date) => d.toLocaleDateString('pt-BR');
 
+    const empresaName = contract?.companies?.company_name || contract?.companies?.trade_name || 'EMPRESA';
+    const workerName = workerData?.people?.social_name || workerData?.people?.full_name || 'COLABORADOR';
+
     const documentData = {
-      empresa: contract?.companies?.company_name || 'EMPRESA PADRÃO',
-      cnpj: contract?.companies?.document_number || '00.000.000/0000-00',
-      endereco: contract?.companies?.address || 'Endereço não cadastrado',
-      cidade: contract?.companies?.city || 'São Paulo',
-      bairro: contract?.companies?.neighborhood || 'Centro',
-      cep: contract?.companies?.zip_code || '00000-000',
+      empresa: empresaName,
+      cnpj: contract?.companies?.document_number || '',
+      endereco: contract?.companies?.address || '',
+      cidade: contract?.companies?.city || '',
+      bairro: contract?.companies?.neighborhood || '',
+      cep: contract?.companies?.zip_code || '',
       
-      empregado: contract?.workers?.people?.full_name || 'COLABORADOR',
-      ctps: contract?.workers?.people?.ctps_number || '0000000',
-      registro: contract?.workers?.matricula || '1/0000',
-      centroCusto: contract?.department_id || '0 - Geral',
-      funcao: contract?.positions?.title || 'Não informada',
-      bancoAgencia: '341 / 0000-0', // Mock ou pegar de accounts se existir
-      contaCorrente: '00000-0',
+      empregado: workerName,
+      ctps: workerData?.people?.ctps_number || '',
+      registro: workerData?.matricula || '',
+      centroCusto: contract?.departments?.name || '',
+      funcao: contract?.positions?.title || '',
+      bancoAgencia: '', // Pode ser preenchido caso implementem banking_data
+      contaCorrente: '',
       salarioBase: contract?.base_salary || 0,
       
       paInicio: formatDt(new Date(period.start_date)),
