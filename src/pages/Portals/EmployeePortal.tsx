@@ -33,7 +33,10 @@ import { supabase } from "../../lib/supabase";
 import { toast } from 'sonner';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { generateAvisoHTML, generateReciboHTML } from "../../utils/vacationPrint";// ── Types ──
+import { generateAvisoHTML, generateReciboHTML } from "../../utils/vacationPrint";
+import { motion, AnimatePresence } from "framer-motion";
+
+// ── Types ──
 interface EmployeeAuth {
   isAuthenticated: boolean;
   workerId: string;
