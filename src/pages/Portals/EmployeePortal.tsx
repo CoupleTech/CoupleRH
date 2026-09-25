@@ -273,6 +273,10 @@ export default function EmployeePortal() {
   const [showPayslipModal, setShowPayslipModal] = useState(false);
   const [loadingPayslipDetails, setLoadingPayslipDetails] = useState(false);
 
+  // Vacation Details
+  const [selectedVacationReq, setSelectedVacationReq] = useState<any>(null);
+  const [showVacationDetailsModal, setShowVacationDetailsModal] = useState(false);
+
   const greeting = useMemo(() => getGreeting(), []);
   const firstName = auth?.fullName?.split(" ")[0] || "";
 
@@ -939,18 +943,19 @@ export default function EmployeePortal() {
                               </span>
                             </div>
                             
-                            <div className="grid grid-cols-2 gap-2 mt-2">
+                            <div className="mt-2">
                               <button 
-                                onClick={() => handlePrintVacation(req, 'aviso')}
-                                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[11px] font-bold transition-colors"
+                                onClick={() => {
+                                  setSelectedVacationReq(req);
+                                  setShowVacationDetailsModal(true);
+                                }}
+                                className="w-full flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-colors group"
                               >
-                                <FileText size={14} /> Aviso
-                              </button>
-                              <button 
-                                onClick={() => handlePrintVacation(req, 'recibo')}
-                                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[11px] font-bold transition-colors"
-                              >
-                                <FileText size={14} /> Recibo
+                                <div className="flex items-center gap-2">
+                                  <FileText size={16} className="text-slate-400 group-hover:text-primary-600 transition-colors" />
+                                  Detalhes e Documentos
+                                </div>
+                                <ChevronRight size={16} className="text-slate-400 group-hover:text-primary-600 transition-colors" />
                               </button>
                             </div>
                           </div>
@@ -1429,6 +1434,113 @@ export default function EmployeePortal() {
                   Assinar Eletronicamente
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ━━━━ MODAL: Detalhes das Férias Programadas ━━━━ */}
+      {showVacationDetailsModal && selectedVacationReq && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div 
+            className="bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-amber-50/80">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                  <Umbrella size={20} className="text-amber-700" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-800 font-display">Detalhes das Férias</h2>
+                  <p className="text-xs font-medium text-slate-500">
+                    {formatDate(selectedVacationReq.start_date)} a {formatDate(selectedVacationReq.end_date)}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowVacationDetailsModal(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-amber-100/50 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-5">
+              <div className="space-y-6">
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 space-y-3">
+                  <div className="flex justify-between items-center text-sm border-b border-slate-200 pb-2">
+                    <span className="text-slate-500 font-medium">Dias Solicitados</span>
+                    <span className="font-bold text-slate-800">{selectedVacationReq.days_taken} dias</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm border-b border-slate-200 pb-2">
+                    <span className="text-slate-500 font-medium">Abono Pecuniário</span>
+                    <span className="font-bold text-slate-800">{selectedVacationReq.cash_allowance_days || 0} dias</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm border-b border-slate-200 pb-2">
+                    <span className="text-slate-500 font-medium">Data de Início</span>
+                    <span className="font-bold text-slate-800">{formatDate(selectedVacationReq.start_date)}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm pb-1">
+                    <span className="text-slate-500 font-medium">Data de Término</span>
+                    <span className="font-bold text-slate-800">{formatDate(selectedVacationReq.end_date)}</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm shadow-slate-200/20">
+                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+                    <FileText size={16} className="text-slate-500" />
+                    <h3 className="font-bold text-slate-800 text-sm">Ações e Documentos</h3>
+                  </div>
+                  <div className="p-2 space-y-2">
+                    <div className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg transition-colors">
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">Aviso de Férias</p>
+                        <p className="text-xs text-slate-500">Comunicação formal de saída</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => handlePrintVacation(selectedVacationReq, 'aviso')}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors"
+                        >
+                          Visualizar / Imprimir
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg transition-colors border-t border-slate-100">
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">Recibo de Férias</p>
+                        <p className="text-xs text-slate-500">Comprovante de pagamento</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => handlePrintVacation(selectedVacationReq, 'recibo')}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors"
+                        >
+                          Visualizar / Imprimir
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3">
+              <button 
+                onClick={() => {
+                  setShowVacationDetailsModal(false);
+                  setShowDocsModal(true);
+                  setDocsActiveTab('assinaturas');
+                }}
+                className="flex items-center gap-2 px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm"
+              >
+                <PenTool size={16} /> Ir para Assinaturas
+              </button>
             </div>
           </div>
         </div>
