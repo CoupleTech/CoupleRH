@@ -34,7 +34,6 @@ import { toast } from 'sonner';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { generateAvisoHTML, generateReciboHTML } from "../../utils/vacationPrint";
-import { motion, AnimatePresence } from "framer-motion";
 
 // ── Types ──
 interface EmployeeAuth {
@@ -1436,58 +1435,45 @@ export default function EmployeePortal() {
       )}
 
       {/* Modal Visualização de Férias */}
-      <AnimatePresence>
-        {showVacationDoc && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-900/40 backdrop-blur-sm sm:items-center"
-          >
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="flex h-[90vh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:h-auto sm:max-h-[85vh] sm:max-w-4xl sm:rounded-2xl"
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-                <h3 className="font-display text-lg font-bold text-slate-800">{vacationDocTitle}</h3>
-                <button
-                  onClick={() => setShowVacationDoc(false)}
-                  className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              
-              <div className="flex-1 overflow-hidden bg-slate-100 p-2 sm:p-6 relative">
-                <iframe 
-                  id="vacation-doc-frame"
-                  srcDoc={vacationDocHtml}
-                  className="w-full h-full bg-white rounded shadow-sm border-0"
-                  title="Documento de Férias"
-                />
-              </div>
-              
-              <div className="border-t border-slate-100 bg-slate-50 px-6 py-4 flex justify-end">
-                <button
-                  onClick={() => {
-                    const iframe = document.getElementById('vacation-doc-frame') as HTMLIFrameElement;
-                    if (iframe && iframe.contentWindow) {
-                      iframe.contentWindow.print();
-                    }
-                  }}
-                  className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white transition-all hover:bg-blue-700 active:scale-95"
-                >
-                  <FileText size={18} />
-                  Imprimir Documento
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {showVacationDoc && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-900/40 backdrop-blur-sm sm:items-center">
+          <div className="flex h-[90vh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:h-auto sm:max-h-[85vh] sm:max-w-4xl sm:rounded-2xl transition-all">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <h3 className="font-display text-lg font-bold text-slate-800">{vacationDocTitle}</h3>
+              <button
+                onClick={() => setShowVacationDoc(false)}
+                className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-hidden bg-slate-100 p-2 sm:p-6 relative">
+              <iframe 
+                id="vacation-doc-frame"
+                srcDoc={vacationDocHtml}
+                className="w-full h-full bg-white rounded shadow-sm border-0"
+                title="Documento de Férias"
+              />
+            </div>
+            
+            <div className="border-t border-slate-100 bg-slate-50 px-6 py-4 flex justify-end">
+              <button
+                onClick={() => {
+                  const iframe = document.getElementById('vacation-doc-frame') as HTMLIFrameElement;
+                  if (iframe && iframe.contentWindow) {
+                    iframe.contentWindow.print();
+                  }
+                }}
+                className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white transition-all hover:bg-blue-700 active:scale-95"
+              >
+                <FileText size={18} />
+                Imprimir Documento
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
