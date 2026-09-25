@@ -104,14 +104,22 @@ export default function VacationsTab({ workerId, contract, workerData, onSaved }
 
     const formatDt = (d: Date) => d.toLocaleDateString('pt-BR');
 
-    const empresaName = contract?.companies?.company_name || contract?.companies?.trade_name || 'EMPRESA';
+    // Usar Razão Social (company_name) explicitamente
+    const empresaName = contract?.companies?.company_name || 'EMPRESA PADRÃO';
     const workerName = workerData?.people?.social_name || workerData?.people?.full_name || 'COLABORADOR';
+    
+    // Tratamento forte para evitar cidade em branco
+    let cidadeReal = '';
+    if (contract?.companies?.city && contract.companies.city.trim() !== '') {
+      cidadeReal = contract.companies.city.trim();
+    }
+    const cidade = cidadeReal || 'São Paulo';
 
     const documentData = {
       empresa: empresaName,
       cnpj: contract?.companies?.document_number || '',
       endereco: contract?.companies?.address || '',
-      cidade: contract?.companies?.city || '',
+      cidade: cidade,
       bairro: contract?.companies?.neighborhood || '',
       cep: contract?.companies?.zip_code || '',
       

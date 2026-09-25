@@ -105,7 +105,7 @@ export const generateAvisoHTML = (data: any) => {
     <body>
       <div class="header-box">
         <div class="logo-area">
-          <strong style="color:#333; font-size:14px; text-align:center;">${data.empresa}</strong>
+          <!-- Logo empty as requested -->
         </div>
         <div class="title-area">Aviso de Férias</div>
       </div>
@@ -213,7 +213,7 @@ export const generateReciboHTML = (data: any) => {
     <body>
       <div class="header-box">
         <div class="logo-area">
-          <strong style="color:#333; font-size:14px; text-align:center;">${data.empresa}</strong>
+          <!-- Logo empty as requested -->
         </div>
         <div class="title-area">RECIBO DE FÉRIAS</div>
       </div>
