@@ -39,7 +39,7 @@ export class PayrollEngine {
 
         const isOvertime = rubric.category === 'OVERTIME' || rubric.category === 'HORA_EXTRA' || (rubric.name || '').toUpperCase().includes('HORA EXTRA');
         const isDsrNoturno = rubric.code === '171' || (rubric.name || '').toUpperCase().includes('NOTURNO DSR') || (rubric.name || '').toUpperCase().includes('DSR SOBRE ADICIONAL NOTURNO');
-        const isDsr = rubric.category === 'DSR' || rubric.code === '1011' || rubric.code === '170' || rubric.code === '104' || ((rubric.name || '').toUpperCase().includes('DSR') && !isDsrNoturno);
+        const isDsr = (rubric.category === 'DSR' || rubric.code === '1011' || rubric.code === '170' || rubric.code === '104' || ((rubric.name || '').toUpperCase().includes('DSR') && !isDsrNoturno)) && rubric.type === 'EARNING';
         const isAdicionalNoturno = rubric.code === '301' || (rubric.name || '').toUpperCase().includes('NOTURNO') && !isDsrNoturno;
         const isInsalubridade = rubric.code === '302' || (rubric.name || '').toUpperCase().includes('INSALUBRIDADE');
         const isPericulosidade = rubric.code === '303' || (rubric.name || '').toUpperCase().includes('PERICULOSIDADE');
