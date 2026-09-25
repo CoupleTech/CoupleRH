@@ -88,6 +88,7 @@ export const generateAvisoHTML = (data: any) => {
           body { padding: 0 !important; margin: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .box, .header-box { break-inside: avoid; page-break-inside: avoid; }
         }
+        * { box-sizing: border-box; }
         body { font-family: 'Arial', sans-serif; padding: 10px; font-size: 12px; color: #000; }
         .box { border: 2px solid #333; margin-bottom: 8px; border-radius: 4px; overflow: hidden; }
         .header-box { display: flex; align-items: stretch; border: 2px solid #333; border-radius: 8px; margin-bottom: 8px; background: #e5e7eb; overflow: hidden; }
@@ -124,7 +125,8 @@ export const generateAvisoHTML = (data: any) => {
           <div class="row"><span class="lbl">Cidade:</span><span class="val">${data.cidade}</span></div>
         </div>
         <div class="col-right">
-          <br/><br/>
+          <div class="row"><span class="lbl">&nbsp;</span></div>
+          <div class="row"><span class="lbl">&nbsp;</span></div>
           <div class="row"><span class="lbl" style="width:70px;">Bairro:</span><span class="val">${data.bairro}</span></div>
           <div class="row"><span class="lbl" style="width:70px;">CEP:</span><span class="val">${data.cep}</span></div>
         </div>
@@ -196,6 +198,7 @@ export const generateReciboHTML = (data: any) => {
           body { padding: 0 !important; margin: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .box, .header-box { break-inside: avoid; page-break-inside: avoid; }
         }
+        * { box-sizing: border-box; }
         body { font-family: 'Arial', sans-serif; padding: 10px; font-size: 12px; color: #000; }
         .box { border: 2px solid #333; margin-bottom: 5px; border-radius: 4px; overflow: hidden; }
         .header-box { display: flex; align-items: stretch; border: 2px solid #333; border-radius: 8px; margin-bottom: 5px; background: #e5e7eb; overflow: hidden; }
