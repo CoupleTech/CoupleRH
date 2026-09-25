@@ -83,22 +83,27 @@ export const generateAvisoHTML = (data: any) => {
       <meta charset="UTF-8">
       <title>Aviso de Férias</title>
       <style>
-        body { font-family: 'Arial', sans-serif; padding: 20px; font-size: 13px; color: #000; }
+        @media print {
+          @page { margin: 10mm; }
+          body { padding: 0 !important; margin: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .box, .header-box { break-inside: avoid; page-break-inside: avoid; }
+        }
+        body { font-family: 'Arial', sans-serif; padding: 15px; font-size: 13px; color: #000; }
         .box { border: 2px solid #333; margin-bottom: 10px; border-radius: 4px; overflow: hidden; }
-        .header-box { display: flex; align-items: stretch; border: 2px solid #333; border-radius: 8px; margin-bottom: 10px; background: #e5e7eb; }
-        .logo-area { width: 150px; background: #fff; padding: 15px; border-right: 2px solid #333; display: flex; align-items: center; justify-content: center; }
-        .title-area { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; }
+        .header-box { display: flex; align-items: stretch; border: 2px solid #333; border-radius: 8px; margin-bottom: 10px; background: #e5e7eb; overflow: hidden; }
+        .logo-area { width: 150px; background: #fff; padding: 10px; border-right: 2px solid #333; display: flex; align-items: center; justify-content: center; }
+        .title-area { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; text-transform: uppercase; }
         .section { padding: 8px 12px; display: flex; flex-wrap: wrap; }
         .row { width: 100%; display: flex; margin-bottom: 4px; }
         .col-half { width: 50%; }
         .col-full { width: 100%; }
-        .lbl { font-weight: normal; color: #333; display: inline-block; width: 120px; }
-        .val { font-weight: bold; }
+        .lbl { font-weight: normal; color: #333; display: inline-block; width: 110px; }
+        .val { font-weight: bold; flex: 1; }
         .table-box { width: 100%; border-collapse: collapse; text-align: center; margin-top: 15px; }
         .table-box th { border: 1px solid #333; background: #e5e7eb; padding: 6px; font-weight: normal; }
         .table-box td { border: 1px solid #333; padding: 8px; }
-        .text-content { margin-top: 20px; text-align: justify; line-height: 1.5; padding: 10px; }
-        .signatures { display: flex; justify-content: space-between; margin-top: 80px; padding: 0 40px; }
+        .text-content { margin-top: 15px; text-align: justify; line-height: 1.5; padding: 10px; }
+        .signatures { display: flex; justify-content: space-between; margin-top: 50px; padding: 0 40px; }
         .sig-line { width: 45%; border-top: 1px solid #000; text-align: center; padding-top: 5px; font-weight: bold; }
       </style>
     </head>
@@ -185,19 +190,24 @@ export const generateReciboHTML = (data: any) => {
       <meta charset="UTF-8">
       <title>Recibo de Férias</title>
       <style>
-        body { font-family: 'Arial', sans-serif; padding: 20px; font-size: 13px; color: #000; }
+        @media print {
+          @page { margin: 10mm; }
+          body { padding: 0 !important; margin: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .box, .header-box { break-inside: avoid; page-break-inside: avoid; }
+        }
+        body { font-family: 'Arial', sans-serif; padding: 15px; font-size: 13px; color: #000; }
         .box { border: 2px solid #333; margin-bottom: 5px; border-radius: 4px; overflow: hidden; }
-        .header-box { display: flex; align-items: stretch; border: 2px solid #333; border-radius: 8px; margin-bottom: 5px; background: #e5e7eb; }
-        .logo-area { width: 150px; background: #fff; padding: 15px; border-right: 2px solid #333; display: flex; align-items: center; justify-content: center; }
-        .title-area { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; }
+        .header-box { display: flex; align-items: stretch; border: 2px solid #333; border-radius: 8px; margin-bottom: 5px; background: #e5e7eb; overflow: hidden; }
+        .logo-area { width: 150px; background: #fff; padding: 10px; border-right: 2px solid #333; display: flex; align-items: center; justify-content: center; }
+        .title-area { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; text-transform: uppercase; }
         .section { padding: 4px 12px; display: flex; flex-wrap: wrap; }
         .row { width: 100%; display: flex; margin-bottom: 2px; }
         .col-half { width: 50%; }
-        .lbl { font-weight: normal; color: #333; display: inline-block; width: 120px; }
-        .lbl-sm { width: 100px; }
-        .val { font-weight: bold; }
+        .lbl { font-weight: normal; color: #333; display: inline-block; width: 110px; }
+        .lbl-sm { width: 100px; display: inline-block; }
+        .val { font-weight: bold; flex: 1; }
         
-        .table-header { text-align: center; background: #e5e7eb; font-weight: bold; padding: 4px; border-bottom: 2px solid #333; }
+        .table-header { text-align: center; background: #e5e7eb; font-weight: bold; padding: 4px; border-bottom: 2px solid #333; text-transform: uppercase; }
         .verbas-table { width: 100%; border-collapse: collapse; }
         .verbas-table th, .verbas-table td { border-right: 1px solid #333; padding: 2px 8px; }
         .verbas-table th:last-child, .verbas-table td:last-child { border-right: none; }
@@ -206,7 +216,7 @@ export const generateReciboHTML = (data: any) => {
         .totals-row { border-top: 1px solid #333; font-weight: bold; }
         .liquido-row { background: #e5e7eb; font-weight: bold; font-size: 14px; border-top: 2px solid #333;}
         
-        .footer-text { margin-top: 20px; margin-bottom: 40px; padding: 0 10px; }
+        .footer-text { margin-top: 15px; margin-bottom: 30px; padding: 0 10px; text-align: justify; }
         .signature-line { width: 300px; border-top: 1px solid #000; text-align: center; padding-top: 5px; font-weight: bold; margin-left: 10px; }
       </style>
     </head>
