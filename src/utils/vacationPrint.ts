@@ -84,26 +84,27 @@ export const generateAvisoHTML = (data: any) => {
       <title>Aviso de Férias</title>
       <style>
         @media print {
-          @page { margin: 10mm; }
+          @page { size: A4; margin: 15mm; }
           body { padding: 0 !important; margin: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .box, .header-box { break-inside: avoid; page-break-inside: avoid; }
         }
-        body { font-family: 'Arial', sans-serif; padding: 15px; font-size: 13px; color: #000; }
-        .box { border: 2px solid #333; margin-bottom: 10px; border-radius: 4px; overflow: hidden; }
-        .header-box { display: flex; align-items: stretch; border: 2px solid #333; border-radius: 8px; margin-bottom: 10px; background: #e5e7eb; overflow: hidden; }
+        body { font-family: 'Arial', sans-serif; padding: 10px; font-size: 12px; color: #000; }
+        .box { border: 2px solid #333; margin-bottom: 8px; border-radius: 4px; overflow: hidden; }
+        .header-box { display: flex; align-items: stretch; border: 2px solid #333; border-radius: 8px; margin-bottom: 8px; background: #e5e7eb; overflow: hidden; }
         .logo-area { width: 150px; background: #fff; padding: 10px; border-right: 2px solid #333; display: flex; align-items: center; justify-content: center; }
-        .title-area { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; text-transform: uppercase; }
-        .section { padding: 8px 12px; display: flex; flex-wrap: wrap; }
+        .title-area { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: bold; text-transform: uppercase; }
+        .section { padding: 6px 10px; display: flex; flex-wrap: wrap; }
         .row { width: 100%; display: flex; margin-bottom: 4px; }
-        .col-half { width: 50%; }
+        .col-left { width: 65%; padding-right: 10px; }
+        .col-right { width: 35%; }
         .col-full { width: 100%; }
-        .lbl { font-weight: normal; color: #333; display: inline-block; width: 110px; }
-        .val { font-weight: bold; flex: 1; }
-        .table-box { width: 100%; border-collapse: collapse; text-align: center; margin-top: 15px; }
+        .lbl { font-weight: normal; color: #333; display: inline-block; width: 130px; flex-shrink: 0; }
+        .val { font-weight: bold; flex: 1; word-break: break-word; }
+        .table-box { width: 100%; border-collapse: collapse; text-align: center; margin-top: 10px; }
         .table-box th { border: 1px solid #333; background: #e5e7eb; padding: 6px; font-weight: normal; }
-        .table-box td { border: 1px solid #333; padding: 8px; }
-        .text-content { margin-top: 15px; text-align: justify; line-height: 1.5; padding: 10px; }
-        .signatures { display: flex; justify-content: space-between; margin-top: 50px; padding: 0 40px; }
+        .table-box td { border: 1px solid #333; padding: 6px; }
+        .text-content { margin-top: 10px; text-align: justify; line-height: 1.4; padding: 8px; }
+        .signatures { display: flex; justify-content: space-between; margin-top: 40px; padding: 0 40px; }
         .sig-line { width: 45%; border-top: 1px solid #000; text-align: center; padding-top: 5px; font-weight: bold; }
       </style>
     </head>
@@ -116,31 +117,31 @@ export const generateAvisoHTML = (data: any) => {
       </div>
       
       <div class="box section">
-        <div class="col-half">
+        <div class="col-left">
           <div class="row"><span class="lbl">Empregador:</span><span class="val">${data.empresa}</span></div>
           <div class="row"><span class="lbl">C.N.P.J.:</span><span class="val">${data.cnpj}</span></div>
           <div class="row"><span class="lbl">Endereço:</span><span class="val">${data.endereco}</span></div>
           <div class="row"><span class="lbl">Cidade:</span><span class="val">${data.cidade}</span></div>
         </div>
-        <div class="col-half">
+        <div class="col-right">
           <br/><br/>
-          <div class="row"><span class="lbl">Bairro:</span><span class="val">${data.bairro}</span></div>
-          <div class="row"><span class="lbl">CEP:</span><span class="val">${data.cep}</span></div>
+          <div class="row"><span class="lbl" style="width:70px;">Bairro:</span><span class="val">${data.bairro}</span></div>
+          <div class="row"><span class="lbl" style="width:70px;">CEP:</span><span class="val">${data.cep}</span></div>
         </div>
       </div>
 
       <div class="box section">
-        <div class="col-full" style="margin-bottom:15px;">
+        <div class="col-full" style="margin-bottom:10px;">
           <strong>${data.cidade}, ${data.dataEmissao}</strong>
         </div>
-        <div class="col-full" style="margin-bottom:15px;">Sr.(a)</div>
-        <div class="col-half">
-          <div class="row"><span class="val">${data.empregado}</span></div>
+        <div class="col-full" style="margin-bottom:4px;">Sr.(a)</div>
+        <div class="col-left">
+          <div class="row"><span class="val" style="font-size:14px; text-transform:uppercase;">${data.empregado}</span></div>
           <div class="row"><span class="lbl">CTPS Nº/Série/UF:</span><span class="val">${data.ctps}</span></div>
         </div>
-        <div class="col-half">
-          <div class="row"><span class="lbl">Filial/Registro:</span><span class="val">${data.registro}</span></div>
-          <div class="row"><span class="lbl">Centro de Custo:</span><span class="val">${data.centroCusto}</span></div>
+        <div class="col-right">
+          <div class="row"><span class="lbl" style="width:110px;">Filial/Registro:</span><span class="val">${data.registro}</span></div>
+          <div class="row"><span class="lbl" style="width:110px;">Centro de Custo:</span><span class="val">${data.centroCusto}</span></div>
         </div>
         
         <div class="col-full" style="margin-top:20px;">
@@ -191,21 +192,23 @@ export const generateReciboHTML = (data: any) => {
       <title>Recibo de Férias</title>
       <style>
         @media print {
-          @page { margin: 10mm; }
+          @page { size: A4; margin: 15mm; }
           body { padding: 0 !important; margin: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .box, .header-box { break-inside: avoid; page-break-inside: avoid; }
         }
-        body { font-family: 'Arial', sans-serif; padding: 15px; font-size: 13px; color: #000; }
+        body { font-family: 'Arial', sans-serif; padding: 10px; font-size: 12px; color: #000; }
         .box { border: 2px solid #333; margin-bottom: 5px; border-radius: 4px; overflow: hidden; }
         .header-box { display: flex; align-items: stretch; border: 2px solid #333; border-radius: 8px; margin-bottom: 5px; background: #e5e7eb; overflow: hidden; }
         .logo-area { width: 150px; background: #fff; padding: 10px; border-right: 2px solid #333; display: flex; align-items: center; justify-content: center; }
-        .title-area { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; text-transform: uppercase; }
-        .section { padding: 4px 12px; display: flex; flex-wrap: wrap; }
+        .title-area { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: bold; text-transform: uppercase; }
+        .section { padding: 4px 10px; display: flex; flex-wrap: wrap; }
         .row { width: 100%; display: flex; margin-bottom: 2px; }
-        .col-half { width: 50%; }
-        .lbl { font-weight: normal; color: #333; display: inline-block; width: 110px; }
-        .lbl-sm { width: 100px; display: inline-block; }
-        .val { font-weight: bold; flex: 1; }
+        .col-left { width: 65%; padding-right: 10px; }
+        .col-right { width: 35%; }
+        .col-full { width: 100%; }
+        .lbl { font-weight: normal; color: #333; display: inline-block; width: 130px; flex-shrink: 0; }
+        .lbl-sm { width: 110px; display: inline-block; flex-shrink: 0; }
+        .val { font-weight: bold; flex: 1; word-break: break-word; }
         
         .table-header { text-align: center; background: #e5e7eb; font-weight: bold; padding: 4px; border-bottom: 2px solid #333; text-transform: uppercase; }
         .verbas-table { width: 100%; border-collapse: collapse; }
@@ -229,23 +232,23 @@ export const generateReciboHTML = (data: any) => {
       </div>
       
       <div class="box section">
-        <div class="col-half">
+        <div class="col-left">
           <div class="row"><span class="lbl">Empregador:</span><span class="val">${data.empresa}</span></div>
         </div>
-        <div class="col-half">
+        <div class="col-right">
           <div class="row"><span class="lbl lbl-sm">C.N.P.J.:</span><span class="val">${data.cnpj}</span></div>
         </div>
       </div>
 
       <div class="box section">
-        <div class="col-half">
-          <div class="row"><span class="lbl">Empregado:</span><span class="val">${data.empregado}</span></div>
+        <div class="col-left">
+          <div class="row"><span class="lbl">Empregado:</span><span class="val" style="text-transform:uppercase;">${data.empregado}</span></div>
           <div class="row"><span class="lbl">CTPS Nº/Série:</span><span class="val">${data.ctps}</span></div>
           <div class="row"><span class="lbl">Função:</span><span class="val">${data.funcao}</span></div>
           <div class="row"><span class="lbl">Banco/Agência:</span><span class="val">${data.bancoAgencia}</span></div>
           <div class="row"><span class="lbl">Centro de Custo:</span><span class="val">${data.centroCusto}</span></div>
         </div>
-        <div class="col-half">
+        <div class="col-right">
           <div class="row"><span class="lbl lbl-sm">Filial/Registro:</span><span class="val">${data.registro}</span></div>
           <div class="row"><span class="lbl lbl-sm">Dependentes IR:</span><span class="val">00</span></div>
           <div class="row"><span class="lbl lbl-sm">Salário base:</span><span class="val">${formatMoney(data.salarioBase)}</span></div>
@@ -254,9 +257,11 @@ export const generateReciboHTML = (data: any) => {
       </div>
 
       <div class="box section">
-        <div class="col-half">
+        <div class="col-left">
           <div class="row"><span class="lbl" style="width:180px;">Período aquisitivo de:</span><span class="val">${data.paInicio} à ${data.paFim}</span></div>
           <div class="row"><span class="lbl" style="width:180px;">Período de gozo de:</span><span class="val">${data.gozoInicio} à ${data.gozoFim}</span></div>
+        </div>
+        <div class="col-right">
           <div class="row"><span class="lbl" style="width:180px;">Quantidade de dias de férias:</span><span class="val">${data.diasGozo} dias</span></div>
           <div class="row"><span class="lbl" style="width:180px;">Quantidade de Dias de Abono:</span><span class="val">${data.diasAbono} dias</span></div>
         </div>
