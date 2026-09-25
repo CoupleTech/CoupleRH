@@ -32,7 +32,8 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { toast } from 'sonner';
 import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";// ── Types ──
+import autoTable from "jspdf-autotable";
+import { generateAvisoHTML, generateReciboHTML } from "../../utils/vacationPrint";// ── Types ──
 interface EmployeeAuth {
   isAuthenticated: boolean;
   workerId: string;
@@ -421,6 +422,65 @@ export default function EmployeePortal() {
     });
 
     doc.save(`holerite_${currentPayslip.period_month}_${currentPayslip.period_year}.pdf`);
+  };
+
+  const handlePrintVacation = async (req: any, type: 'aviso' | 'recibo') => {
+    if (!profile || !auth) return;
+    
+    try {
+      const { data: company } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', auth.companyId)
+        .single();
+        
+      const startDate = new Date(req.start_date);
+      const endDate = new Date(req.end_date);
+      const today = new Date();
+      
+      const formatDt = (d: Date) => d.toLocaleDateString('pt-BR');
+      
+      const documentData = {
+        empresa: company?.corporate_name || "EMPRESA PADRÃO",
+        cnpj: company?.cnpj || "",
+        endereco: company?.address ? `${company.address.street}, ${company.address.number}` : "",
+        cidade: company?.address?.city || "São Paulo",
+        bairro: company?.address?.neighborhood || "",
+        cep: company?.address?.zip_code || "",
+        
+        empregado: profile.full_name,
+        ctps: profile.cpf || "", // Usando CPF como fallback caso não haja CTPS no profile
+        registro: "-", 
+        funcao: profile.contract?.position_title || "",
+        bancoAgencia: profile.bank ? `${profile.bank.bank_name || ''} / ${profile.bank.agency || ''}` : "",
+        contaCorrente: profile.bank?.account_number || "",
+        centroCusto: profile.contract?.department_name || "",
+        
+        dataEmissao: formatDt(today),
+        dataPagamento: formatDt(new Date(startDate.getTime() - 2 * 24 * 60 * 60 * 1000)),
+        
+        paInicio: vacationBalance?.period_start ? formatDt(new Date(vacationBalance.period_start)) : "",
+        paFim: vacationBalance?.period_end ? formatDt(new Date(vacationBalance.period_end)) : "",
+        gozoInicio: formatDt(startDate),
+        gozoFim: formatDt(endDate),
+        gozoStartDateRaw: startDate.toISOString(),
+        
+        diasGozo: req.days_taken,
+        diasAbono: req.cash_allowance_days || 0,
+        salarioBase: profile.contract?.base_salary || 0,
+      };
+      
+      const html = type === 'aviso' ? generateAvisoHTML(documentData) : generateReciboHTML(documentData);
+      
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(html);
+        printWindow.document.close();
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao gerar documento de férias.");
+    }
   };
 
   const compressImage = (file: File): Promise<File> => {
@@ -875,10 +935,16 @@ export default function EmployeePortal() {
                             </div>
                             
                             <div className="grid grid-cols-2 gap-2 mt-2">
-                              <button className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[11px] font-bold transition-colors">
+                              <button 
+                                onClick={() => handlePrintVacation(req, 'aviso')}
+                                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[11px] font-bold transition-colors"
+                              >
                                 <FileText size={14} /> Aviso
                               </button>
-                              <button className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[11px] font-bold transition-colors">
+                              <button 
+                                onClick={() => handlePrintVacation(req, 'recibo')}
+                                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[11px] font-bold transition-colors"
+                              >
                                 <FileText size={14} /> Recibo
                               </button>
                             </div>
