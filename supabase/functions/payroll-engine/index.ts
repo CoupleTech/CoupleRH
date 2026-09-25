@@ -98,6 +98,26 @@ serve(async (req) => {
       
     if (contract_id_filter) {
       queryContracts = queryContracts.eq('id', contract_id_filter);
+    } else if (period.type === 'VACATION') {
+      // Se for processamento em lote de férias, pega APENAS os contratos que tem férias neste mês
+      const { data: vacPeriods } = await supabase
+        .from('vacation_vesting_periods')
+        .select('contract_id, vacation_requests!inner(start_date, status)')
+        .eq('tenant_id', tenant_id);
+      
+      const validContractIds = (vacPeriods || [])
+        .filter((vp: any) => vp.vacation_requests?.some((req: any) => {
+          const start = new Date(req.start_date);
+          return start.getMonth() + 1 === period.month && start.getFullYear() === period.year;
+        }))
+        .map((vp: any) => vp.contract_id);
+        
+      if (validContractIds.length > 0) {
+        queryContracts = queryContracts.in('id', validContractIds);
+      } else {
+        // Se nenhum contrato tiver férias no mês, força a não retornar nada para não processar indevidamente
+        queryContracts = queryContracts.eq('id', '00000000-0000-0000-0000-000000000000');
+      }
     }
 
     const { data: contracts, error: contractsError } = await queryContracts;

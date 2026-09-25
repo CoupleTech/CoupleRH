@@ -149,12 +149,25 @@ export default function () {
         .order("type", { ascending: true });
 
       if (data) {
-        setPeriods(data as PayrollPeriod[]);
-        if (!activePeriod && data.length > 0) {
-          selectPeriod(data[0] as PayrollPeriod);
+        // Filtra para esconder Folhas de Férias futuras que poluem a tela do usuário hoje
+        const todayMonth = new Date().getMonth() + 1;
+        const todayYear = new Date().getFullYear();
+        
+        const filteredData = data.filter((p: any) => {
+          if (p.type === 'VACATION') {
+            if (p.year > todayYear) return false;
+            if (p.year === todayYear && p.month > todayMonth) return false;
+          }
+          return true;
+        });
+
+        setPeriods(filteredData as PayrollPeriod[]);
+        if (!activePeriod && filteredData.length > 0) {
+          selectPeriod(filteredData[0] as PayrollPeriod);
         } else if (activePeriod) {
-          const updatedActive = data.find(p => p.id === activePeriod.id);
+          const updatedActive = filteredData.find((p: any) => p.id === activePeriod.id);
           if (updatedActive) selectPeriod(updatedActive as PayrollPeriod);
+          else if (filteredData.length > 0) selectPeriod(filteredData[0] as PayrollPeriod);
         }
       }
     }
