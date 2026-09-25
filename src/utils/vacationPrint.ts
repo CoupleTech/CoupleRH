@@ -315,18 +315,18 @@ export const generateReciboHTML = (data: any, autoPrint: boolean = true) => {
             <th style="width:100px;">Vencimentos</th>
             <th style="width:100px;">Descontos</th>
           </tr>
-          ${c.m1Ferias > 0 ? `<tr><td>201 - Férias - ${c.m1Str}</td><td>${c.m1Days},00</td><td>${formatMoney(c.m1Ferias)}</td><td></td></tr>` : ''}
-          ${c.m1Ferias13 > 0 ? `<tr><td>202 - Férias 1/3 - ${c.m1Str}</td><td>0,00</td><td>${formatMoney(c.m1Ferias13)}</td><td></td></tr>` : ''}
+          ${c.m1Ferias > 0 ? `<tr><td>501 - Férias - ${c.m1Str}</td><td>${c.m1Days},00</td><td>${formatMoney(c.m1Ferias)}</td><td></td></tr>` : ''}
+          ${c.m1Ferias13 > 0 ? `<tr><td>502 - Férias 1/3 - ${c.m1Str}</td><td>0,00</td><td>${formatMoney(c.m1Ferias13)}</td><td></td></tr>` : ''}
           
-          ${c.m2Ferias > 0 ? `<tr><td>201 - Férias - ${c.m2Str}</td><td>${c.m2Days},00</td><td>${formatMoney(c.m2Ferias)}</td><td></td></tr>` : ''}
-          ${c.m2Ferias13 > 0 ? `<tr><td>202 - Férias 1/3 - ${c.m2Str}</td><td>0,00</td><td>${formatMoney(c.m2Ferias13)}</td><td></td></tr>` : ''}
+          ${c.m2Ferias > 0 ? `<tr><td>501 - Férias - ${c.m2Str}</td><td>${c.m2Days},00</td><td>${formatMoney(c.m2Ferias)}</td><td></td></tr>` : ''}
+          ${c.m2Ferias13 > 0 ? `<tr><td>502 - Férias 1/3 - ${c.m2Str}</td><td>0,00</td><td>${formatMoney(c.m2Ferias13)}</td><td></td></tr>` : ''}
 
-          ${c.abono > 0 ? `<tr><td>731 - Abono Pecuniário</td><td>${data.diasAbono},00</td><td>${formatMoney(c.abono)}</td><td></td></tr>` : ''}
-          ${c.abono13 > 0 ? `<tr><td>733 - Abono Pecuniário 1/3</td><td>0,00</td><td>${formatMoney(c.abono13)}</td><td></td></tr>` : ''}
+          ${c.abono > 0 ? `<tr><td>503 - Abono Pecuniário</td><td>${data.diasAbono},00</td><td>${formatMoney(c.abono)}</td><td></td></tr>` : ''}
+          ${c.abono13 > 0 ? `<tr><td>504 - Abono Pecuniário 1/3</td><td>0,00</td><td>${formatMoney(c.abono13)}</td><td></td></tr>` : ''}
           
-          ${c.m1Inss > 0 ? `<tr><td>514 - INSS Férias Recibo - ${c.m1Str}</td><td>0,00</td><td></td><td>${formatMoney(c.m1Inss)}</td></tr>` : ''}
-          ${c.m2Inss > 0 ? `<tr><td>514 - INSS Férias Recibo - ${c.m2Str}</td><td>0,00</td><td></td><td>${formatMoney(c.m2Inss)}</td></tr>` : ''}
-          ${c.irrf > 0 ? `<tr><td>775 - Imposto de Renda Férias Recibo</td><td>0,00</td><td></td><td>${formatMoney(c.irrf)}</td></tr>` : ''}
+          ${c.m1Inss > 0 ? `<tr><td>901 - INSS Férias - ${c.m1Str}</td><td>0,00</td><td></td><td>${formatMoney(c.m1Inss)}</td></tr>` : ''}
+          ${c.m2Inss > 0 ? `<tr><td>901 - INSS Férias - ${c.m2Str}</td><td>0,00</td><td></td><td>${formatMoney(c.m2Inss)}</td></tr>` : ''}
+          ${c.irrf > 0 ? `<tr><td>902 - IRRF Férias Recibo</td><td>0,00</td><td></td><td>${formatMoney(c.irrf)}</td></tr>` : ''}
           
           <tr class="totals-row">
             <td></td>
