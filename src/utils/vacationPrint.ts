@@ -324,9 +324,6 @@ export const generateReciboHTML = (data: any) => {
           ${c.abono > 0 ? `<tr><td>731 - Abono Pecuniário</td><td>${data.diasAbono},00</td><td>${formatMoney(c.abono)}</td><td></td></tr>` : ''}
           ${c.abono13 > 0 ? `<tr><td>733 - Abono Pecuniário 1/3</td><td>0,00</td><td>${formatMoney(c.abono13)}</td><td></td></tr>` : ''}
           
-          <!-- Espaçadores para empurrar os descontos pro final (simulado) -->
-          <tr><td style="color:transparent;">.</td><td></td><td></td><td></td></tr>
-          
           ${c.m1Inss > 0 ? `<tr><td>514 - INSS Férias Recibo - ${c.m1Str}</td><td>0,00</td><td></td><td>${formatMoney(c.m1Inss)}</td></tr>` : ''}
           ${c.m2Inss > 0 ? `<tr><td>514 - INSS Férias Recibo - ${c.m2Str}</td><td>0,00</td><td></td><td>${formatMoney(c.m2Inss)}</td></tr>` : ''}
           ${c.irrf > 0 ? `<tr><td>775 - Imposto de Renda Férias Recibo</td><td>0,00</td><td></td><td>${formatMoney(c.irrf)}</td></tr>` : ''}
