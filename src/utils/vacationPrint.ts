@@ -111,7 +111,7 @@ export const calculateVacationReceipt = (
   };
 };
 
-export const generateAvisoHTML = (data: any) => {
+export const generateAvisoHTML = (data: any, autoPrint: boolean = true) => {
   return `
     <!DOCTYPE html>
     <html lang="pt-BR">
@@ -211,13 +211,13 @@ export const generateAvisoHTML = (data: any) => {
         <div class="sig-line">${data.empresa}</div>
         <div class="sig-line">${data.empregado}</div>
       </div>
-      <script>window.onload = () => window.print();</script>
+      ${autoPrint ? `<script>window.onload = () => window.print();</script>` : ''}
     </body>
     </html>
   `;
 };
 
-export const generateReciboHTML = (data: any) => {
+export const generateReciboHTML = (data: any, autoPrint: boolean = true) => {
   const c = calculateVacationReceipt(data.salarioBase, data.diasGozo, data.diasAbono, data.gozoStartDateRaw);
   
   const formatMoney = (val: number) => val.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
@@ -352,7 +352,7 @@ export const generateReciboHTML = (data: any) => {
       <div class="signature-line">
         ${data.empregado}
       </div>
-      <script>window.onload = () => window.print();</script>
+      ${autoPrint ? `<script>window.onload = () => window.print();</script>` : ''}
     </body>
     </html>
   `;
