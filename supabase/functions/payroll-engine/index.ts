@@ -91,7 +91,7 @@ serve(async (req) => {
 
     let queryContracts = supabase
       .from('employment_contracts')
-      .select('id, worker_id, company_id, base_salary, status, admission_date, receives_advance, work_schedules(weekly_hours), contract_types(has_inss, has_fgts)')
+      .select('id, worker_id, company_id, base_salary, status, admission_date, receives_advance, work_schedules(weekly_hours, divisor), contract_types(has_inss, has_fgts)')
       .eq('tenant_id', tenant_id)
       .eq('company_id', company_id)
       .eq('status', 'ACTIVE');
@@ -441,13 +441,14 @@ serve(async (req) => {
          }
 
       } else {
-        // Folha Mensal/Outras: Exclui rubricas de adiantamento, férias e 13º
+        // Folha Mensal/Outras: Exclui rubricas de férias e 13º para não duplicarem na folha normal (se aplicável)
         applicableRubrics = rubricas.filter(r => {
            if (!r.code && !r.name) return true;
            const c = r.code || '';
            const n = (r.name || '').toLowerCase();
-           if (['301', '401', '402', '403', '404', '405', '601', '602', '608'].includes(c)) return false;
-           if (n.includes('adiantamento') || n.includes('férias') || n.includes('13º') || n.includes('décimo terceiro')) return false;
+           // Removemos a exclusão de 301 (Adic Noturno) e série 400 (Comissões/Prêmios) pois eles entram na folha mensal
+           if (['405', '601', '602', '608'].includes(c)) return false;
+           if (n.includes('adiantamento quinzenal') || n.includes('férias') || n.includes('13º') || n.includes('décimo terceiro')) return false;
            return true;
         });
 
@@ -656,8 +657,12 @@ serve(async (req) => {
       // Calcula o Divisor baseado na jornada de trabalho
       let divisor = 220; // Default CLT 44h
       const schedule = Array.isArray(contract.work_schedules) ? contract.work_schedules[0] : contract.work_schedules;
-      if (schedule && schedule.weekly_hours) {
-          divisor = (schedule.weekly_hours / 6) * 30;
+      if (schedule) {
+          if (schedule.divisor) {
+              divisor = schedule.divisor;
+          } else if (schedule.weekly_hours) {
+              divisor = (schedule.weekly_hours / 6) * 30;
+          }
       }
 
       // BUG 5 fix: Contar dependentes para IRRF

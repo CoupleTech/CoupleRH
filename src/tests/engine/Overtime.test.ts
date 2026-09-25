@@ -86,8 +86,7 @@ describe('PayrollEngine - Horas Extras e DSR', () => {
       rubricas,
       eventos: [
         { rubric_id: 'r1', quantity: 30, origin: 'AUTOMATICA' },
-        { rubric_id: 'r2', quantity: 10, origin: 'MANUAL' }, // Gera 150.00 de HE
-        { rubric_id: 'r3', quantity: 1, origin: 'AUTOMATICA' } // Chama o DSR
+        { rubric_id: 'r2', quantity: 10, origin: 'MANUAL' } // Gera 150.00 de HE
       ]
     });
 

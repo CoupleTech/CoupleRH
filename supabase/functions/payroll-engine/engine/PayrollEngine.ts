@@ -37,39 +37,61 @@ export class PayrollEngine {
             }
         } 
 
-        // Override inteligente caso a rubrica venha como FIXED ou FORMULA mas seja de categorias que calculam sobre base
-        if (calcForm === 'FIXO' || calcForm === 'FIXED' || calcForm === 'FORMULA') {
-            if (rubric.category === 'OVERTIME' || rubric.category === 'HORA_EXTRA') {
-                calcForm = 'HORAS';
-                if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
-                if (!rubric.factor) rubric.factor = 1.5;
-            } else if (rubric.category === 'DSR' || rubric.code === '1011' || rubric.code === '170') {
-                calcForm = 'PERCENTUAL';
-                if (!rubric.calculation_base) rubric.calculation_base = 'BASE_DSR';
-                if (!rubric.percentage) {
-                    if (this.context.dias_uteis > 0 && this.context.dias_inuteis > 0) {
-                        rubric.percentage = (this.context.dias_inuteis / this.context.dias_uteis) * 100;
-                    } else {
-                        rubric.percentage = 20; // 20% fallback (1/5)
-                    }
+        const isOvertime = rubric.category === 'OVERTIME' || rubric.category === 'HORA_EXTRA' || (rubric.name || '').toUpperCase().includes('HORA EXTRA');
+        const isDsrNoturno = rubric.code === '171' || (rubric.name || '').toUpperCase().includes('NOTURNO DSR') || (rubric.name || '').toUpperCase().includes('DSR SOBRE ADICIONAL NOTURNO');
+        const isDsr = rubric.category === 'DSR' || rubric.code === '1011' || rubric.code === '170' || rubric.code === '104' || ((rubric.name || '').toUpperCase().includes('DSR') && !isDsrNoturno);
+        const isAdicionalNoturno = rubric.code === '301' || (rubric.name || '').toUpperCase().includes('NOTURNO') && !isDsrNoturno;
+        const isInsalubridade = rubric.code === '302' || (rubric.name || '').toUpperCase().includes('INSALUBRIDADE');
+        const isPericulosidade = rubric.code === '303' || (rubric.name || '').toUpperCase().includes('PERICULOSIDADE');
+
+        // Override inteligente para garantir que rubricas do sistema calculem corretamente independente de como foram cadastradas na UI
+        if (isOvertime) {
+            calcForm = 'HORAS';
+            if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
+            if (!rubric.factor) rubric.factor = 1.5;
+        } else if (isDsrNoturno) {
+            calcForm = 'PERCENTUAL';
+            if (!rubric.calculation_base) rubric.calculation_base = 'BASE_DSR_NOTURNO';
+            if (!rubric.percentage) {
+                if (this.context.dias_uteis > 0 && this.context.dias_inuteis > 0) {
+                    rubric.percentage = (this.context.dias_inuteis / this.context.dias_uteis) * 100;
+                } else {
+                    rubric.percentage = 20; // 20% fallback (1/5)
                 }
-            } else if (rubric.code === '302') {
-                calcForm = 'PERCENTUAL';
-                if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_MINIMO';
-                if (!rubric.percentage) rubric.percentage = 20; // 20% por padrão (grau médio)
-            } else if (rubric.code === '303') {
-                calcForm = 'PERCENTUAL';
-                if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
-                if (!rubric.percentage) rubric.percentage = 30; // 30% padrão
-            } else if (rubric.code === '301') {
-                calcForm = 'HORAS';
-                if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
-                if (!rubric.factor) rubric.factor = 0.20; // 20%
-            } else if (rubric.code === '502' || rubric.code === '504') {
-                calcForm = 'PERCENTUAL';
-                if (!rubric.calculation_base) rubric.calculation_base = rubric.code === '502' ? 'R501' : 'R503';
-                if (!rubric.percentage) rubric.percentage = 33.3333; // 1/3
             }
+        } else if (isDsr) {
+            calcForm = 'PERCENTUAL';
+            if (!rubric.calculation_base) rubric.calculation_base = 'BASE_DSR';
+            if (!rubric.percentage) {
+                if (this.context.dias_uteis > 0 && this.context.dias_inuteis > 0) {
+                    rubric.percentage = (this.context.dias_inuteis / this.context.dias_uteis) * 100;
+                } else {
+                    rubric.percentage = 20; // 20% fallback (1/5)
+                }
+            }
+        } else if (isInsalubridade) {
+            calcForm = 'PERCENTUAL';
+            if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_MINIMO';
+            if (!rubric.percentage) rubric.percentage = 20; // 20% por padrão (grau médio)
+        } else if (isPericulosidade) {
+            calcForm = 'PERCENTUAL';
+            if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
+            if (!rubric.percentage) rubric.percentage = 30; // 30% padrão
+        } else if (isAdicionalNoturno) {
+            calcForm = 'HORAS';
+            if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
+            if (!rubric.factor) rubric.factor = 0.20; // 20%
+        } else if (rubric.code === '502' || rubric.code === '504') {
+            calcForm = 'PERCENTUAL';
+            if (!rubric.calculation_base) rubric.calculation_base = rubric.code === '502' ? 'R501' : 'R503';
+            if (!rubric.percentage) rubric.percentage = 33.3333; // 1/3
+        } else if (rubric.code === '801' || rubric.code === '210') {
+            calcForm = 'DIAS';
+            if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
+        } else if (rubric.code === '802' || rubric.code === '211') {
+            calcForm = 'HORAS';
+            if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
+            if (!rubric.factor) rubric.factor = 1.0;
         }
         
         // Se o valorCalculado ainda for 0 (ou seja, não tinha valor manual explícito, apenas a quantidade foi injetada), calcula!
@@ -96,7 +118,7 @@ export class PayrollEngine {
                     const baseVal = this.context.getVariable(rubric.calculation_base);
                     let perc = rubric.percentage;
                     
-                    if (!perc && (rubric.category === 'DSR' || rubric.code === '1011' || rubric.code === '170')) {
+                    if (!perc && (isDsr || isDsrNoturno)) {
                         if (this.context.dias_uteis > 0 && this.context.dias_inuteis > 0) {
                             perc = (this.context.dias_inuteis / this.context.dias_uteis) * 100;
                         } else {
@@ -110,6 +132,12 @@ export class PayrollEngine {
                     if (quantidade > 0) {
                         valorCalculado = baseVal * (perc / 100) * quantidade;
                         formulaUsada = `PERCENTUAL(${rubric.calculation_base} * ${perc}% * ${quantidade})`;
+                    } else if (isDsr || isDsrNoturno) {
+                        if (baseVal > 0) {
+                            valorCalculado = baseVal * (perc / 100);
+                            formulaUsada = `PERCENTUAL(${rubric.calculation_base} * ${perc}%)`;
+                            quantidade = 1;
+                        }
                     }
                 }
             }
@@ -183,9 +211,13 @@ export class PayrollEngine {
             }
 
             // Acumula bases dinâmicas
-            if (rubric.category === 'OVERTIME' || rubric.category === 'HORA_EXTRA' || rubric.category === 'COMMISSION') {
+            if (isOvertime || rubric.category === 'COMMISSION') {
                 const currentBaseDSR = this.context.getVariable('BASE_DSR') || 0;
                 this.context.setVariable('BASE_DSR', currentBaseDSR + valorCalculado);
+            }
+            if (isAdicionalNoturno) {
+                const currentBaseDSRNoturno = this.context.getVariable('BASE_DSR_NOTURNO') || 0;
+                this.context.setVariable('BASE_DSR_NOTURNO', currentBaseDSRNoturno + valorCalculado);
             }
 
             // Atualiza a variável com o código da rubrica para poder ser usada por outras

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Plus, Calendar, AlertCircle, FileText, CheckCircle2 } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
 import { vacationService } from "../../../services/vacationService";
+import { generateAvisoHTML, generateReciboHTML } from "../../../utils/vacationPrint";
 import VacationWizard from "../../Vacations/Wizard";
 import { toast } from 'sonner';
 
@@ -93,80 +94,47 @@ export default function VacationsTab({ workerId, contract, onSaved }: VacationsT
   };
 
   const handlePrintDocument = (type: 'AVISO' | 'RECIBO', req: any, period: any) => {
-    // Cálculo básico de datas
     const startDate = new Date(req.start_date);
     const endDate = new Date(req.end_date);
     const emissionDate = new Date(startDate);
-    emissionDate.setDate(emissionDate.getDate() - 30); // Aviso emitido 30 dias antes
+    emissionDate.setDate(emissionDate.getDate() - 30); // Aviso 30 dias antes
+    const paymentDate = new Date(startDate);
+    paymentDate.setDate(paymentDate.getDate() - 2); // Recibo 2 dias antes
 
-    const employeeName = contract?.workers?.people?.full_name || 'COLABORADOR';
-    const cpf = contract?.workers?.people?.cpf || '000.000.000-00';
-    
-    // Período Aquisitivo
-    const paStart = new Date(period.start_date).toLocaleDateString('pt-BR');
-    const paEnd = new Date(period.end_date).toLocaleDateString('pt-BR');
+    const formatDt = (d: Date) => d.toLocaleDateString('pt-BR');
 
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>${type === 'AVISO' ? 'Aviso' : 'Recibo'} de Férias</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 40px; color: #333; line-height: 1.6; }
-          .header { text-align: center; margin-bottom: 40px; }
-          .title { font-size: 20px; font-weight: bold; text-transform: uppercase; text-decoration: underline; margin-bottom: 20px; }
-          .content { text-align: justify; margin-bottom: 60px; font-size: 16px; }
-          .details { margin-top: 20px; margin-bottom: 20px; border: 1px solid #ccc; padding: 15px; border-radius: 8px; }
-          .details strong { display: inline-block; width: 200px; }
-          .signature-box { margin-top: 80px; text-align: center; }
-          .signature-line { border-top: 1px solid #000; width: 60%; margin: 0 auto 10px auto; }
-          .footer { margin-top: 50px; font-size: 12px; text-align: center; color: #666; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="title">${type === 'AVISO' ? 'AVISO DE FÉRIAS' : 'RECIBO DE FÉRIAS'}</div>
-        </div>
-        
-        <div class="content">
-          ${type === 'AVISO' ? `
-            <p>Empregador: <strong>A EMPRESA</strong></p>
-            <p>Empregado(a): <strong>${employeeName}</strong> (CPF: ${cpf})</p>
-            <br/>
-            <p>Nos termos das disposições legais vigentes, avisamos que as suas férias relativas ao período aquisitivo de <strong>${paStart} a ${paEnd}</strong> serão concedidas conforme abaixo:</p>
-          ` : `
-            <p>Recebi de <strong>A EMPRESA</strong>, a importância líquida discriminada no respectivo demonstrativo de pagamento, referente às férias do período aquisitivo de <strong>${paStart} a ${paEnd}</strong>, que me foram concedidas conforme abaixo:</p>
-          `}
-          
-          <div class="details">
-            <div><strong>Início das Férias:</strong> ${startDate.toLocaleDateString('pt-BR')}</div>
-            <div><strong>Retorno ao Trabalho:</strong> ${new Date(endDate.getTime() + 86400000).toLocaleDateString('pt-BR')}</div>
-            <div><strong>Dias de Gozo:</strong> ${req.days_taken} dias</div>
-            ${req.cash_allowance_days > 0 ? `<div><strong>Abono Pecuniário:</strong> ${req.cash_allowance_days} dias</div>` : ''}
-          </div>
+    const documentData = {
+      empresa: contract?.companies?.company_name || 'EMPRESA PADRÃO',
+      cnpj: contract?.companies?.document_number || '00.000.000/0000-00',
+      endereco: contract?.companies?.address || 'Endereço não cadastrado',
+      cidade: contract?.companies?.city || 'São Paulo',
+      bairro: contract?.companies?.neighborhood || 'Centro',
+      cep: contract?.companies?.zip_code || '00000-000',
+      
+      empregado: contract?.workers?.people?.full_name || 'COLABORADOR',
+      ctps: contract?.workers?.people?.ctps_number || '0000000',
+      registro: contract?.workers?.matricula || '1/0000',
+      centroCusto: contract?.department_id || '0 - Geral',
+      funcao: contract?.positions?.title || 'Não informada',
+      bancoAgencia: '341 / 0000-0', // Mock ou pegar de accounts se existir
+      contaCorrente: '00000-0',
+      salarioBase: contract?.base_salary || 0,
+      
+      paInicio: formatDt(new Date(period.start_date)),
+      paFim: formatDt(new Date(period.end_date)),
+      gozoInicio: formatDt(startDate),
+      gozoFim: formatDt(endDate),
+      
+      diasGozo: req.days_taken,
+      diasAbono: req.cash_allowance_days || 0,
+      
+      dataEmissao: formatDt(emissionDate),
+      dataPagamento: formatDt(paymentDate)
+    };
 
-          ${type === 'AVISO' ? `
-            <p>Favor comparecer ao Departamento Pessoal para assinar o respectivo recibo e receber a remuneração devida.</p>
-          ` : `
-            <p>Para clareza, firmo o presente recibo em 2 (duas) vias de igual teor.</p>
-          `}
-        </div>
-
-        <div class="signature-box">
-          <p>Local e Data: ____________________, ${emissionDate.toLocaleDateString('pt-BR')}</p>
-          <br/><br/><br/>
-          <div class="signature-line"></div>
-          <p><strong>${employeeName}</strong></p>
-          <p>Assinatura do Empregado</p>
-        </div>
-        
-        <div class="footer">Gerado por coupleRH - Motor de Folha</div>
-        <script>
-          window.onload = () => window.print();
-        </script>
-      </body>
-      </html>
-    `;
+    const htmlContent = type === 'AVISO' 
+      ? generateAvisoHTML(documentData) 
+      : generateReciboHTML(documentData);
 
     const printWindow = window.open('', '_blank');
     if (printWindow) {
