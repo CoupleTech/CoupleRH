@@ -2,44 +2,69 @@ export const calculateVacationReceipt = (
   baseSalary: number,
   daysTaken: number,
   cashAllowanceDays: number,
+  startDateRaw: string,
   dependents: number = 0
 ) => {
-  // 1. Proventos
-  const ferias = Math.round(((baseSalary / 30) * daysTaken) * 100) / 100;
-  const ferias13 = Math.round((ferias / 3) * 100) / 100;
+  const startDate = new Date(startDateRaw);
+  const startMonth = startDate.getMonth();
+  const startYear = startDate.getFullYear();
+  
+  const endDate = new Date(startDate.getTime());
+  endDate.setDate(endDate.getDate() + daysTaken - 1);
+  
+  let m1Days = 0;
+  let m2Days = 0;
+  
+  if (startDate.getMonth() === endDate.getMonth()) {
+    m1Days = daysTaken;
+  } else {
+    const lastDayOfStartMonth = new Date(startYear, startMonth + 1, 0).getDate();
+    m1Days = lastDayOfStartMonth - startDate.getDate() + 1;
+    m2Days = daysTaken - m1Days;
+  }
+
+  // 1. Proventos divididos
+  const m1Ferias = Math.round(((baseSalary / 30) * m1Days) * 100) / 100;
+  const m1Ferias13 = Math.round((m1Ferias / 3) * 100) / 100;
+
+  const m2Ferias = m2Days > 0 ? Math.round(((baseSalary / 30) * m2Days) * 100) / 100 : 0;
+  const m2Ferias13 = m2Days > 0 ? Math.round((m2Ferias / 3) * 100) / 100 : 0;
   
   const abono = Math.round(((baseSalary / 30) * cashAllowanceDays) * 100) / 100;
   const abono13 = Math.round((abono / 3) * 100) / 100;
 
-  const totalProventos = ferias + ferias13 + abono + abono13;
-  const baseTributavel = ferias + ferias13; // Abono é isento
-
-  // 2. Descontos - INSS (Tabela 2026/Fase.md simplificada)
-  let inss = 0;
-  const inssBrackets = [
-    { limit: 1621.00, rate: 7.5 },
-    { limit: 2902.84, rate: 9.0 },
-    { limit: 4354.27, rate: 12.0 },
-    { limit: 8475.55, rate: 14.0 }
-  ];
+  const totalProventos = m1Ferias + m1Ferias13 + m2Ferias + m2Ferias13 + abono + abono13;
   
-  let calcBase = Math.min(baseTributavel, 8475.55);
-  let currentBase = 0;
-  for (const b of inssBrackets) {
-    if (calcBase > currentBase) {
-      const taxable = Math.min(calcBase, b.limit) - currentBase;
-      inss += taxable * (b.rate / 100);
+  // 2. Descontos - INSS (separado por competência)
+  const calcINSS = (base: number) => {
+    let inss = 0;
+    const inssBrackets = [
+      { limit: 1621.00, rate: 7.5 },
+      { limit: 2902.84, rate: 9.0 },
+      { limit: 4354.27, rate: 12.0 },
+      { limit: 8475.55, rate: 14.0 }
+    ];
+    let calcBase = Math.min(base, 8475.55);
+    let currentBase = 0;
+    for (const b of inssBrackets) {
+      if (calcBase > currentBase) {
+        const taxable = Math.min(calcBase, b.limit) - currentBase;
+        inss += taxable * (b.rate / 100);
+      }
+      currentBase = b.limit;
     }
-    currentBase = b.limit;
-  }
-  inss = Math.round(inss * 100) / 100;
+    return Math.round(inss * 100) / 100;
+  };
 
-  // 3. Descontos - IRRF
-  const deducaoDependentes = dependents * 189.59;
-  const baseIRRF = baseTributavel - inss - deducaoDependentes;
-  const baseSimplificada = baseTributavel - 607.20;
+  const m1Inss = calcINSS(m1Ferias + m1Ferias13);
+  const m2Inss = m2Days > 0 ? calcINSS(m2Ferias + m2Ferias13) : 0;
+  const totalInss = m1Inss + m2Inss;
+
+  // 3. Descontos - IRRF (Regime de Caixa = base total)
+  const baseTributavelIR = (m1Ferias + m1Ferias13 + m2Ferias + m2Ferias13) - totalInss - (dependents * 189.59);
+  const baseSimplificada = (m1Ferias + m1Ferias13 + m2Ferias + m2Ferias13) - 607.20;
   
-  const calcBaseIRRF = Math.max(0, Math.min(baseIRRF, baseSimplificada));
+  const calcBaseIRRF = Math.max(0, Math.min(baseTributavelIR, baseSimplificada));
   let irrf = 0;
   
   const irrfBrackets = [
@@ -59,19 +84,30 @@ export const calculateVacationReceipt = (
   irrf = Math.max(0, irrf);
   
   // Redutor fase 2026
-  if (baseTributavel <= 5000) {
+  const totalBase = m1Ferias + m1Ferias13 + m2Ferias + m2Ferias13;
+  if (totalBase <= 5000) {
     irrf = Math.max(0, irrf - 312.89);
-  } else if (baseTributavel <= 7350) {
-    const redutor = 978.62 - (0.133145 * baseTributavel);
+  } else if (totalBase <= 7350) {
+    const redutor = 978.62 - (0.133145 * totalBase);
     irrf = Math.max(0, irrf - Math.max(0, redutor));
   }
   irrf = Math.round(irrf * 100) / 100;
 
-  const totalDescontos = inss + irrf;
+  const totalDescontos = totalInss + irrf;
   const liquido = totalProventos - totalDescontos;
+  
+  const getMonthStr = (d: Date) => {
+    const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    return `${months[d.getMonth()]}/${d.getFullYear()}`;
+  }
 
   return {
-    ferias, ferias13, abono, abono13, inss, irrf, totalProventos, totalDescontos, liquido
+    m1Days, m2Days,
+    m1Ferias, m1Ferias13, m1Inss,
+    m2Ferias, m2Ferias13, m2Inss,
+    abono, abono13, irrf, totalProventos, totalDescontos, liquido,
+    m1Str: getMonthStr(startDate),
+    m2Str: getMonthStr(endDate)
   };
 };
 
@@ -182,7 +218,7 @@ export const generateAvisoHTML = (data: any) => {
 };
 
 export const generateReciboHTML = (data: any) => {
-  const c = calculateVacationReceipt(data.salarioBase, data.diasGozo, data.diasAbono);
+  const c = calculateVacationReceipt(data.salarioBase, data.diasGozo, data.diasAbono, data.gozoStartDateRaw);
   
   const formatMoney = (val: number) => val.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
   
@@ -279,17 +315,20 @@ export const generateReciboHTML = (data: any) => {
             <th style="width:100px;">Vencimentos</th>
             <th style="width:100px;">Descontos</th>
           </tr>
-          ${c.ferias > 0 ? `<tr><td>201 - Férias</td><td>${data.diasGozo},00</td><td>${formatMoney(c.ferias)}</td><td></td></tr>` : ''}
-          ${c.ferias13 > 0 ? `<tr><td>202 - Férias 1/3</td><td>0,00</td><td>${formatMoney(c.ferias13)}</td><td></td></tr>` : ''}
+          ${c.m1Ferias > 0 ? `<tr><td>201 - Férias - ${c.m1Str}</td><td>${c.m1Days},00</td><td>${formatMoney(c.m1Ferias)}</td><td></td></tr>` : ''}
+          ${c.m1Ferias13 > 0 ? `<tr><td>202 - Férias 1/3 - ${c.m1Str}</td><td>0,00</td><td>${formatMoney(c.m1Ferias13)}</td><td></td></tr>` : ''}
+          
+          ${c.m2Ferias > 0 ? `<tr><td>201 - Férias - ${c.m2Str}</td><td>${c.m2Days},00</td><td>${formatMoney(c.m2Ferias)}</td><td></td></tr>` : ''}
+          ${c.m2Ferias13 > 0 ? `<tr><td>202 - Férias 1/3 - ${c.m2Str}</td><td>0,00</td><td>${formatMoney(c.m2Ferias13)}</td><td></td></tr>` : ''}
+
           ${c.abono > 0 ? `<tr><td>731 - Abono Pecuniário</td><td>${data.diasAbono},00</td><td>${formatMoney(c.abono)}</td><td></td></tr>` : ''}
           ${c.abono13 > 0 ? `<tr><td>733 - Abono Pecuniário 1/3</td><td>0,00</td><td>${formatMoney(c.abono13)}</td><td></td></tr>` : ''}
           
           <!-- Espaçadores para empurrar os descontos pro final (simulado) -->
           <tr><td style="color:transparent;">.</td><td></td><td></td><td></td></tr>
-          <tr><td style="color:transparent;">.</td><td></td><td></td><td></td></tr>
-          <tr><td style="color:transparent;">.</td><td></td><td></td><td></td></tr>
-
-          ${c.inss > 0 ? `<tr><td>514 - INSS Férias Recibo - Mês</td><td>0,00</td><td></td><td>${formatMoney(c.inss)}</td></tr>` : ''}
+          
+          ${c.m1Inss > 0 ? `<tr><td>514 - INSS Férias Recibo - ${c.m1Str}</td><td>0,00</td><td></td><td>${formatMoney(c.m1Inss)}</td></tr>` : ''}
+          ${c.m2Inss > 0 ? `<tr><td>514 - INSS Férias Recibo - ${c.m2Str}</td><td>0,00</td><td></td><td>${formatMoney(c.m2Inss)}</td></tr>` : ''}
           ${c.irrf > 0 ? `<tr><td>775 - Imposto de Renda Férias Recibo</td><td>0,00</td><td></td><td>${formatMoney(c.irrf)}</td></tr>` : ''}
           
           <tr class="totals-row">

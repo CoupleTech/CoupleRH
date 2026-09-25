@@ -136,6 +136,7 @@ export default function VacationsTab({ workerId, contract, workerData, onSaved }
       paFim: formatDt(new Date(period.end_date)),
       gozoInicio: formatDt(startDate),
       gozoFim: formatDt(endDate),
+      gozoStartDateRaw: startDate.toISOString(),
       
       diasGozo: req.days_taken,
       diasAbono: req.cash_allowance_days || 0,
