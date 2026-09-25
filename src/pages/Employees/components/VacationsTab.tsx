@@ -104,8 +104,8 @@ export default function VacationsTab({ workerId, contract, workerData, onSaved }
 
     const formatDt = (d: Date) => d.toLocaleDateString('pt-BR');
 
-    // Usar Razão Social (company_name) explicitamente
-    const empresaName = contract?.companies?.company_name || 'EMPRESA PADRÃO';
+    // Usar Razão Social (corporate_name) explicitamente e CNPJ (cnpj)
+    const empresaName = contract?.companies?.corporate_name || 'EMPRESA PADRÃO';
     const workerName = workerData?.people?.social_name || workerData?.people?.full_name || 'COLABORADOR';
     
     // Tratamento forte para evitar cidade em branco
@@ -117,7 +117,7 @@ export default function VacationsTab({ workerId, contract, workerData, onSaved }
 
     const documentData = {
       empresa: empresaName,
-      cnpj: contract?.companies?.document_number || '',
+      cnpj: contract?.companies?.cnpj || '',
       endereco: contract?.companies?.address || '',
       cidade: cidade,
       bairro: contract?.companies?.neighborhood || '',
