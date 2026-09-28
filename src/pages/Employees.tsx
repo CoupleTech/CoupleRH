@@ -7,6 +7,9 @@ import {
   Loader2,
   User,
   Users,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -33,6 +36,7 @@ export default function Employees() {
   const [searchTerm, setSearchTerm] = useState("");
   const [employees, setEmployees] = useState<EmployeeContract[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" } | null>(null);
 
   useEffect(() => {
     fetchEmployees();
@@ -76,6 +80,59 @@ export default function Employees() {
       name.includes(term) || cpf.includes(term) || matricula.includes(term)
     );
   });
+
+  const sortedEmployees = [...filteredEmployees].sort((a, b) => {
+    if (!sortConfig) return 0;
+    
+    let aValue: any = "";
+    let bValue: any = "";
+
+    switch (sortConfig.key) {
+      case "name":
+        aValue = a.workers?.people?.full_name?.toLowerCase() || "";
+        bValue = b.workers?.people?.full_name?.toLowerCase() || "";
+        break;
+      case "position":
+        aValue = a.positions?.title?.toLowerCase() || "";
+        bValue = b.positions?.title?.toLowerCase() || "";
+        break;
+      case "status":
+        aValue = a.status || "";
+        bValue = b.status || "";
+        break;
+      case "admission":
+        aValue = new Date(a.admission_date || 0).getTime();
+        bValue = new Date(b.admission_date || 0).getTime();
+        break;
+    }
+
+    if (aValue < bValue) {
+      return sortConfig.direction === "asc" ? -1 : 1;
+    }
+    if (aValue > bValue) {
+      return sortConfig.direction === "asc" ? 1 : -1;
+    }
+    return 0;
+  });
+
+  const requestSort = (key: string) => {
+    let direction: "asc" | "desc" = "asc";
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const getSortIcon = (columnName: string) => {
+    if (!sortConfig || sortConfig.key !== columnName) {
+      return <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />;
+    }
+    return sortConfig.direction === "asc" ? (
+      <ChevronUp className="w-3.5 h-3.5 text-primary-600" />
+    ) : (
+      <ChevronDown className="w-3.5 h-3.5 text-primary-600" />
+    );
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -139,12 +196,42 @@ export default function Employees() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-100">
-                <th className="table-header px-6 py-3.5">Colaborador</th>
-                <th className="table-header px-6 py-3.5">
-                  Cargo / Departamento
+                <th 
+                  className="table-header px-6 py-3.5 cursor-pointer hover:bg-slate-50 transition-colors group select-none"
+                  onClick={() => requestSort("name")}
+                >
+                  <div className="flex items-center gap-2">
+                    Colaborador
+                    {getSortIcon("name")}
+                  </div>
                 </th>
-                <th className="table-header px-6 py-3.5">Status</th>
-                <th className="table-header px-6 py-3.5">Admissão</th>
+                <th 
+                  className="table-header px-6 py-3.5 cursor-pointer hover:bg-slate-50 transition-colors group select-none"
+                  onClick={() => requestSort("position")}
+                >
+                  <div className="flex items-center gap-2">
+                    Cargo / Departamento
+                    {getSortIcon("position")}
+                  </div>
+                </th>
+                <th 
+                  className="table-header px-6 py-3.5 cursor-pointer hover:bg-slate-50 transition-colors group select-none"
+                  onClick={() => requestSort("status")}
+                >
+                  <div className="flex items-center gap-2">
+                    Status
+                    {getSortIcon("status")}
+                  </div>
+                </th>
+                <th 
+                  className="table-header px-6 py-3.5 cursor-pointer hover:bg-slate-50 transition-colors group select-none"
+                  onClick={() => requestSort("admission")}
+                >
+                  <div className="flex items-center gap-2">
+                    Admissão
+                    {getSortIcon("admission")}
+                  </div>
+                </th>
                 <th className="table-header px-6 py-3.5 text-right">Ações</th>
               </tr>
             </thead>
@@ -172,7 +259,7 @@ export default function Employees() {
                   </td>
                 </tr>
               ) : (
-                filteredEmployees.map((emp) => {
+                sortedEmployees.map((emp) => {
                   const name = emp.workers?.people?.full_name || "Desconhecido";
                   return (
                     <tr
