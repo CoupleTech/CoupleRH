@@ -38,10 +38,6 @@ export default function Employees() {
   const [loading, setLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" } | null>(null);
 
-  useEffect(() => {
-    fetchEmployees();
-  }, []);
-
   const fetchEmployees = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -70,6 +66,10 @@ export default function Employees() {
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    fetchEmployees();
+  }, []);
 
   const filteredEmployees = employees.filter((emp) => {
     const term = searchTerm.toLowerCase();
