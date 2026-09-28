@@ -6,7 +6,10 @@ import {
   ChevronRight,
   Loader2,
   Building2,
-  Briefcase
+  Briefcase,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
@@ -37,6 +40,7 @@ export default function EmployeesList() {
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" } | null>(null);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -114,8 +118,56 @@ export default function EmployeesList() {
       item.person.cpf.includes(searchTerm)
   );
 
-  const totalPages = Math.ceil(filteredWorkers.length / pageSize);
-  const paginatedWorkers = filteredWorkers.slice(
+  const sortedWorkers = [...filteredWorkers].sort((a, b) => {
+    if (!sortConfig) return 0;
+    let aValue: any = "";
+    let bValue: any = "";
+
+    switch (sortConfig.key) {
+      case "name":
+        aValue = a.person.full_name.toLowerCase();
+        bValue = b.person.full_name.toLowerCase();
+        break;
+      case "matricula":
+        aValue = a.esocial_matricula || "";
+        bValue = b.esocial_matricula || "";
+        break;
+      case "position":
+        aValue = a.contract?.position?.title?.toLowerCase() || "";
+        bValue = b.contract?.position?.title?.toLowerCase() || "";
+        break;
+      case "status":
+        aValue = a.contract?.status || "";
+        bValue = b.contract?.status || "";
+        break;
+    }
+
+    if (aValue < bValue) return sortConfig.direction === "asc" ? -1 : 1;
+    if (aValue > bValue) return sortConfig.direction === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  const requestSort = (key: string) => {
+    let direction: "asc" | "desc" = "asc";
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const getSortIcon = (columnName: string) => {
+    if (!sortConfig || sortConfig.key !== columnName) {
+      return <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity ml-1 inline-block" />;
+    }
+    return sortConfig.direction === "asc" ? (
+      <ChevronUp className="w-3.5 h-3.5 text-primary-600 ml-1 inline-block" />
+    ) : (
+      <ChevronDown className="w-3.5 h-3.5 text-primary-600 ml-1 inline-block" />
+    );
+  };
+
+  const totalPages = Math.ceil(sortedWorkers.length / pageSize);
+  const paginatedWorkers = sortedWorkers.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   );
@@ -170,10 +222,18 @@ export default function EmployeesList() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50/50 border-b border-slate-200">
-                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Colaborador</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Matrícula (eSocial)</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Cargo / Setor</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => requestSort("name")}>
+                      <div className="flex items-center">Colaborador{getSortIcon("name")}</div>
+                    </th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => requestSort("matricula")}>
+                      <div className="flex items-center">Matrícula (eSocial){getSortIcon("matricula")}</div>
+                    </th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => requestSort("position")}>
+                      <div className="flex items-center">Cargo / Setor{getSortIcon("position")}</div>
+                    </th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => requestSort("status")}>
+                      <div className="flex items-center">Status{getSortIcon("status")}</div>
+                    </th>
                     <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
                   </tr>
                 </thead>
