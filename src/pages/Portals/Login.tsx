@@ -124,6 +124,8 @@ export default function EmployeePortalLogin() {
                 </div>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={cpf}
                   onChange={handleCpfChange}
                   placeholder="000.000.000-00"
@@ -143,6 +145,8 @@ export default function EmployeePortalLogin() {
                 </div>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={birthDate}
                   onChange={handleBirthDateChange}
                   placeholder="DD/MM/AAAA"
