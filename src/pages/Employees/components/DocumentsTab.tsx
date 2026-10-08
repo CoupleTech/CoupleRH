@@ -179,10 +179,10 @@ export default function ({ workerId, initialData, onSaved }: any) {
                       <div><span className="font-medium text-slate-700">Número:</span> {doc.document_number || '-'}</div>
                       <div><span className="font-medium text-slate-700">Órgão Emissor:</span> {doc.issuer || '-'}</div>
                       {doc.issue_date && (
-                        <div><span className="font-medium text-slate-700">Emissão:</span> {new Date(new Date(doc.issue_date).getTime() + new Date(doc.issue_date).getTimezoneOffset() * 60000).toLocaleDateString("pt-BR")}</div>
+                        <div><span className="font-medium text-slate-700">Emissão:</span> {formatDate(doc.issue_date)}</div>
                       )}
                       {doc.expiration_date && (
-                        <div><span className="font-medium text-slate-700">Validade:</span> {new Date(new Date(doc.expiration_date).getTime() + new Date(doc.expiration_date).getTimezoneOffset() * 60000).toLocaleDateString("pt-BR")}</div>
+                        <div><span className="font-medium text-slate-700">Validade:</span> {formatDate(doc.expiration_date)}</div>
                       )}
                     </div>
                   </div>

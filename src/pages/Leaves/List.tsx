@@ -223,7 +223,7 @@ export default function () {
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-sm font-medium text-slate-700">
-                          {new Date(leave.start_date).toLocaleDateString("pt-BR")}
+                          {formatDate(leave.start_date)}
                         </span>
                         <span className="text-xs text-slate-400 ml-1">
                           ({days} dia{days > 1 ? "s" : ""})
@@ -361,14 +361,14 @@ export default function () {
                   <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1">Data Início</p>
                   <p className="font-medium text-slate-800 flex items-center gap-2">
                     <CalendarDays size={16} className="text-slate-400" />
-                    {new Date(selectedLeaveView.start_date).toLocaleDateString("pt-BR")}
+                    {formatDate(selectedLeaveView.start_date)}
                   </p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1">Data Fim Prevista</p>
                   <p className="font-medium text-slate-800 flex items-center gap-2">
                     <CalendarDays size={16} className="text-slate-400" />
-                    {selectedLeaveView.end_date ? new Date(selectedLeaveView.end_date).toLocaleDateString("pt-BR") : "Não definida"}
+                    {selectedLeaveView.end_date ? formatDate(selectedLeaveView.end_date) : "Não definida"}
                   </p>
                 </div>
               </div>

@@ -85,7 +85,7 @@ export default function TRCTViewer({ termination, onClose }: TRCTViewerProps) {
                 CPF: {workerCpf.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}
               </p>
               <p className="text-sm text-slate-600 mt-1">
-                Data de Afastamento: {new Date(termination.last_working_day).toLocaleDateString("pt-BR")}
+                Data de Afastamento: {formatDate(termination.last_working_day)}
               </p>
             </div>
           </div>

@@ -280,7 +280,7 @@ export default function PayrollReports() {
       doc.setFont("helvetica", "bold");
       doc.text(`Adm:`, 145, startY);
       doc.setFont("helvetica", "normal");
-      doc.text(contract?.admission_date ? new Date(contract.admission_date).toLocaleDateString('pt-BR') : "", 155, startY);
+      doc.text(contract?.admission_date ? formatDate(contract.admission_date) : "", 155, startY);
       
       doc.setFont("helvetica", "bold");
       doc.text(`Salário:`, 175, startY);

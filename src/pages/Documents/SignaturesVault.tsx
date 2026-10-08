@@ -193,7 +193,7 @@ export default function SignaturesVault() {
                         {getStatusBadge(doc.status)}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
-                        {new Date(doc.created_at).toLocaleDateString("pt-BR")}
+                        {formatDate(doc.created_at)}
                       </td>
                       <td className="px-6 py-4">
                         {doc.document_hash ? (

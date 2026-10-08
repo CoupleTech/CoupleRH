@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { formatDate } from "../../lib/dateUtils";
 import { vacationService } from "../../services/vacationService";
 import { useCompany } from "../../contexts/CompanyContext";
 import { Pagination } from "../../components/Pagination";
@@ -400,11 +401,7 @@ export default function VacationsList() {
                   req.vacation_vesting_periods?.employment_contracts?.workers
                     ?.people?.full_name || "Desconhecido";
                 // To fix timezone issues just extract date string
-                const getLocal = (d: string) => {
-                  const dt = new Date(d);
-                  dt.setMinutes(dt.getMinutes() + dt.getTimezoneOffset());
-                  return dt.toLocaleDateString("pt-BR");
-                };
+                const getLocal = (d: string) => formatDate(d);
                 return (
                   <tr
                     key={req.id}

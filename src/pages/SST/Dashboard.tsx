@@ -233,7 +233,7 @@ export default function () {
                         {typeMap[exam.exam_type] || exam.exam_type}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-500">
-                        {new Date(exam.exam_date).toLocaleDateString("pt-BR")}
+                        {formatDate(exam.exam_date)}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
                         {exam.doctor_name} <br />

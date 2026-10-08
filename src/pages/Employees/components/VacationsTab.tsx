@@ -212,7 +212,7 @@ export default function VacationsTab({ workerId, contract, workerData, onSaved }
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-semibold text-slate-800">
-                    Período Aquisitivo: {new Date(period.start_date).toLocaleDateString()} a {new Date(period.end_date).toLocaleDateString()}
+                    Período Aquisitivo: {formatDate(period.start_date)} a {formatDate(period.end_date)}
                   </h3>
                   <div className="flex gap-4 mt-2 text-sm text-slate-600">
                     <div>
@@ -246,7 +246,7 @@ export default function VacationsTab({ workerId, contract, workerData, onSaved }
                         <div>
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-semibold text-slate-800">
-                              {new Date(req.start_date).toLocaleDateString()} a {new Date(req.end_date).toLocaleDateString()}
+                              {formatDate(req.start_date)} a {formatDate(req.end_date)}
                             </span>
                             <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-blue-100 text-blue-700 uppercase">
                               {req.status}

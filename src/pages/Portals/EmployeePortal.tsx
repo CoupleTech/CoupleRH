@@ -132,7 +132,7 @@ function formatCurrency(value: number | null | undefined): string {
 
 function formatDate(date: string | null | undefined): string {
   if (!date) return "—";
-  return new Date(date).toLocaleDateString("pt-BR");
+  return formatDate(date);
 }
 
 function benefitTypeLabel(type: string): string {
@@ -1136,7 +1136,7 @@ export default function EmployeePortal() {
                         <div className="flex justify-between items-start mb-3">
                           <div>
                             <p className="text-sm font-bold text-slate-800 pr-4">{sig.title}</p>
-                            <p className="text-[11px] font-medium text-slate-500 mt-1">Enviado em {new Date(sig.created_at).toLocaleDateString()}</p>
+                            <p className="text-[11px] font-medium text-slate-500 mt-1">Enviado em {formatDate(sig.created_at)}</p>
                           </div>
                         </div>
                         
@@ -1367,12 +1367,12 @@ export default function EmployeePortal() {
                     
                     <p className="text-justify indent-8">
                       Nos termos das disposições legais vigentes, comunicamos que lhe serão concedidas férias, 
-                      relativas ao período aquisitivo de <strong>{new Date(documentToView.metadata.startDate).toLocaleDateString('pt-BR')}</strong>, 
+                      relativas ao período aquisitivo de <strong>{formatDate(documentToView.metadata.startDate)}</strong>, 
                       num total de <strong>{documentToView.metadata.vacationDays}</strong> dias.
                     </p>
                     
                     <p className="text-justify indent-8">
-                      Seu período de gozo de férias terá início em <strong>{new Date(documentToView.metadata.startDate).toLocaleDateString('pt-BR')}</strong> e 
+                      Seu período de gozo de férias terá início em <strong>{formatDate(documentToView.metadata.startDate)}</strong> e 
                       terminará em <strong>{new Date(new Date(documentToView.metadata.startDate).getTime() + (documentToView.metadata.vacationDays - 1) * 86400000).toLocaleDateString('pt-BR')}</strong>, 
                       devendo retornar ao trabalho no dia <strong>{documentToView.metadata.returnDate}</strong>.
                     </p>
@@ -1399,8 +1399,8 @@ export default function EmployeePortal() {
                     
                     <p>
                       Recebi de minha empregadora, a importância líquida referente às minhas férias do período aquisitivo de 
-                      <strong> {new Date(documentToView.metadata.startDate).toLocaleDateString('pt-BR')}</strong>, 
-                      com início marcado para <strong>{new Date(documentToView.metadata.startDate).toLocaleDateString('pt-BR')}</strong> e 
+                      <strong> {formatDate(documentToView.metadata.startDate)}</strong>, 
+                      com início marcado para <strong>{formatDate(documentToView.metadata.startDate)}</strong> e 
                       retorno ao trabalho no dia <strong>{documentToView.metadata.returnDate}</strong>.
                     </p>
                     

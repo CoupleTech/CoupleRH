@@ -183,7 +183,7 @@ export default function TerminationsList() {
                       <td className="px-6 py-4">
                         <span className="font-mono text-sm text-slate-600 tabular-nums">
                           {term.last_working_day
-                            ? new Date(term.last_working_day).toLocaleDateString("pt-BR")
+                            ? formatDate(term.last_working_day)
                             : "—"}
                         </span>
                       </td>

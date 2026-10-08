@@ -164,10 +164,10 @@ export default function ScaleTab({ contractId, scales = [], onSaved }: any) {
                   {scales.map((s: any) => (
                     <tr key={s.id} className="text-slate-700">
                       <td className="py-3">
-                        {new Date(s.start_date).toLocaleDateString('pt-BR')}
+                        {formatDate(s.start_date)}
                       </td>
                       <td className="py-3">
-                        {s.end_date ? new Date(s.end_date).toLocaleDateString('pt-BR') : 'Até o momento'}
+                        {s.end_date ? formatDate(s.end_date) : 'Até o momento'}
                       </td>
                       <td className="py-3">
                         <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-md text-xs font-medium">

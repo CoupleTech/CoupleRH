@@ -248,7 +248,7 @@ export default function ({ workerId, onSaved }: any) {
               <div className="grid grid-cols-2 gap-y-2 text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
                 <div className="flex items-center gap-2">
                   <Calendar size={14} className="text-slate-400" />
-                  <span>Nasc: {format(parseISO(dep.birth_date), "dd/MM/yyyy")}</span>
+                  <span>Nasc: {formatDate(dep.birth_date)}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <FileText size={14} className="text-slate-400" />
@@ -257,8 +257,8 @@ export default function ({ workerId, onSaved }: any) {
                 <div className="flex items-center gap-2 col-span-2 text-xs">
                   <Calendar size={14} className="text-slate-400" />
                   <span>
-                    Vigência: {format(parseISO(dep.start_date), "dd/MM/yyyy")} 
-                    {dep.end_date ? ` até ${format(parseISO(dep.end_date), "dd/MM/yyyy")}` : ' em diante'}
+                    Vigência: {formatDate(dep.start_date)} 
+                    {dep.end_date ? ` até ${formatDate(dep.end_date)}` : ' em diante'}
                   </span>
                 </div>
               </div>

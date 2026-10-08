@@ -113,11 +113,11 @@ export default function LeavesTab({ employee }: LeavesTabProps) {
                         </h4>
                         <div className="mt-1 flex gap-4 text-sm text-slate-600">
                           <div>
-                            <strong>Início:</strong> {new Date(new Date(leave.start_date).getTime() + new Date(leave.start_date).getTimezoneOffset() * 60000).toLocaleDateString("pt-BR")}
+                            <strong>Início:</strong> {formatDate(leave.start_date)}
                           </div>
                           {leave.end_date && (
                             <div>
-                              <strong>Término:</strong> {new Date(new Date(leave.end_date).getTime() + new Date(leave.end_date).getTimezoneOffset() * 60000).toLocaleDateString("pt-BR")}
+                              <strong>Término:</strong> {formatDate(leave.end_date)}
                             </div>
                           )}
                           <div>

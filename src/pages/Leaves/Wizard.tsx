@@ -395,8 +395,8 @@ export default function LeaveWizard({ inline = false, preselectedContractId, onS
                     Período
                   </p>
                   <p className="font-bold text-primary-700">
-                    {new Date(startDate).toLocaleDateString("pt-BR")} até{" "}
-                    {new Date(endDate || startDate).toLocaleDateString("pt-BR")}
+                    {formatDate(startDate)} até{" "}
+                    {formatDate(endDate || startDate)}
                   </p>
                 </div>
                 <div className="mt-4">

@@ -105,8 +105,8 @@ export default function LegalTablesList() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2 text-sm text-slate-600">
                         <Calendar size={14} className="text-slate-400" />
-                        {new Date(version.valid_from).toLocaleDateString('pt-BR')} 
-                        {version.valid_to ? ` até ${new Date(version.valid_to).toLocaleDateString('pt-BR')}` : ' em diante'}
+                        {formatDate(version.valid_from)} 
+                        {version.valid_to ? ` até ${formatDate(version.valid_to)}` : ' em diante'}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600">

@@ -93,9 +93,7 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
     const actualDays = vacationDays;
     date.setDate(date.getDate() + actualDays); // The return date is the day AFTER the vacation ends
     // Using string manipulation or locale string that doesn't shift by timezone
-    return new Date(
-      date.getTime() + date.getTimezoneOffset() * 60000,
-    ).toLocaleDateString("pt-BR");
+    return formatDate(date);
   };
 
   const handleSaveVacation = async () => {
@@ -202,7 +200,7 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
           {
             tenant_id: tenantData.tenant_id,
             worker_id: workerId,
-            title: `Aviso de Férias - ${new Date(startDate).toLocaleDateString("pt-BR")}`,
+            title: `Aviso de Férias - ${formatDate(startDate)}`,
             status: 'PENDING_SIGNATURE',
             requires_employee_signature: true,
             document_type: 'VACATION_NOTICE',
@@ -220,7 +218,7 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
           documents.push({
             tenant_id: tenantData.tenant_id,
             worker_id: workerId,
-            title: `Recibo de Férias - ${new Date(startDate).toLocaleDateString("pt-BR")}`,
+            title: `Recibo de Férias - ${formatDate(startDate)}`,
             status: 'PENDING_SIGNATURE',
             requires_employee_signature: true,
             document_type: 'VACATION_RECEIPT',
@@ -364,7 +362,7 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
                           "pt-BR",
                         )}{" "}
                         a{" "}
-                        {new Date(period.end_date).toLocaleDateString("pt-BR")}
+                        {formatDate(period.end_date)}
                       </p>
                       <p className="text-xs font-semibold text-amber-600 mt-1">
                         Saldo: {availableDays} dias disponíveis
@@ -423,7 +421,7 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
                 </p>
                 <p className="font-bold text-rose-600 text-lg">
                   {selectedPeriod?.concessive_end_date 
-                    ? new Date(selectedPeriod.concessive_end_date).toLocaleDateString("pt-BR")
+                    ? formatDate(selectedPeriod.concessive_end_date)
                     : "Não definido"}
                 </p>
               </div>
@@ -552,10 +550,7 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
                     Início e Retorno
                   </p>
                   <p className="font-bold text-primary-700">
-                    {new Date(
-                      new Date(startDate).getTime() +
-                        new Date(startDate).getTimezoneOffset() * 60000,
-                    ).toLocaleDateString("pt-BR")}{" "}
+                    {formatDate(startDate)}{" "}
                     até {calculateReturnDate()}
                   </p>
                 </div>
