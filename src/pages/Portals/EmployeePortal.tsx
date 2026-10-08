@@ -132,7 +132,9 @@ function formatCurrency(value: number | null | undefined): string {
 
 function formatDate(date: string | null | undefined): string {
   if (!date) return "—";
-  return formatDate(date);
+  const dt = typeof date === 'string' ? new Date(date) : date;
+  if (isNaN(dt.getTime())) return "—";
+  return dt.toLocaleDateString("pt-BR", { timeZone: "UTC" });
 }
 
 function benefitTypeLabel(type: string): string {
