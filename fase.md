@@ -66,7 +66,7 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 
 ## 🛑 FASE P0: Contenção de riscos
 **Status:** `[Pendente]` · **Ref.:** 📘 Doc §1, §4 (T5, T8, T26, T27)
-- [x] **T26** Rotular o painel eSocial como "Simulação: não transmite", desativar `forceTransmission` em produção e anular registros com recibo fictício (preservando trilha) — *Concluído em 11/10/2026: Dashboard.tsx rotulado com banner e badge de simulação, botão desativado em produção com validação bloqueadora, testes unitários criados (ESocialSimulation.test.ts) e migration 00066 criada para anulação de recibos fictícios mantendo trilha de auditoria.*
+- [x] **T26** Rotular o painel eSocial como "Simulação: não transmite", desativar `forceTransmission` em produção e anular registros com recibo fictício (preservando trilha) — *Concluído em 11/10/2026 (commit `8b3ce65`): Dashboard.tsx rotulado com banner e badge de simulação, botão desativado em produção com validação bloqueadora, testes unitários criados (ESocialSimulation.test.ts) e migration 00066 criada para anulação de recibos fictícios mantendo trilha de auditoria.*
 - [ ] **T8** Autenticação e autorização em `payroll-engine`; CORS restrito; remover `debug` da resposta
 - [ ] **T5** Erro de cálculo não grava holerite zerado nem marca período `CALCULATED`; resposta 422 com lista
 - [ ] **T27 (provisório)** Revogar execução da RPC `sign_worker_document` para `anon`/`authenticated` até o fluxo AS-04 existir
