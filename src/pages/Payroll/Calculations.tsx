@@ -342,9 +342,20 @@ export default function () {
         },
       );
 
-      if (error) throw error;
-      
-      console.log("ENGINE DEBUG LOGS:", data.debug);
+      if (error) {
+        let errorMsg = error.message;
+        try {
+          if (error.context && typeof error.context.json === 'function') {
+            const body = await error.context.json();
+            if (body?.errors && Array.isArray(body.errors) && body.errors.length > 0) {
+              errorMsg = body.errors.map((e: any) => e.error).join(' | ');
+            } else if (body?.error) {
+              errorMsg = body.error;
+            }
+          }
+        } catch (_) {}
+        throw new Error(errorMsg);
+      }
 
       await fetchPeriods(); // Refresh period to get processing_date
       await fetchPayslips(activePeriod.id);

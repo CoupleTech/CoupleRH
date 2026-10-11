@@ -19,7 +19,8 @@ export class PayrollEngine {
 
       // 2 & 3. Processar eventos manuais, automáticos e fórmulas em ordem DAG
       for (const rubric of sortedRubrics) {
-        // Encontra eventos associados à rubrica, se existirem (MANUAIS)
+        try {
+          // Encontra eventos associados à rubrica, se existirem (MANUAIS)
         const eventos = this.context.eventos.filter(e => e.rubric_id === rubric.id);
         
         let valorCalculado = 0;
@@ -224,6 +225,9 @@ export class PayrollEngine {
             this.context.setVariable(`R${rubric.code}`, valorCalculado);
             // Também salva o código sem prefixo para retrocompatibilidade
             this.context.setVariable(rubric.code, valorCalculado);
+          }
+        } catch (err: any) {
+          throw new Error(`[Rubrica ${rubric.code || 'S/C'} - ${rubric.name || 'Sem Nome'}] ${err.message}`);
         }
       }
 

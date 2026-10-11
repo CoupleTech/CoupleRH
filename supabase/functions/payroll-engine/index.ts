@@ -379,6 +379,7 @@ serve(async (req) => {
     await payslipsQuery;
 
     const results = [];
+    const errors: Array<{ contract_id: string; worker_id: string; error: string }> = [];
     const companyTotals: Record<string, { base_inss: number, base_fgts: number }> = {};
 
     // 4. Processa o Motor para cada Contrato
@@ -776,6 +777,16 @@ serve(async (req) => {
       const engine = new PayrollEngine(context);
       const result = await engine.run();
 
+      // T5: Erro explícito de cálculo - não grava holerite zerado e registra na lista de erros
+      if (result.status && result.status.startsWith('ERRO_CALCULO')) {
+        errors.push({
+          contract_id: contract.id,
+          worker_id: contract.worker_id,
+          error: result.status,
+        });
+        continue;
+      }
+
       // 4.5 Ajuste para Folha Complementar
       if (period.type === 'COMPLEMENTARY' && period.parent_period_id) {
         const { data: originalPayslip } = await supabase
@@ -885,6 +896,18 @@ serve(async (req) => {
       }
 
       results.push({ contract_id: contract.id, net: result.liquido, status: result.status });
+    }
+
+    // T5: Se houver erros de cálculo em qualquer contrato, aborta persistência e responde 422
+    if (errors.length > 0) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Erros encontrados no cálculo da folha. Nenhum holerite inconsistente foi gravado.",
+          errors,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 422 }
+      );
     }
 
     // 6.5 Calcula e Salva Impostos Patronais por Empresa
