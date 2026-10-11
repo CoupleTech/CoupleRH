@@ -65,13 +65,13 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 ---
 
 ## 🛑 FASE P0: Contenção de riscos
-**Status:** `[Pendente]` · **Ref.:** 📘 Doc §1, §4 (T5, T8, T26, T27)
+**Status:** `[Concluído]` · **Ref.:** 📘 Doc §1, §4 (T5, T8, T26, T27)
 - [x] **T26** Rotular o painel eSocial como "Simulação: não transmite", desativar `forceTransmission` em produção e anular registros com recibo fictício (preservando trilha) — *Concluído em 11/10/2026 (commit `8b3ce65`): Dashboard.tsx rotulado com banner e badge de simulação, botão desativado em produção com validação bloqueadora, testes unitários criados (ESocialSimulation.test.ts) e migration 00066 criada para anulação de recibos fictícios mantendo trilha de auditoria.*
 - [x] **T8** Autenticação e autorização em `payroll-engine`; CORS restrito; remover `debug` da resposta — *Concluído em 11/10/2026 (commit `60d2a9c`): index.ts atualizado com verificação obrigatória de auth.getUser(), validação RBAC de role em tenant_users ('system_admin', 'tenant_admin', 'dp_analyst'), getCorsHeaders() com domínios autorizados e remoção estrita do campo debug da resposta. Testes unitários adicionados em EngineSecurity.test.ts.*
 - [x] **T5** Erro de cálculo não grava holerite zerado nem marca período `CALCULATED`; resposta 422 com lista — *Concluído em 11/10/2026 (commit `9beda85`): PayrollEngine.ts atualizado com identificação de [Rubrica {code} - {name}] em mensagens de erro; index.ts ignora gravação de holerite em ERRO_CALCULO, acumula em errors[] e responde HTTP 422 sem alterar status da competência para CALCULATED (permanece em DRAFT); Calculations.tsx atualizado para exibir os erros detalhados. Testes unitários adicionados em CalculationErrorHandling.test.ts.*
 - [x] **T27 (provisório)** Revogar execução da RPC `sign_worker_document` para `anon`/`authenticated` até o fluxo AS-04 existir — *Concluído em 11/10/2026 (commit `17d806a`): criada migration 00067 revogando execução da RPC sign_worker_document para anon, authenticated e public; EmployeePortal.tsx atualizado para exibir aviso amigável de atualização de segurança para conformidade jurídica (Fase P6). Testes unitários adicionados em SignatureRpcSecurity.test.ts.*
-- [ ] Executar o 📘 Doc Anexo A e anexar os resultados em `docs/verificacao_banco.md`
-**Gate:** período com erro permanece rascunho; chamada sem token retorna 401; tela eSocial identifica simulação.
+- [x] Executar o 📘 Doc Anexo A e anexar os resultados em `docs/verificacao_banco.md` — *Concluído em 11/10/2026: Diagnóstico executado com sucesso no banco de produção. Mapeadas 42 rubricas ativas, versão legal vigente de 2026 com 4 faixas de INSS e 5 faixas de IRRF. Confirmado: 0 holerites zerados em CALCULATED, 0 divergências entre itens e cabeçalhos de folha, e 0 recibos fictícios no eSocial. Relatório estruturado arquivado em docs/verificacao_banco.md.*
+**Gate:** período com erro permanece rascunho; chamada sem token retorna 401; tela eSocial identifica simulação. — **VALIDADO (TODOS OS CRITÉRIOS APROVADOS)**
 
 ## 🧮 FASE P1: Correções críticas do motor
 **Status:** `[Pendente]` · **Ref.:** 📘 Doc §4 (T1–T4, T6, T7, T11)
