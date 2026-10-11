@@ -76,7 +76,8 @@ serve(async (req) => {
     const userClient = createClient(supabaseUrl, supabaseAnonKey || supabaseKey, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+    const { data: { user }, error: authError } = await userClient.auth.getUser(token);
 
     if (authError || !user) {
       return new Response(

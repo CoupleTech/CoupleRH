@@ -1,9 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
-const supabase = createClient('https://wcvgpnmaryumfcfwyrrj.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indjdmdwbm1hcnl1bWZjZnd5cnJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk0ODQxMDYsImV4cCI6MjEwNTA2MDEwNn0.lro-SBj5JpyOVrDjBe1K3qHMJ5i8Ky82NrDp9VKYqaY');
+import * as dotenv from 'dotenv';
+dotenv.config();
+
+const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY);
 async function test() {
   const { data: { session }, error: authError } = await supabase.auth.signInWithPassword({
     email: 'cf95.souza@gmail.com',
-    password: '140415'
+    password: '140415C@io'
   });
   if (authError) {
     console.log('Auth Error:', authError.message);
@@ -16,7 +19,10 @@ async function test() {
   }
   console.log('Invoking function with period_id:', period.id);
   const { data, error } = await supabase.functions.invoke('payroll-engine', {
-    body: { period_id: period.id, company_id: period.company_id }
+    body: { period_id: period.id, company_id: period.company_id },
+    headers: {
+      Authorization: `Bearer ${session.access_token}`
+    }
   });
   console.log('Error:', error);
   if (error && error.context) {
