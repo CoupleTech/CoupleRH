@@ -243,11 +243,13 @@ export class PayrollEngine {
       }
 
       if (this.context.tipo_folha !== 'ADVANCE') {
+        // T1: Guarda base bruta de IRRF ANTES de processar o INSS
+        const baseIrrfBruta = this.context.base_irrf;
+
         // INSS
         inssResult = INSSCalculator.calculate(this.context.base_inss, this.context.inss_parameters);
         if (inssResult.value > 0) {
            this.context.total_descontos += inssResult.value;
-           this.context.base_irrf -= inssResult.value; // INSS deduz IRRF
            
            // BUG 7 fix: Busca rubrica INSS por código '901' primeiro, depois por nome
            const rubricInss = Array.from(this.context.rubricas.values()).find(r => r.code === '901' || r.code === '2001' || r.code === 'INSS_AUTO' || (r.name && r.name.toUpperCase().includes('INSS')));
@@ -264,22 +266,24 @@ export class PayrollEngine {
            });
         }
 
-        // IRRF
+        // IRRF: Base bruta, INSS real, dependentes e parâmetros legais (T1/Doc §4)
         const dependentes = this.context.getVariable('DEPENDENTES') || 0;
-        irrfResult = IRRFCalculator.calculate(this.context.base_irrf, 0, dependentes, this.context.irrf_parameters, this.context.general_legal_parameters); 
+        irrfResult = IRRFCalculator.calculate(baseIrrfBruta, inssResult.value, dependentes, this.context.irrf_parameters, this.context.general_legal_parameters); 
+        
         if (irrfResult.value > 0) {
            this.context.total_descontos += irrfResult.value;
-           
-            // BUG 7 fix: Busca rubrica IRRF por código '902' primeiro, depois por nome
-           const rubricIrrf = Array.from(this.context.rubricas.values()).find(r => r.code === '902' || r.code === '2002' || r.code === 'IRRF_AUTO' || (r.name && (r.name.toUpperCase().includes('IRRF') || r.name.toUpperCase().includes('IRPF'))));
+        }
 
+        const rubricIrrf = Array.from(this.context.rubricas.values()).find(r => r.code === '902' || r.code === '2002' || r.code === 'IRRF_AUTO' || (r.name && (r.name.toUpperCase().includes('IRRF') || r.name.toUpperCase().includes('IRPF'))));
+
+        if (baseIrrfBruta > 0 || irrfResult.value > 0) {
            this.context.addMemory({
               rubric_id: rubricIrrf ? rubricIrrf.id : 'IRRF_AUTO',
               step_name: 'IRRF',
               base_value: irrfResult.legalBase,
               quantity_used: 1,
               percentage_used: 0,
-              parsed_formula: irrfResult.usedSimplified ? 'Simplificada' : 'Deduções Legais',
+              parsed_formula: `${irrfResult.usedSimplified ? 'Simplificada' : 'Deduções Legais'} (Bruto: ${baseIrrfBruta}, Redutor: ${irrfResult.reductionAmount ?? 0})`,
               result_value: irrfResult.value,
               origin: 'AUTOMATICA'
            });
@@ -329,7 +333,7 @@ export class PayrollEngine {
         liquido: liquido,
         bases: {
           inss: Math.round(this.context.base_inss * 100) / 100,
-          irrf: Math.round(this.context.base_irrf * 100) / 100,
+          irrf: Math.round(irrfResult.legalBase * 100) / 100,
           fgts: Math.round(this.context.base_fgts * 100) / 100
         },
         memoria_calculo: this.context.memoria,
