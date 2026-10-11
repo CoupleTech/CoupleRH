@@ -24,7 +24,183 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 > ENTENDER → MODELAR → IMPLEMENTAR → TESTAR → VALIDAR → DOCUMENTAR
 > *(📐 Fluxo, Seção 38)*
 
-> **Status Atual do Projeto:** Fase 1 (Estrutura Organizacional) em andamento.
+> **Status Atual do Projeto:** em preparação para produção. **Siga o ROTEIRO DE PRODUÇÃO (P0 a P10) abaixo**; as Fases 0 a 36 ficam como histórico.
+---
+
+# 🚦 ROTEIRO DE PRODUÇÃO (P0 a P10): PRIORIDADE MÁXIMA
+
+> **Aviso ao agente:** esta seção tem **prioridade sobre as fases 0 a 36 abaixo**, que ficam como histórico. Várias fases abaixo estão marcadas `[Concluído]`, mas a revisão de 09/10/2026 encontrou falhas nelas (ver "Quadro de reabertura"). Execute **somente** as fases P0 a P10, na ordem, e use o histórico apenas como contexto.
+> **Documento de detalhe:** 📘 `DOCUMENTO_MELHORIAS_PRODUCAO_COUPLERH.md` (citado como **📘 Doc**). Cada tarefa abaixo traz um código (T1, PT-03, AS-05...) que **descreve o que fazer, como e o critério de aceite** no documento. **Leia o item no documento antes de implementar.**
+
+## Como trabalhar (obrigatório)
+1. Pegue a **primeira tarefa `[ ]`** da fase atual. Não pule fases nem tarefas, salvo as marcadas `(paralelizável)`.
+2. Leia o item correspondente no 📘 Doc. Escreva o **teste do critério de aceite primeiro**, depois a correção.
+3. Um item = um commit (`tipo(escopo): descrição [CÓDIGO]`). Rodar `npx vitest run` antes e depois; nada de commit com teste vermelho.
+4. Ao concluir: troque `[ ]` por `[x]`, anote data e commit. Se **bloqueado**, troque por `[!]` e escreva o motivo na linha seguinte; **não improvise** regra legal.
+5. **Regra legal ou valor de tabela duvidoso → pare e registre** em "Pendências para o contador" (fim desta seção). Não invente alíquotas, faixas ou regras.
+6. Ao fechar uma fase, execute o **Gate** da fase e marque o status (`[Concluído]` só se o Gate passar).
+7. Proibido: regra de cálculo no frontend; `eval()`/`Function()`; `float` para dinheiro em código novo; apagar regra histórica (versionar); `service_role` no cliente; alterar folha fechada sem fluxo controlado.
+8. Migrations novas numeradas a partir de `00066_`. Toda tabela nova: **RLS habilitada + política por tenant + gatilho de auditoria** (T29).
+
+## Estado da produção
+**Status Atual:** `[Em Progresso]` · **Fase corrente:** P0 · **Go-live folha:** bloqueado até Gate de P1, P2 e P9 · **Go-live ponto/assinatura:** bloqueado até Gate de P5/P6.
+
+## Quadro de reabertura (fases históricas que NÃO devem ser consideradas concluídas)
+| Fase histórica | Motivo | Tratada em |
+|---|---|---|
+| 8 Rubricas / 9 Eventos | Catálogo sem incidências; regras por nome | P2, P3 |
+| 13–14 Motor mínimo / Primeiro cálculo | Rubricas mutadas, erro vira holerite zerado | P0, P1 |
+| 15 Horas extras / 16 Adicionais | Base sem adicionais, noturno incompleto, fator assumido | P4 (T18) |
+| 17 Bases | Flags com `OR` em cascata; bases incompletas | P2 (T13, T30) |
+| 18 INSS / 19 IRRF | IRRF sobre base líquida; consolidação por competência ausente | P1 (T1), P4 (T16) |
+| 20–21 FGTS / Patronais | Alíquota fixa; patronais ignoram flags e regime | P4 (T19) |
+| 23–25 Férias/13º/Rescisão | Férias entre meses; descontos fixos indevidos; teste falhando | P4 (T15, T17, T19, T20) |
+| 27 Complementar | Lógica por `includes('-')`; não recalcula impostos | P4 |
+| 30 Auditoria | Sem gatilhos em folha e tabelas legais | P8 (T29) |
+| 31 Fechamento | Sem pré-folha, bloqueio por erro, imutabilidade completa | P7 |
+| 33 Bateria de testes | Sem teste de integração motor + calculadoras | P1, P9 |
+| 34 eSocial | **Simulado** com recibo aleatório | P0 (T26), P10 |
+| 2 Jornada | Sem marcação de ponto real | P5 |
+
+---
+
+## 🛑 FASE P0: Contenção de riscos
+**Status:** `[Pendente]` · **Ref.:** 📘 Doc §1, §4 (T5, T8, T26, T27)
+- [x] **T26** Rotular o painel eSocial como "Simulação: não transmite", desativar `forceTransmission` em produção e anular registros com recibo fictício (preservando trilha) — *Concluído em 11/10/2026: Dashboard.tsx rotulado com banner e badge de simulação, botão desativado em produção com validação bloqueadora, testes unitários criados (ESocialSimulation.test.ts) e migration 00066 criada para anulação de recibos fictícios mantendo trilha de auditoria.*
+- [ ] **T8** Autenticação e autorização em `payroll-engine`; CORS restrito; remover `debug` da resposta
+- [ ] **T5** Erro de cálculo não grava holerite zerado nem marca período `CALCULATED`; resposta 422 com lista
+- [ ] **T27 (provisório)** Revogar execução da RPC `sign_worker_document` para `anon`/`authenticated` até o fluxo AS-04 existir
+- [ ] Executar o 📘 Doc Anexo A e anexar os resultados em `docs/verificacao_banco.md`
+**Gate:** período com erro permanece rascunho; chamada sem token retorna 401; tela eSocial identifica simulação.
+
+## 🧮 FASE P1: Correções críticas do motor
+**Status:** `[Pendente]` · **Ref.:** 📘 Doc §4 (T1–T4, T6, T7, T11)
+- [ ] **T1** IRRF com base bruta, INSS real, simplificada e redutor sobre o bruto (teste da tabela do 📘 Doc)
+- [ ] **T2** Clonar rubricas por contrato e eliminar escrita em `rubric.*` no motor
+- [ ] **T3** `salario_minimo` do parâmetro legal; migration `irrf_reduction_a/b`; remover fallbacks e constantes 2026; `HORAS_TRABALHADAS`/`DIAS_*` coerentes
+- [ ] **T4** DSR com dias reais (remover normalização para 30)
+- [ ] **T6** Rubricas 901/902/903 por código + invariante itens = totais
+- [ ] **T7** Tabela legal ausente = erro; data sem `toISOString()`
+- [ ] **T11** Ignorar contrato com admissão em mês futuro
+- [ ] Teste de integração motor + calculadoras (INSS e IRRF nos limites; 0, 1 e 3 dependentes)
+**Gate:** tabela de IRRF do 📘 Doc §4 (T1) verde; dois contratos seguidos sem vazamento; consulta de holerites inconsistentes = 0 linhas.
+
+## 📚 FASE P2: Catálogo de rubricas e incidências
+**Status:** `[Pendente]` · **Ref.:** 📘 Doc §5 (T30), T12, T13
+- [ ] Rodar a consulta de parâmetros das rubricas (📘 Doc §5.3) e arquivar o resultado
+- [ ] **T30** Migration: incidências (matriz do 📘 Doc §5.2, **validada pelo contador**), `calculation_form`, `factor`, `calculation_order`; desativar duplicidade 103/104
+- [ ] **T30** Criar rubricas ausentes: salário-família, pensão alimentícia, consignado, contribuição sindical/assistencial, penosidade, banco de horas, HE 70%
+- [ ] **T13** Flags `gera_base_*` sem `OR` por `incidence_*`; unificar nomes de coluna e tela de Rubricas
+- [ ] **T12** Rubricas 250/850 por seed; remover insert dinâmico
+- [ ] Relatório "rubricas sem incidência ou forma de cálculo"
+**Gate:** nenhuma rubrica ativa sem forma de cálculo; matriz de incidência assinada pelo contador (registrar em Pendências).
+
+## 🧱 FASE P3: Integridade e motor orientado a dados
+**Status:** `[Pendente]` · **Ref.:** 📘 Doc §4 (T9, T10, T21–T25), §6
+- [ ] **T21** `money.ts` (centavos/decimal, HALF_UP) e substituição de `Math.round(x*100)/100`
+- [ ] **T22** `rubric_kind` (migration, backfill, UI obrigatória) e motor por `kind`; corrigir precedência de `isAdicionalNoturno`
+- [ ] **T23** DAG com dependências de fórmula e bases dinâmicas
+- [ ] **T24** Parser: variáveis na AST, tokenizer estrito, comparadores, vírgula decimal, erros explícitos; remover variável só com código numérico
+- [ ] **T25** `getVariable` com erro; `calculation_order ??`; eventos negativos; carga filtrada por contratos
+- [ ] **T9** Persistência atômica (`save_payroll_period`) e trava de concorrência
+- [ ] **T10** Impostos patronais recalculados a partir de todos os holerites do período
+- [ ] §6 Modelo v2: `rubric_incidences` por contexto, `calculation_bases`, versionamento e status da rubrica
+- [ ] §6.3 Tela **Nova rubrica** (modelos, sugestão por natureza eSocial, simulador, validações, aprovação, vigência)
+**Gate:** rubrica nova de tipo conhecido criada, simulada e ativada **sem alterar código**; nenhuma regra por nome/código no motor.
+
+## ⚖️ FASE P4: Regras trabalhistas
+**Status:** `[Pendente]` · **Ref.:** 📘 Doc §4 (T14–T20)
+- [ ] **T14** `value_type` em eventos fixos; insalubridade/periculosidade não acumulam
+- [ ] **T15** Férias que atravessam o mês (dias comerciais, múltiplas solicitações, média de variáveis)
+- [ ] **T16** INSS consolidado por competência entre folhas
+- [ ] **T17** Descontos fixos por tipo de folha (`apply_on_types`); regra de pensão alimentícia
+- [ ] **T18** `BASE_HORA_EXTRA`, DSR com noturno/variáveis, hora noturna reduzida, DSR s/ faltas, fator obrigatório
+- [ ] **T19** Dependentes por idade/vigência, 13º (médias/faltas), FGTS aprendiz, patronais por regime, versões reais gravadas
+- [ ] **T20** `Termination.test.ts` verde com justificativa
+**Gate:** casos dourados de férias, 13º, rescisão, faltas/DSR e banco de horas conferidos pelo contador.
+
+## ⏱️ FASE P5: Ponto eletrônico (Control iD, importação e celular)
+**Status:** `[Pendente]` · **Ref.:** 📘 Doc §7 · **Pré-requisito:** decisão do modelo de relógio e parecer jurídico sobre REP-P (ver Pendências)
+- [ ] **PT-01** Migrations: `time_devices`, `afd_files`, `time_punch_records` (imutável), `time_daily_summary`, política de banco de horas; auditoria
+- [ ] **PT-02** Importação de AFD (upload, validação de NSR/CRC, idempotência, relatório de importação)
+- [ ] **PT-04** Edge Function `time-ingest` (chave por dispositivo, HMAC, lote, idempotência)
+- [ ] **PT-03** Coletor local Control iD (pull incremental por NSR, fila offline, heartbeat) *(confirmar API do modelo na documentação do fabricante)*
+- [ ] **PT-05** `time-punch` (celular/PWA): hora do servidor, NSR sequencial, geofence, comprovante com QR; selfie só com consentimento
+- [ ] **PT-06** Motor de jornada (tolerâncias, noturno, intervalos, interjornada, feriados, 12x36, ponto por exceção)
+- [ ] **PT-07** Banco de horas: extrato, saldo, vencimentos, alertas, compensação, pagamento como HE
+- [ ] **PT-08** Espelho de ponto mensal (PDF) + contestação
+- [ ] **PT-09** Fechamento do ponto gera eventos variáveis automaticamente (substitui lançamento manual em `Timesheet.tsx`)
+- [ ] **PT-10** Portal do colaborador: marcar ponto, comprovantes, espelho, **banco de horas**, justificativas
+- [ ] **PT-11** Telas DP/gestor: dispositivos, importações, tratamento, inconsistências, aprovações
+- [ ] **PT-12** Exportações AFD e AEJ e relatórios para fiscalização
+- [ ] **PT-13** Segurança/LGPD do ponto (retenção, consentimento, máscara, acesso)
+- [ ] **PT-14** Testes: jornadas, noturno, 12x36, feriados, banco de horas, idempotência de importação
+**Gate:** marcação por relógio **ou** AFD **ou** celular aparece no espelho; colaborador vê saldo e extrato do banco de horas; AFD/AEJ exportáveis; marcação original impossível de alterar.
+
+## ✍️ FASE P6: Assinatura digital de documentos
+**Status:** `[Pendente]` · **Ref.:** 📘 Doc §8 · **Pré-requisito:** definição do nível de assinatura por documento (ver Pendências); P7 para holerite fechado
+- [ ] **AS-01** Migrations (`employee_documents`, `signatures_log`, `document_events`); RLS; storage privado
+- [ ] **AS-02** Geração de PDF no **servidor** a partir de snapshot imutável + hash H1 (holerite, recibo de férias, aviso de férias, espelho, termo de banco de horas)
+- [ ] **AS-03** Componente de rubrica na tela (canvas; traços JSON + PNG; mobile e desktop)
+- [ ] **AS-04** Edge Function `sign-document` (valida sessão, status e H1; grava evidências); **remover** a RPC `sign_worker_document`
+- [ ] **AS-05** Estampar rubrica no PDF + página de manifesto + hash H2
+- [ ] **AS-06** OTP/PIN antes de assinar
+- [ ] **AS-07** Notificações e lembretes (portal/e-mail/WhatsApp)
+- [ ] **AS-08** Página pública de verificação (`/verificar/:codigo`)
+- [ ] **AS-09** Painel de pendências e relatórios de assinaturas
+- [ ] **AS-10** Templates e regras por documento (alertas de prazo de aviso/pagamento de férias)
+- [ ] **AS-11** Contestação/recusa com motivo
+- [ ] **AS-12** (etapa 2) Selo de integridade PAdES (A1) e/ou carimbo de tempo
+**Gate:** documento assinado com rubrica e manifesto; adulteração do PDF detectada na verificação; colaborador só acessa os próprios documentos.
+
+## 📈 FASE P7: Pré-folha, fechamento e relatórios
+**Status:** `[Pendente]` · **Ref.:** 📘 Doc §9–§11
+- [ ] Pré-folha com críticas (variação do líquido, base zerada, dependentes alterados, rubricas novas, ponto pendente)
+- [ ] Comparativo mês a mês por colaborador e centro de custo
+- [ ] Fechamento imutável; reabertura com justificativa e perfil autorizado; versão do holerite
+- [ ] Bloqueio de fechamento com colaboradores em erro
+- [ ] Guias e obrigações (INSS/FGTS/IRRF), provisões, resumo contábil, CNAB, informe de rendimentos *(conferir obrigações vigentes com o contador)*
+**Gate:** período fechado não é alterável sem fluxo; relatórios conferem com os holerites.
+
+## 🛡️ FASE P8: Segurança, LGPD e auditoria *(contínua; marcos nas semanas 4 e 12)*
+**Status:** `[Pendente]` · **Ref.:** 📘 Doc §9
+- [ ] **T29** Gatilhos de auditoria em folha, tabelas legais, eventos, deduções, ponto e assinaturas; logs sem UPDATE/DELETE
+- [ ] RBAC granular (DP, gestor, contador, auditor, colaborador) e testes de RLS entre tenants
+- [ ] LGPD operacional: base legal, consentimentos, retenção, direitos do titular, máscara e criptografia de dados sensíveis
+- [ ] Rate limit, rotação de segredos, backups com PITR e teste de restauração documentado
+**Gate:** teste automatizado prova que um tenant não lê dados de outro; auditoria registra alteração de rubrica, parâmetro e holerite.
+
+## ✅ FASE P9: Qualidade, ambientes e homologação
+**Status:** `[Pendente]` · **Ref.:** 📘 Doc §10
+- [ ] Ambientes dev/staging/prod (Supabase e Vercel) e CI (lint, tipos, vitest, migrations)
+- [ ] Golden files: 30+ holerites reais conferidos pelo contador
+- [ ] Suíte de integração completa (📘 Doc §10) e testes de ponto e assinatura
+- [ ] Observabilidade (Sentry/logs) e alertas de falha de folha e de ingestão de ponto
+- [ ] **Folha paralela de 2 a 3 competências** com diferença R$ 0,00 por rubrica (ou política de centavos formalizada) e ata do contador
+- [ ] Checklist de go-live assinado (contador, jurídico, responsável técnico)
+**Gate:** ata de homologação anexada; CI verde; plano de rollback e restauração testado.
+
+## 🌐 FASE P10: eSocial real *(após go-live; projeto separado)*
+**Status:** `[Pendente]` · **Ref.:** 📘 Doc §12
+- [ ] Decisão de arquitetura (serviço dedicado com certificado A1 ou parceiro homologado)
+- [ ] Eventos de tabelas (incl. S-1010 = catálogo v2), não periódicos e periódicos; fila, retorno e recibos reais
+- [ ] Transmissão em produção restrita aceita antes de qualquer envio oficial
+
+---
+
+## 📋 Pendências para o contador e o jurídico (o agente registra aqui; não decide sozinho)
+- [ ] Validar tabelas e faixas 2026 (INSS, IRRF, redutor, simplificada, dependente, salário mínimo, teto)
+- [ ] Aprovar a matriz de incidências (📘 Doc §5.2) e a convenção de dia útil para DSR
+- [ ] Definir regras de média de variáveis (férias/13º), tributação do 13º e consolidação de INSS por competência
+- [ ] Definir o **nível de assinatura** (simples/avançada/qualificada) por documento e a política de contestação
+- [ ] Parecer jurídico sobre **REP-P** (ponto por celular): requisitos, atestado técnico e termo de responsabilidade do fornecedor
+- [ ] Política de banco de horas (acordo individual ou CCT/ACT, prazos e vencimento) e tolerâncias de ponto
+- [ ] Modelo e firmware do relógio Control iD; rede do cliente (coletor local ou push)
+- [ ] Prazos de retenção de ponto, holerites e assinaturas
+
+---
+
+# 📜 HISTÓRICO: Fases 0 a 36 (roteiro anterior; ver "Quadro de reabertura")
 
 ---
 

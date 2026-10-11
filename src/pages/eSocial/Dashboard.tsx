@@ -7,9 +7,15 @@ import {
   Clock,
   Activity,
   Loader2,
+  AlertTriangle,
+  Info,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { Pagination } from "../../components/Pagination";
+import {
+  validateTransmissionAttempt,
+  ESOCIAL_CONFIG,
+} from "../../utils/esocialSimulation";
 
 interface ESocialTransmission {
   id: string;
@@ -52,8 +58,13 @@ export default function ESocialDashboard() {
   };
 
   const forceTransmission = async () => {
+    const check = validateTransmissionAttempt();
+    if (!check.allowed) {
+      alert(check.reason);
+      return;
+    }
+
     setIsTransmitting(true);
-    // Simulação do Worker do backend alterando o status
     const queued = transmissions.filter(
       (t) => t.status === "QUEUED" || t.status === "DRAFT",
     );
@@ -132,43 +143,73 @@ export default function ESocialDashboard() {
 
   return (
     <div className="animate-fade-up">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 font-display">
-            Mensageria eSocial
-          </h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-extrabold text-slate-900 font-display">
+              Mensageria eSocial
+            </h1>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+              <AlertTriangle size={13} className="text-amber-600" />
+              Simulação: não transmite
+            </span>
+          </div>
           <p className="text-sm text-slate-500 mt-1">
-            Monitoramento de eventos, recibos de entrega e rejeições
-            governamentais
+            Visualização de eventos, validação de layouts XML e simulações de lotes
           </p>
         </div>
 
-        <button
-          onClick={forceTransmission}
-          disabled={isTransmitting || stats.queued === 0}
-          className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isTransmitting ? (
-            <Loader2 className="animate-spin" size={18} />
-          ) : (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={forceTransmission}
+            disabled={true}
+            title={ESOCIAL_CONFIG.TRANSMISSION_NOTICE}
+            className="btn-primary opacity-60 cursor-not-allowed bg-slate-200 text-slate-500 border border-slate-300 hover:bg-slate-200 hover:text-slate-500 shadow-none"
+          >
             <Send size={18} />
-          )}
-          <span>Transmissão em Lote</span>
-        </button>
+            <span>Transmissão Desativada (Fase P10)</span>
+          </button>
+        </div>
       </div>
 
+      {/* Banner de Conformidade e Simulação (T26) */}
+      <div className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3.5 shadow-sm">
+        <div className="p-2 bg-amber-100 rounded-lg text-amber-700 mt-0.5 shrink-0">
+          <AlertTriangle size={20} />
+        </div>
+        <div className="flex-1">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <h3 className="text-sm font-bold text-amber-900">
+              Painel em Modo de Demonstração / Simulação
+            </h3>
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-amber-200 text-amber-900">
+              Ambiente Não Transmissor
+            </span>
+          </div>
+          <p className="text-xs text-amber-800 leading-relaxed">
+            Este módulo opera exclusivamente para validação e pré-visualização de arquivos. 
+            Nenhuma informação é enviada à Receita Federal ou SERPRO. O botão de transmissão em lote 
+            está desativado em produção para conformidade com o Roteiro de Produção (Fase P0). 
+            A transmissão governamental oficial com certificado ICP-Brasil (A1) será disponibilizada na Fase P10.
+          </p>
+        </div>
+      </div>
+
+      {/* Estatísticas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="panel p-6 relative overflow-hidden group">
           <div className="absolute -right-6 -top-6 text-accent-500/10 group-hover:text-accent-500/20 transition-colors">
             <CheckCircle size={100} />
           </div>
           <div className="relative z-10">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
-              Aceitos com Recibo
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
+              Aceitos (Simulação Local)
             </p>
             <p className="text-3xl font-extrabold text-slate-900 font-display">
               {stats.accepted}
             </p>
+            <p className="text-[11px] text-slate-400 mt-1">Pré-validados localmente</p>
           </div>
         </div>
         <div className="panel p-6 relative overflow-hidden group">
@@ -176,12 +217,13 @@ export default function ESocialDashboard() {
             <Clock size={100} />
           </div>
           <div className="relative z-10">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
               Aguardando Envio
             </p>
             <p className="text-3xl font-extrabold text-slate-900 font-display">
               {stats.queued}
             </p>
+            <p className="text-[11px] text-slate-400 mt-1">Em fila de processamento</p>
           </div>
         </div>
         <div className="panel p-6 relative overflow-hidden group border-rose-200 bg-rose-50/30">
@@ -189,12 +231,13 @@ export default function ESocialDashboard() {
             <AlertOctagon size={100} />
           </div>
           <div className="relative z-10">
-            <p className="text-xs font-bold text-rose-600 uppercase tracking-widest mb-2">
-              Rejeições SERPRO
+            <p className="text-xs font-bold text-rose-600 uppercase tracking-widest mb-1">
+              Inconsistências Locais
             </p>
             <p className="text-3xl font-extrabold text-rose-700 font-display">
               {stats.rejected}
             </p>
+            <p className="text-[11px] text-rose-400 mt-1">Falhas de validação de layout</p>
           </div>
         </div>
       </div>

@@ -11127,5 +11127,42 @@ CREATE POLICY "Tenant Admins and DP can manage employee_documents"
 CREATE TRIGGER audit_employee_documents_trigger
 AFTER INSERT OR UPDATE OR DELETE ON public.employee_documents
 FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
-``
-\n\n## Functions (RPCs)\n\n### authenticate_employee\n`sql\nCREATE OR REPLACE FUNCTION public.authenticate_employee(p_cpf TEXT, p_birth_date TEXT)\nRETURNS TABLE (\n    worker_id UUID,\n    person_id UUID,\n    company_id UUID,\n    tenant_id UUID,\n    full_name TEXT\n)\n`\n
+```
+
+## Functions (RPCs)
+
+### `authenticate_employee`
+```sql
+CREATE OR REPLACE FUNCTION public.authenticate_employee(p_cpf TEXT, p_birth_date TEXT)
+RETURNS TABLE (
+    worker_id UUID,
+    person_id UUID,
+    company_id UUID,
+    tenant_id UUID,
+    full_name TEXT
+);
+```
+
+---
+
+## 4. Migrations de Produção e Contenção
+
+### Migration `00066_anular_recibos_ficticios_esocial.sql` (Fase P0 / T26)
+- **Objetivo**: Anular registros no `esocial_transmissions` que continham recibos fictícios gerados sinteticamente por `Math.random` (padrão `1.2.000%`), preservando a integridade jurídica e a trilha de auditoria via `audit.logs`.
+- **Alterações**:
+  - `status` restaurado para `'DRAFT'`.
+  - `receipt_number` definido como `NULL`.
+  - `transmitted_at` definido como `NULL`.
+  - `error_message` enriquecido com a justificativa de neutralização e cópia do recibo anterior.
+  - Gatilho `audit_esocial_trigger` acionado automaticamente a cada linha alterada.
+
+```sql
+UPDATE public.esocial_transmissions
+SET 
+    status = 'DRAFT',
+    error_message = COALESCE(error_message || ' | ', '') || 'Simulação anulada em produção (T26). Recibo fictício removido: ' || receipt_number,
+    receipt_number = NULL,
+    transmitted_at = NULL,
+    updated_at = NOW()
+WHERE receipt_number LIKE '1.2.000%';
+```
