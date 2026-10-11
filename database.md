@@ -11166,3 +11166,34 @@ SET
     updated_at = NOW()
 WHERE receipt_number LIKE '1.2.000%';
 ```
+
+### Migration `00067_revoke_sign_worker_document.sql` (Fase P0 / T27)
+- **Objetivo**: Revogar permissão de execução da RPC `sign_worker_document` para `anon`, `authenticated` e `public` até que o fluxo seguro AS-04 (com rubrica na tela, hash H1/H2 e Edge Function) seja implementado na Fase P6.
+- **Alterações**:
+  - `REVOKE EXECUTE ON FUNCTION public.sign_worker_document(...) FROM anon, authenticated, public;`
+  - Inclusão de comentário de auditoria no catálogo PostgreSQL.
+```sql
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_proc p 
+        JOIN pg_namespace n ON p.pronamespace = n.oid 
+        WHERE n.nspname = 'public' 
+          AND p.proname = 'sign_worker_document' 
+          AND pronargs = 5
+    ) THEN
+        EXECUTE 'REVOKE EXECUTE ON FUNCTION public.sign_worker_document(UUID, UUID, TEXT, TEXT, TEXT) FROM anon, authenticated, public;';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM pg_proc p 
+        JOIN pg_namespace n ON p.pronamespace = n.oid 
+        WHERE n.nspname = 'public' 
+          AND p.proname = 'sign_worker_document' 
+          AND pronargs = 2
+    ) THEN
+        EXECUTE 'REVOKE EXECUTE ON FUNCTION public.sign_worker_document(UUID, UUID) FROM anon, authenticated, public;';
+    END IF;
+END $$;
+```
+

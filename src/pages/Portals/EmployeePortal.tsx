@@ -606,39 +606,16 @@ export default function EmployeePortal() {
     }
   };
 
-  const handleSignDocument = async (docId: string, metadata: any) => {
+  const handleSignDocument = async (docId: string, _metadata: any) => {
     if (!auth) return;
     setSigningDocId(docId);
     try {
-      // Obter IP do usuário (para validade legal MP 2.200-2)
-      let ipAddress = '0.0.0.0';
-      try {
-        const ipRes = await fetch('https://api.ipify.org?format=json');
-        const ipData = await ipRes.json();
-        ipAddress = ipData.ip;
-      } catch (e) {
-        console.warn("Could not fetch IP", e);
-      }
-      
-      const userAgent = navigator.userAgent;
-      
-      // Hash simples do metadados para garantir que o que foi assinado era isso
-      const documentHash = btoa(JSON.stringify(metadata) + Date.now().toString());
-
-      const { error } = await supabase.rpc('sign_worker_document', {
-        p_document_id: docId,
-        p_worker_id: auth.workerId,
-        p_ip_address: ipAddress,
-        p_user_agent: userAgent,
-        p_document_hash: documentHash
-      });
-      if (error) throw error;
-      
-      toast.error("Documento assinado com sucesso!");
+      // T27 (provisório): RPC sign_worker_document revogada por segurança até a implantação do fluxo seguro AS-04 (Fase P6)
+      toast.error(
+        "O módulo de assinatura digital está em atualização de segurança para conformidade jurídica (Fase P6 - Rubrica e Manifesto). A assinatura eletrônica avançada será habilitada em breve.",
+        { duration: 5000 }
+      );
       setDocumentToView(null);
-      await fetchDocsData();
-    } catch (err: any) {
-      toast.error("Falha ao assinar documento: " + err.message);
     } finally {
       setSigningDocId(null);
     }
