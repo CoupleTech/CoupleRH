@@ -766,7 +766,7 @@ serve(async (req) => {
         dias_inuteis: dias_inuteis,
         divisor: divisor,
         num_dependentes: numDependentesIRRF,
-        rubricas: applicableRubrics,
+        rubricas: applicableRubrics.map((r: any) => structuredClone(r)),
         eventos: eventos,
         contract_incidences: contract.contract_types,
         inss_parameters: inss_parameters,

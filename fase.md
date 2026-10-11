@@ -76,7 +76,7 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 ## 🧮 FASE P1: Correções críticas do motor
 **Status:** `[Em Progresso]` · **Ref.:** 📘 Doc §4 (T1–T4, T6, T7, T11)
 - [x] **T1** IRRF com base bruta, INSS real, simplificada e redutor sobre o bruto (teste da tabela do 📘 Doc) — *Concluído em 11/10/2026: IRRFCalculator e PayrollEngine corrigidos para processar rendimento tributável bruto, dedução do INSS real, comparação entre base legal vs simplificada sem sobreposição indevida, e redutor 2026 aplicado sobre o rendimento bruto. Suíte de integração com a tabela de aceite do Doc §4 criada em PayrollEngineIRRF.test.ts (6/6 cenários passando).*
-- [ ] **T2** Clonar rubricas por contrato e eliminar escrita em `rubric.*` no motor
+- [x] **T2** Clonar rubricas por contrato e eliminar escrita em `rubric.*` no motor — *Concluído em 11/10/2026: Clonagem de rubricas com structuredClone adicionada no PayrollContext e no loop de contratos em index.ts; eliminadas todas as mutações de rubric.* no PayrollEngine através de variáveis locais imutáveis. Teste de aceite de isolamento entre contratos consecutivos criado em RubricIsolation.test.ts (100% aprovado).*
 - [ ] **T3** `salario_minimo` do parâmetro legal; migration `irrf_reduction_a/b`; remover fallbacks e constantes 2026; `HORAS_TRABALHADAS`/`DIAS_*` coerentes
 - [ ] **T4** DSR com dias reais (remover normalização para 30)
 - [ ] **T6** Rubricas 901/902/903 por código + invariante itens = totais

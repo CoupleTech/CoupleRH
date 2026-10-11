@@ -150,7 +150,7 @@ export class PayrollContext {
     this.dias_inuteis = data.dias_inuteis !== undefined ? data.dias_inuteis : 4;
     this.divisor = data.divisor || 220;
     this.salario_minimo = data.salario_minimo || 1621;
-    this.rubricas = new Map((data.rubricas || []).map((r: Rubric) => [r.id, r]));
+    this.rubricas = new Map((data.rubricas || []).map((r: Rubric) => [r.id, structuredClone(r)]));
     this.eventos = data.eventos || [];
     this.contract_incidences = data.contract_incidences || null;
     this.inss_parameters = data.inss_parameters || [];

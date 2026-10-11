@@ -45,54 +45,60 @@ export class PayrollEngine {
         const isInsalubridade = rubric.code === '302' || (rubric.name || '').toUpperCase().includes('INSALUBRIDADE');
         const isPericulosidade = rubric.code === '303' || (rubric.name || '').toUpperCase().includes('PERICULOSIDADE');
 
+        // T2: Variáveis locais para eliminar qualquer mutação no objeto rubric
+        let calcBaseName = rubric.calculation_base;
+        let factor = rubric.factor;
+        let percentage = rubric.percentage;
+        let divisor = rubric.divisor;
+
         // Override inteligente para garantir que rubricas do sistema calculem corretamente independente de como foram cadastradas na UI
         if (isOvertime) {
             calcForm = 'HORAS';
-            if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
-            if (!rubric.factor) rubric.factor = 1.5;
+            if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
+            if (!factor) factor = 1.5;
         } else if (isDsrNoturno) {
             calcForm = 'PERCENTUAL';
-            if (!rubric.calculation_base) rubric.calculation_base = 'BASE_DSR_NOTURNO';
-            if (!rubric.percentage) {
+            if (!calcBaseName) calcBaseName = 'BASE_DSR_NOTURNO';
+            if (!percentage) {
                 if (this.context.dias_uteis > 0 && this.context.dias_inuteis > 0) {
-                    rubric.percentage = (this.context.dias_inuteis / this.context.dias_uteis) * 100;
+                    percentage = (this.context.dias_inuteis / this.context.dias_uteis) * 100;
                 } else {
-                    rubric.percentage = 20; // 20% fallback (1/5)
+                    percentage = 20; // 20% fallback (1/5)
                 }
             }
         } else if (isDsr) {
             calcForm = 'PERCENTUAL';
-            if (!rubric.calculation_base) rubric.calculation_base = 'BASE_DSR';
-            if (!rubric.percentage) {
+            if (!calcBaseName) calcBaseName = 'BASE_DSR';
+            if (!percentage) {
                 if (this.context.dias_uteis > 0 && this.context.dias_inuteis > 0) {
-                    rubric.percentage = (this.context.dias_inuteis / this.context.dias_uteis) * 100;
+                    percentage = (this.context.dias_inuteis / this.context.dias_uteis) * 100;
                 } else {
-                    rubric.percentage = 20; // 20% fallback (1/5)
+                    percentage = 20; // 20% fallback (1/5)
                 }
             }
         } else if (isInsalubridade) {
             calcForm = 'PERCENTUAL';
-            if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_MINIMO';
-            if (!rubric.percentage) rubric.percentage = 20; // 20% por padrão (grau médio)
+            if (!calcBaseName) calcBaseName = 'SALARIO_MINIMO';
+            if (!percentage) percentage = 20; // 20% por padrão (grau médio)
         } else if (isPericulosidade) {
             calcForm = 'PERCENTUAL';
-            if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
-            if (!rubric.percentage) rubric.percentage = 30; // 30% padrão
+            if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
+            if (!percentage) percentage = 30; // 30% padrão
         } else if (isAdicionalNoturno) {
             calcForm = 'HORAS';
-            if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
-            if (!rubric.factor) rubric.factor = 0.20; // 20%
+            if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
+            if (!factor) factor = 0.20; // 20%
         } else if (rubric.code === '502' || rubric.code === '504') {
             calcForm = 'PERCENTUAL';
-            if (!rubric.calculation_base) rubric.calculation_base = rubric.code === '502' ? 'R501' : 'R503';
-            if (!rubric.percentage) rubric.percentage = 33.3333; // 1/3
+            if (!calcBaseName) calcBaseName = rubric.code === '502' ? 'R501' : 'R503';
+            if (!percentage) percentage = 33.3333; // 1/3
         } else if (rubric.code === '801' || rubric.code === '210') {
             calcForm = 'DIAS';
-            if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
+            if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
         } else if (rubric.code === '802' || rubric.code === '211') {
             calcForm = 'HORAS';
-            if (!rubric.calculation_base) rubric.calculation_base = 'SALARIO_BASE';
-            if (!rubric.factor) rubric.factor = 1.0;
+            if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
+            if (!factor) factor = 1.0;
         }
         
         // Se o valorCalculado ainda for 0 (ou seja, não tinha valor manual explícito, apenas a quantidade foi injetada), calcula!
@@ -101,23 +107,23 @@ export class PayrollEngine {
                 const currentParser = new RubricFormulaParser(this.context.variables);
                 valorCalculado = currentParser.evaluate(rubric.formula);
             }
-            else if ((calcForm === 'HORAS' || calcForm === 'HOURS') && rubric.calculation_base) {
+            else if ((calcForm === 'HORAS' || calcForm === 'HOURS') && calcBaseName) {
                 if (quantidade > 0) {
-                    const baseVal = this.context.getVariable(rubric.calculation_base);
-                    const factor = rubric.factor || 1.5;
-                    const divisor = rubric.divisor || this.context.getVariable('DIVISOR') || 220;
-                    const valorHora = baseVal / divisor;
-                    valorCalculado = (valorHora * factor) * quantidade;
-                    formulaUsada = `(${baseVal} / ${divisor}) * ${factor} * ${quantidade}`;
+                    const baseVal = this.context.getVariable(calcBaseName);
+                    const effFactor = factor || 1.5;
+                    const effDivisor = divisor || this.context.getVariable('DIVISOR') || 220;
+                    const valorHora = baseVal / effDivisor;
+                    valorCalculado = (valorHora * effFactor) * quantidade;
+                    formulaUsada = `(${baseVal} / ${effDivisor}) * ${effFactor} * ${quantidade}`;
                 } else {
                     valorCalculado = 0;
                     formulaUsada = `HORAS_ZERADAS`;
                 }
             }
             else if (calcForm === 'PERCENTUAL' || calcForm === 'PERCENTAGE' || calcForm === 'PERCENTAGE_OF_BASE') {
-                if (rubric.calculation_base) {
-                    const baseVal = this.context.getVariable(rubric.calculation_base);
-                    let perc = rubric.percentage;
+                if (calcBaseName) {
+                    const baseVal = this.context.getVariable(calcBaseName);
+                    let perc = percentage;
                     
                     if (!perc && (isDsr || isDsrNoturno)) {
                         if (this.context.dias_uteis > 0 && this.context.dias_inuteis > 0) {
@@ -125,38 +131,38 @@ export class PayrollEngine {
                         } else {
                             perc = 20;
                         }
-                        rubric.percentage = perc;
                     }
                     
                     perc = perc || 0;
+                    percentage = perc;
                     
                     if (quantidade > 0) {
                         valorCalculado = baseVal * (perc / 100) * quantidade;
-                        formulaUsada = `PERCENTUAL(${rubric.calculation_base} * ${perc}% * ${quantidade})`;
+                        formulaUsada = `PERCENTUAL(${calcBaseName} * ${perc}% * ${quantidade})`;
                     } else if (isDsr || isDsrNoturno) {
                         if (baseVal > 0) {
                             valorCalculado = baseVal * (perc / 100);
-                            formulaUsada = `PERCENTUAL(${rubric.calculation_base} * ${perc}%)`;
+                            formulaUsada = `PERCENTUAL(${calcBaseName} * ${perc}%)`;
                             quantidade = 1;
                         }
                     }
                 }
             }
-            else if (calcForm === 'AVOS' && rubric.calculation_base) {
-                const baseVal = this.context.getVariable(rubric.calculation_base);
-                const divisor = rubric.divisor || 12;
-                valorCalculado = (baseVal / divisor) * quantidade;
-                formulaUsada = `AVOS(${rubric.calculation_base} / ${divisor} * ${quantidade})`;
+            else if (calcForm === 'AVOS' && calcBaseName) {
+                const baseVal = this.context.getVariable(calcBaseName);
+                const effDivisor = divisor || 12;
+                valorCalculado = (baseVal / effDivisor) * quantidade;
+                formulaUsada = `AVOS(${calcBaseName} / ${effDivisor} * ${quantidade})`;
             }
-            else if ((calcForm === 'DIAS' || calcForm === 'DAYS') && rubric.calculation_base) {
-                const baseVal = this.context.getVariable(rubric.calculation_base);
-                const perc = rubric.percentage || 100;
+            else if ((calcForm === 'DIAS' || calcForm === 'DAYS') && calcBaseName) {
+                const baseVal = this.context.getVariable(calcBaseName);
+                const perc = percentage || 100;
                 valorCalculado = (baseVal / 30) * quantidade * (perc / 100);
-                formulaUsada = `DIAS(${rubric.calculation_base} / 30 * ${quantidade})`;
+                formulaUsada = `DIAS(${calcBaseName} / 30 * ${quantidade})`;
             }
             else if (calcForm === 'FIXO' || calcForm === 'FIXED') {
                 const isBaseSalary = rubric.code === '1001' || rubric.code === '101' || (rubric.name || '').toLowerCase().includes('salário base') || (rubric.name || '').toLowerCase().includes('salario base');
-                const effectiveBase = rubric.calculation_base || (isBaseSalary ? 'SALARIO_BASE' : null);
+                const effectiveBase = calcBaseName || (isBaseSalary ? 'SALARIO_BASE' : null);
                 
                 if (effectiveBase && isBaseSalary) {
                   const val = this.context.getVariable(effectiveBase);
@@ -185,9 +191,9 @@ export class PayrollEngine {
             this.context.addMemory({
                 rubric_id: rubric.id,
                 step_name: rubric.name,
-                base_value: rubric.calculation_base ? this.context.getVariable(rubric.calculation_base) : 0,
+                base_value: calcBaseName ? this.context.getVariable(calcBaseName) : 0,
                 quantity_used: quantidade,
-                percentage_used: rubric.percentage || 0,
+                percentage_used: percentage || 0,
                 parsed_formula: formulaUsada,
                 result_value: valorCalculado,
                 origin: rubric.calculation_form
