@@ -5,10 +5,22 @@ import { PayrollContext, Rubric } from "./engine/PayrollContext.ts";
 import { PayrollEngine } from "./engine/PayrollEngine.ts";
 import { EmployerTaxesCalculator, LaborConfig } from "./legal/EmployerTaxesCalculator.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const TRUSTED_ORIGINS = [
+  'https://couplerh.com.br',
+  'https://app.couplerh.com.br',
+  'http://localhost:5173',
+  'http://localhost:3000',
+];
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get('Origin') ?? '';
+  const isAllowed = TRUSTED_ORIGINS.includes(origin) || origin.endsWith('.vercel.app');
+  return {
+    'Access-Control-Allow-Origin': isAllowed && origin ? origin : TRUSTED_ORIGINS[0],
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  };
+}
 
 // BUG R3 fix: Traduz valores de calculation_form/calculation_type entre os formatos
 // da tela (inglês: FIXED, HOURS, DAYS) e do motor (português: FIXO, HORAS, DIAS)
@@ -36,25 +48,48 @@ function normalizeCalcForm(value: string): string {
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   const debugLogs: any[] = [];
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
+    // 0.1 Autenticação Mandatória (T8)
+    const authHeader = req.headers.get('Authorization') ?? '';
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized: Cabeçalho de autorização ausente" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error("Missing Supabase Environment Variables");
+    }
+
+    // Valida token JWT do usuário
+    const userClient = createClient(supabaseUrl, supabaseAnonKey || supabaseKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authError } = await userClient.auth.getUser();
+
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized: Sessão inválida ou expirada" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const body = await req.json();
     const period_id = body.period_id;
     const contract_id_filter = body.contract_id; // Optional: run for a specific contract
 
     if (!period_id) throw new Error("period_id is required");
-
-    // Inicializa o cliente do Supabase com a Service Role Key para ter acesso total
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error("Missing Supabase Environment Variables");
-    }
     
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -66,6 +101,23 @@ serve(async (req) => {
       .single();
 
     if (periodError || !period) throw new Error("Period not found");
+
+    // 0.2 Autorização / RBAC por Tenant (T8)
+    const { data: tenantUser, error: tuError } = await supabase
+      .from('tenant_users')
+      .select('role')
+      .eq('tenant_id', period.tenant_id)
+      .eq('user_id', user.id)
+      .single();
+
+    const allowedRoles = ['system_admin', 'tenant_admin', 'dp_analyst'];
+    if (tuError || !tenantUser || !allowedRoles.includes(tenantUser.role)) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden: Usuário sem permissão para calcular folha nesta empresa" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     if (['CONFERENCE', 'CLOSED', 'CANCELED'].includes(period.status)) {
       throw new Error(`A folha está no status ${period.status} e não pode ser recalculada. Por favor, volte o status para rascunho (reabrir) se precisar alterar.`);
     }
@@ -869,7 +921,7 @@ serve(async (req) => {
     }).eq('id', period_id);
 
     return new Response(
-      JSON.stringify({ success: true, processed: results.length, results, debug: debugLogs }),
+      JSON.stringify({ success: true, processed: results.length, results }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   } catch (error: any) {
