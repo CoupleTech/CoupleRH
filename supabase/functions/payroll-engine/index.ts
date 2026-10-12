@@ -269,6 +269,10 @@ serve(async (req) => {
       general_legal_parameters = (generalData && generalData.length > 0) ? generalData[0] : {};
     }
 
+    if (!general_legal_parameters || !general_legal_parameters.minimum_wage || Number(general_legal_parameters.minimum_wage) <= 0) {
+      throw new Error(`Parâmetro legal obrigatório ausente: 'minimum_wage' (salário mínimo) não cadastrado na versão legal vigente da competência ${period.month}/${period.year}.`);
+    }
+
     const rubricas = dbRubrics.map((r: any) => ({
       id: r.id,
       code: r.code,
@@ -761,6 +765,7 @@ serve(async (req) => {
         empregado_id: contract.worker_id,
         contrato_id: contract.id,
         salario_base: contract.base_salary,
+        salario_minimo: Number(general_legal_parameters.minimum_wage),
         dias_trabalhados: diasTrabalhados,
         dias_uteis: dias_uteis,
         dias_inuteis: dias_inuteis,

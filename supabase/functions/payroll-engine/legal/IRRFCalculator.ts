@@ -13,16 +13,26 @@ export class IRRFCalculator {
     grossIncome: number,
     inss: number,
     dependents: number,
-    brackets: IrrfBracket[] = [],
-    params: GeneralLegalParameters = {},
+    brackets?: IrrfBracket[],
+    params?: GeneralLegalParameters,
     alimony: number = 0
   ): IrrfCalculationResult {
+    if (!params || Object.keys(params).length === 0) {
+      throw new Error('Parâmetros legais gerais ausentes para a competência.');
+    }
+    if (params.simplified_discount === undefined || params.simplified_discount === null) {
+      throw new Error("Parâmetro legal 'simplified_discount' ausente.");
+    }
+    if (dependents > 0 && (params.dependent_deduction === undefined || params.dependent_deduction === null)) {
+      throw new Error("Parâmetro legal 'dependent_deduction' ausente para cálculo com dependentes.");
+    }
+
     // 1. Apuração da Dedução Legal (INSS + Dependentes + Pensão Alimentícia)
-    const dependentesDeducao = dependents * (params.dependent_deduction ?? 189.59);
+    const dependentesDeducao = dependents * (params.dependent_deduction || 0);
     const baseLegal = Math.max(0, grossIncome - inss - dependentesDeducao - alimony);
 
-    // 2. Apuração da Dedução Simplificada (Desconto padrão 2026 de R$ 607,20 sobre o bruto)
-    const simplifiedDiscount = params.simplified_discount ?? 607.20;
+    // 2. Apuração da Dedução Simplificada (Desconto padrão sobre o bruto)
+    const simplifiedDiscount = params.simplified_discount;
     const baseSimplificada = Math.max(0, grossIncome - simplifiedDiscount);
 
     // 3. Critério Legal: aplica-se a dedução mais benéfica ao trabalhador (menor base de cálculo tributável)
@@ -31,13 +41,7 @@ export class IRRFCalculator {
 
     // 4. Faixas da Tabela Progressiva do IRRF
     if (!brackets || brackets.length === 0) {
-      brackets = [
-        { bracket_number: 1, base_limit: 2428.80, aliquot: 0, deduction: 0 },
-        { bracket_number: 2, base_limit: 2826.65, aliquot: 7.5, deduction: 182.16 },
-        { bracket_number: 3, base_limit: 3751.05, aliquot: 15.0, deduction: 394.16 },
-        { bracket_number: 4, base_limit: 4664.68, aliquot: 22.5, deduction: 675.49 },
-        { bracket_number: 5, base_limit: null, aliquot: 27.5, deduction: 908.73 }
-      ];
+      throw new Error('Parâmetros legais de IRRF ausentes para a competência.');
     }
 
     const sortedBrackets = [...brackets].sort((a, b) => a.bracket_number - b.bracket_number);

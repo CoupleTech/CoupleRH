@@ -2,6 +2,22 @@ import { describe, it, expect } from 'vitest';
 import { IRRFCalculator } from '../../../supabase/functions/payroll-engine/legal/IRRFCalculator';
 
 describe('IRRFCalculator', () => {
+  const standardIrrfBrackets = [
+    { bracket_number: 1, base_limit: 2428.80, aliquot: 0, deduction: 0 },
+    { bracket_number: 2, base_limit: 2826.65, aliquot: 7.5, deduction: 182.16 },
+    { bracket_number: 3, base_limit: 3751.05, aliquot: 15.0, deduction: 394.16 },
+    { bracket_number: 4, base_limit: 4664.68, aliquot: 22.5, deduction: 675.49 },
+    { bracket_number: 5, base_limit: null, aliquot: 27.5, deduction: 908.73 }
+  ];
+
+  const standardGeneralParams = {
+    minimum_wage: 1621.00,
+    dependent_deduction: 189.59,
+    simplified_discount: 607.20,
+    irrf_reduction_a: 978.62,
+    irrf_reduction_b: 0.133145
+  };
+
   it('deve usar o desconto simplificado se for mais vantajoso (1 dependente vs simplificado)', () => {
     // Base: 3000
     // INSS: ~248.60 (da faixa 3)
@@ -10,7 +26,7 @@ describe('IRRFCalculator', () => {
     // Desconto Simplificado = 607.20
     // Como 607.20 > 438.19, deve usar simplificado.
     
-    const result = IRRFCalculator.calculate(3000.00, 248.60, 1);
+    const result = IRRFCalculator.calculate(3000.00, 248.60, 1, standardIrrfBrackets, standardGeneralParams);
     
     expect(result.usedSimplified).toBe(true);
     // Base IRRF = 3000 - 607.20 = 2392.80
@@ -28,7 +44,7 @@ describe('IRRFCalculator', () => {
     // Desconto Simplificado = 607.20
     // Como 937.37 > 607.20, deve usar legal.
     
-    const result = IRRFCalculator.calculate(4000.00, 368.60, 3);
+    const result = IRRFCalculator.calculate(4000.00, 368.60, 3, standardIrrfBrackets, standardGeneralParams);
     
     expect(result.usedSimplified).toBe(false);
     const expectedBase = 4000.00 - 368.60 - (3 * 189.59); // 3062.63
@@ -47,7 +63,7 @@ describe('IRRFCalculator', () => {
     // Como Base <= 5000, aplica o redutor adicional de 2026 (Max 312.89)
     // IRRF Líquido = 312.89 - 312.89 = 0
     
-    const result = IRRFCalculator.calculate(5000.00, 501.52, 0);
+    const result = IRRFCalculator.calculate(5000.00, 501.52, 0, standardIrrfBrackets, standardGeneralParams);
     
     expect(result.usedSimplified).toBe(true);
     expect(result.value).toBe(0);
@@ -63,7 +79,7 @@ describe('IRRFCalculator', () => {
     // Redutor = 978.62 - (0.133145 * 6000) = 978.62 - 798.87 = 179.75
     // IRRF Líquido = 564.85 - 179.75 = 385.10
     
-    const result = IRRFCalculator.calculate(6000.00, 641.52, 0);
+    const result = IRRFCalculator.calculate(6000.00, 641.52, 0, standardIrrfBrackets, standardGeneralParams);
     
     expect(result.usedSimplified).toBe(false);
     expect(result.value).toBeCloseTo(385.10, 0); // Permite pequena variação de arredondamento
@@ -77,7 +93,7 @@ describe('IRRFCalculator', () => {
     // IRRF Bruto = (9011.90 * 27.5%) - 908.73 = 2478.27 - 908.73 = 1569.54
     // Base > 7350, redutor = 0
     
-    const result = IRRFCalculator.calculate(10000.00, 988.10, 0);
+    const result = IRRFCalculator.calculate(10000.00, 988.10, 0, standardIrrfBrackets, standardGeneralParams);
     
     expect(result.value).toBeCloseTo(1569.54, 1);
   });

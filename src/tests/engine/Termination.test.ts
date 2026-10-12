@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PayrollEngine } from '../../../supabase/functions/payroll-engine/engine/PayrollEngine';
 import { PayrollContext } from '../../../supabase/functions/payroll-engine/engine/PayrollContext';
+import { defaultTestContextData } from '../fixtures/legalParameters';
 
 describe('PayrollEngine - Rescisão', () => {
   it('Cenário 1: Saldo de Salário e 13º Proporcional', async () => {
@@ -20,6 +21,7 @@ describe('PayrollEngine - Rescisão', () => {
     ];
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 3600.00,
       dias_trabalhados: 10, // 10 dias trabalhados no mês da rescisão
       tipo_folha: 'TERMINATION',
@@ -62,6 +64,7 @@ describe('PayrollEngine - Rescisão', () => {
     ];
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 3600.00,
       dias_trabalhados: 0,
       tipo_folha: 'TERMINATION',

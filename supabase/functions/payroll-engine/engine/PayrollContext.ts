@@ -87,6 +87,8 @@ export interface GeneralLegalParameters {
   irrf_exemption_limit?: number;
   irrf_reduction_formula_limit?: number;
   irrf_base_reduction?: number;
+  irrf_reduction_a?: number;
+  irrf_reduction_b?: number;
 }
 
 export interface PayrollContextData {
@@ -149,7 +151,11 @@ export class PayrollContext {
     this.dias_uteis = data.dias_uteis !== undefined ? data.dias_uteis : 26;
     this.dias_inuteis = data.dias_inuteis !== undefined ? data.dias_inuteis : 4;
     this.divisor = data.divisor || 220;
-    this.salario_minimo = data.salario_minimo || 1621;
+    const sm = data.salario_minimo ?? data.general_legal_parameters?.minimum_wage;
+    if (!sm || Number(sm) <= 0) {
+      throw new Error('Parâmetro legal obrigatório ausente: salario_minimo');
+    }
+    this.salario_minimo = Number(sm);
     this.rubricas = new Map((data.rubricas || []).map((r: Rubric) => [r.id, structuredClone(r)]));
     this.eventos = data.eventos || [];
     this.contract_incidences = data.contract_incidences || null;
@@ -163,10 +169,10 @@ export class PayrollContext {
       'SALARIO_MINIMO': this.salario_minimo,
       'SALARIO_CONTRATUAL': this.salario_base,
       'DIAS_TRABALHADOS': this.dias_trabalhados,
-      'HORAS_TRABALHADAS': 220,
-      'DIAS_UTEIS': data.dias_uteis || 26,
-      'DIAS_INUTEIS': data.dias_inuteis || 4,
-      'DIVISOR': data.divisor || 220,
+      'HORAS_TRABALHADAS': this.divisor,
+      'DIAS_UTEIS': this.dias_uteis,
+      'DIAS_INUTEIS': this.dias_inuteis,
+      'DIVISOR': this.divisor,
       'DEPENDENTES': data.num_dependentes || 0,
     };
   }

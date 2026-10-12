@@ -5,14 +5,8 @@ export class INSSCalculator {
     let inss = 0;
     const breakdown = [];
     
-    // Fallback para 2026 se o banco estiver vazio
     if (!brackets || brackets.length === 0) {
-      brackets = [
-        { bracket_number: 1, base_limit: 1621.00, aliquot: 7.5, deduction: 0 },
-        { bracket_number: 2, base_limit: 2902.84, aliquot: 9.0, deduction: 0 },
-        { bracket_number: 3, base_limit: 4354.27, aliquot: 12.0, deduction: 0 },
-        { bracket_number: 4, base_limit: 8475.55, aliquot: 14.0, deduction: 0 }
-      ];
+      throw new Error('Parâmetros legais de INSS ausentes para a competência.');
     }
 
     // Ordena as faixas para garantir progressividade

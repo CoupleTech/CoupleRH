@@ -2,10 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { INSSCalculator } from '../../../supabase/functions/payroll-engine/legal/INSSCalculator';
 
 describe('INSSCalculator', () => {
+  const standardBrackets = [
+    { bracket_number: 1, base_limit: 1621.00, aliquot: 7.5, deduction: 0 },
+    { bracket_number: 2, base_limit: 2902.84, aliquot: 9.0, deduction: 0 },
+    { bracket_number: 3, base_limit: 4354.27, aliquot: 12.0, deduction: 0 },
+    { bracket_number: 4, base_limit: 8475.55, aliquot: 14.0, deduction: 0 }
+  ];
+
   it('deve calcular INSS para o teto mínimo (Faixa 1)', () => {
     // 1412.00 is below the first tier limit (1621.00) in 2026
     const base = 1412.00;
-    const result = INSSCalculator.calculate(base);
+    const result = INSSCalculator.calculate(base, standardBrackets);
     
     // 1412 * 7.5% = 105.90
     expect(result.value).toBe(105.90);
@@ -17,7 +24,7 @@ describe('INSSCalculator', () => {
   it('deve calcular INSS progressivo para a Faixa 2', () => {
     // 2000.00 is in the second tier
     const base = 2000.00;
-    const result = INSSCalculator.calculate(base);
+    const result = INSSCalculator.calculate(base, standardBrackets);
     
     // Faixa 1: 1621 * 7.5% = 121.575
     // Faixa 2: (2000 - 1621) = 379 * 9% = 34.11
@@ -30,7 +37,7 @@ describe('INSSCalculator', () => {
 
   it('deve calcular INSS progressivo para a Faixa 3', () => {
     const base = 3000.00;
-    const result = INSSCalculator.calculate(base);
+    const result = INSSCalculator.calculate(base, standardBrackets);
     
     // Faixa 1: 1621 * 7.5% = 121.575
     // Faixa 2: (2902.84 - 1621) = 1281.84 * 9% = 115.3656
@@ -42,7 +49,7 @@ describe('INSSCalculator', () => {
 
   it('deve calcular INSS progressivo para a Faixa 4', () => {
     const base = 5000.00;
-    const result = INSSCalculator.calculate(base);
+    const result = INSSCalculator.calculate(base, standardBrackets);
     
     // Conforme especificado na Fase 18:
     // Faixa 1: 1.621,00 * 7,5% = 121,58 (aprox)
@@ -55,12 +62,12 @@ describe('INSSCalculator', () => {
 
   it('deve respeitar o TETO Máximo (Faixa 4 completa)', () => {
     const base = 10000.00;
-    const result = INSSCalculator.calculate(base);
+    const result = INSSCalculator.calculate(base, standardBrackets);
     
     // TETO é 8475.55
     // Faixa 4: (8475.55 - 4354.27) = 4121.28 * 14% = 576.9792
     // Maximo INSS deve ser approx 988.10
-    const tetoResult = INSSCalculator.calculate(8475.55);
+    const tetoResult = INSSCalculator.calculate(8475.55, standardBrackets);
     
     expect(result.value).toBe(tetoResult.value);
     expect(result.breakdown.length).toBe(4);

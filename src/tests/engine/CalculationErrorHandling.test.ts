@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { PayrollEngine } from "../../../supabase/functions/payroll-engine/engine/PayrollEngine";
 import { PayrollContext } from "../../../supabase/functions/payroll-engine/engine/PayrollContext";
+import { defaultTestContextData } from "../fixtures/legalParameters";
 
 describe("T5: Tratamento Explícito de Erros de Cálculo no Motor de Folha", () => {
   it("deve retornar status ERRO_CALCULO contendo código e nome da rubrica quando a fórmula for inválida", async () => {
@@ -17,6 +18,7 @@ describe("T5: Tratamento Explícito de Erros de Cálculo no Motor de Folha", () 
     };
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 3000.0,
       dias_trabalhados: 30,
       rubricas: [brokenRubric],
@@ -49,6 +51,7 @@ describe("T5: Tratamento Explícito de Erros de Cálculo no Motor de Folha", () 
     };
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 2500.0,
       dias_trabalhados: 30,
       rubricas: [divisionByZeroRubric],
@@ -78,6 +81,7 @@ describe("T5: Tratamento Explícito de Erros de Cálculo no Motor de Folha", () 
     };
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 4000.0,
       dias_trabalhados: 30,
       rubricas: [validRubric],

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PayrollEngine } from '../../../supabase/functions/payroll-engine/engine/PayrollEngine';
 import { PayrollContext } from '../../../supabase/functions/payroll-engine/engine/PayrollContext';
+import { defaultTestContextData } from '../fixtures/legalParameters';
 
 describe('PayrollEngine - Férias', () => {
   it('Cenário 1: Pagamento de Férias Gozadas (30 dias) + 1/3 Constitucional', async () => {
@@ -26,6 +27,7 @@ describe('PayrollEngine - Férias', () => {
     ];
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 3000.00,
       dias_trabalhados: 0, // Mês inteiro de férias
       tipo_folha: 'VACATION',
@@ -72,6 +74,7 @@ describe('PayrollEngine - Férias', () => {
     ];
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 3000.00,
       dias_trabalhados: 20, // Trabalhou 20 dias (vendeu 10)
       tipo_folha: 'VACATION',
@@ -114,6 +117,7 @@ describe('PayrollEngine - Férias', () => {
     ];
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 3000.00,
       dias_trabalhados: 10, // Voltou de 20 dias de férias
       tipo_folha: 'MONTHLY',

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PayrollEngine } from '../../../supabase/functions/payroll-engine/engine/PayrollEngine';
 import { PayrollContext, Rubric } from '../../../supabase/functions/payroll-engine/engine/PayrollContext';
+import { defaultTestContextData } from '../fixtures/legalParameters';
 
 describe('T2: Isolar Rubricas por Colaborador e Eliminar Vazamento entre Contratos (Doc §4)', () => {
   it('dois contratos seguidos com a mesma lista de rubricas: o DSR do segundo não herda o percentual do primeiro', async () => {
@@ -40,6 +41,7 @@ describe('T2: Isolar Rubricas por Colaborador e Eliminar Vazamento entre Contrat
     // CONTRATO 1:
     // 20 dias úteis, 5 dias de repouso => percentual DSR = (5 / 20) * 100 = 25%
     const context1 = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 3000.00,
       dias_trabalhados: 30,
       dias_uteis: 20,
@@ -63,6 +65,7 @@ describe('T2: Isolar Rubricas por Colaborador e Eliminar Vazamento entre Contrat
     // CONTRATO 2 (mesmo período ou contrato subsequente):
     // 25 dias úteis, 4 dias de repouso => percentual DSR = (4 / 25) * 100 = 16%
     const context2 = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 4000.00,
       dias_trabalhados: 30,
       dias_uteis: 25,

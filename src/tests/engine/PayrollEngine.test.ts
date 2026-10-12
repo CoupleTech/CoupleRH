@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PayrollEngine } from '../../../supabase/functions/payroll-engine/engine/PayrollEngine';
 import { PayrollContext } from '../../../supabase/functions/payroll-engine/engine/PayrollContext';
+import { defaultTestContextData } from '../fixtures/legalParameters';
 
 describe('PayrollEngine', () => {
   it('deve calcular Salário Proporcional e gerar Memória de Cálculo', async () => {
@@ -21,6 +22,7 @@ describe('PayrollEngine', () => {
 
     // Proporcional de 15 dias de um salário de 3000
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 3000.00,
       dias_trabalhados: 15,
       rubricas: rubricas,
@@ -72,6 +74,7 @@ describe('PayrollEngine', () => {
     ];
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 3000.00,
       dias_trabalhados: 30,
       rubricas: rubricas,

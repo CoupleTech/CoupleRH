@@ -38,7 +38,9 @@ export default function LegalTablesForm() {
     vt_max_discount_percentage: 0,
     irrf_exemption_limit: 0,
     irrf_reduction_formula_limit: 0,
-    irrf_base_reduction: 0
+    irrf_base_reduction: 0,
+    irrf_reduction_a: 978.62,
+    irrf_reduction_b: 0.133145
   });
 
   const [inssBrackets, setInssBrackets] = useState<Bracket[]>([]);
@@ -87,7 +89,9 @@ export default function LegalTablesForm() {
           vt_max_discount_percentage: generalData.vt_max_discount_percentage,
           irrf_exemption_limit: generalData.irrf_exemption_limit || 0,
           irrf_reduction_formula_limit: generalData.irrf_reduction_formula_limit || 0,
-          irrf_base_reduction: generalData.irrf_base_reduction || 0
+          irrf_base_reduction: generalData.irrf_base_reduction || 0,
+          irrf_reduction_a: generalData.irrf_reduction_a !== undefined && generalData.irrf_reduction_a !== null ? Number(generalData.irrf_reduction_a) : 978.62,
+          irrf_reduction_b: generalData.irrf_reduction_b !== undefined && generalData.irrf_reduction_b !== null ? Number(generalData.irrf_reduction_b) : 0.133145
         });
       }
 
@@ -249,7 +253,7 @@ export default function LegalTablesForm() {
         if (irrfErr) throw irrfErr;
       }
 
-      toast.error('Versão salva com sucesso!');
+      toast.success('Versão salva com sucesso!');
       navigate('/configuracoes/tabelas-legais');
     } catch (error: any) {
       console.error('Error saving:', error);
@@ -416,6 +420,16 @@ export default function LegalTablesForm() {
               <div>
                 <label className="input-label">Redutor Base IRRF (R$)</label>
                 <input type="number" step="0.01" name="irrf_base_reduction" value={generalParams.irrf_base_reduction} onChange={handleGeneralChange} className="input-field" />
+              </div>
+              <div>
+                <label className="input-label">Redutor IRRF - Termo A (Fixo)</label>
+                <input type="number" step="0.01" name="irrf_reduction_a" value={generalParams.irrf_reduction_a} onChange={handleGeneralChange} className="input-field" />
+                <p className="text-xs text-slate-400 mt-1">Padrão 2026: 978,62</p>
+              </div>
+              <div>
+                <label className="input-label">Redutor IRRF - Coeficiente B</label>
+                <input type="number" step="0.000001" name="irrf_reduction_b" value={generalParams.irrf_reduction_b} onChange={handleGeneralChange} className="input-field" />
+                <p className="text-xs text-slate-400 mt-1">Padrão 2026: 0,133145</p>
               </div>
             </div>
           )}

@@ -33,3 +33,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 GRANT EXECUTE ON FUNCTION public.get_employee_benefits(UUID) TO anon, authenticated;
+
+-- Constraint de status do holerite
+ALTER TABLE public.payslips DROP CONSTRAINT IF EXISTS payslips_status_check;
+ALTER TABLE public.payslips ADD CONSTRAINT payslips_status_check 
+CHECK (status IN ('DRAFT', 'CALCULATED', 'CONFERENCE', 'CLOSED', 'REOPENED', 'CANCELED'));

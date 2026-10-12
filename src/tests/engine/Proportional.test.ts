@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PayrollEngine } from '../../../supabase/functions/payroll-engine/engine/PayrollEngine';
 import { PayrollContext } from '../../../supabase/functions/payroll-engine/engine/PayrollContext';
+import { defaultTestContextData } from '../fixtures/legalParameters';
 
 describe('PayrollEngine - Salário Proporcional', () => {
   it('Cenário 1: Salário proporcional de Admissão no meio do mês (15 dias trabalhados)', async () => {
@@ -14,6 +15,7 @@ describe('PayrollEngine - Salário Proporcional', () => {
     ];
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 3000.00,
       dias_trabalhados: 15,
       rubricas,
@@ -52,6 +54,7 @@ describe('PayrollEngine - Salário Proporcional', () => {
     ];
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 3000.00,
       dias_trabalhados: 30,
       rubricas,
@@ -99,6 +102,7 @@ describe('PayrollEngine - Salário Proporcional', () => {
     ];
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 3000.00,
       dias_trabalhados: 30,
       rubricas,

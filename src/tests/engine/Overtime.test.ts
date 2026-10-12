@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PayrollEngine } from '../../../supabase/functions/payroll-engine/engine/PayrollEngine';
 import { PayrollContext } from '../../../supabase/functions/payroll-engine/engine/PayrollContext';
+import { defaultTestContextData } from '../fixtures/legalParameters';
 
 describe('PayrollEngine - Horas Extras e DSR', () => {
   it('Cenário 1: Cálculo padrão de HE 50% e HE 100% com divisor de 220h', async () => {
@@ -26,6 +27,7 @@ describe('PayrollEngine - Horas Extras e DSR', () => {
     ];
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 2200.00, // Valor hora = 2200/220 = 10.00
       dias_trabalhados: 30,
       rubricas,
@@ -79,6 +81,7 @@ describe('PayrollEngine - Horas Extras e DSR', () => {
     const dsrValue = (heValue / diasUteis) * domingos; // 30.00
 
     const context = new PayrollContext({
+      ...defaultTestContextData,
       salario_base: 2200.00,
       dias_trabalhados: 30,
       dias_uteis: diasUteis,
