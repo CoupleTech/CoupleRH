@@ -723,14 +723,7 @@ serve(async (req) => {
           dias_uteis++;
         }
       }
-      
-      // Normaliza para 30 dias se for mensalista, para que a soma seja 30 (ajuste contábil padrão)
-      if (dias_uteis + dias_inuteis > 30) {
-         dias_uteis = 30 - dias_inuteis;
-         if (dias_uteis < 0) dias_uteis = 0;
-      } else if (dias_uteis + dias_inuteis < 30) {
-         dias_uteis = 30 - dias_inuteis;
-      }
+      // T4: DSR usa dias reais do calendário da competência (removida normalização artificial para 30 dias)
 
       // Calcula o Divisor baseado na jornada de trabalho
       let divisor = 220; // Default CLT 44h
