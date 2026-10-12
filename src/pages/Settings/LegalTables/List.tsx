@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, Edit2, Calculator, Calendar } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import { formatDate } from '../../../lib/dateUtils';
 import { Pagination } from '../../../components/Pagination';
 
 interface LegalVersion {
