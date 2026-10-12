@@ -86,8 +86,8 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 **Gate:** tabela de IRRF do 📘 Doc §4 (T1) verde; dois contratos seguidos sem vazamento; consulta de holerites inconsistentes = 0 linhas. — **VALIDADO (TODOS OS CRITÉRIOS APROVADOS)**
 
 ## 📚 FASE P2: Catálogo de rubricas e incidências
-**Status:** `[Pendente]` · **Ref.:** 📘 Doc §5 (T30), T12, T13
-- [ ] Rodar a consulta de parâmetros das rubricas (📘 Doc §5.3) e arquivar o resultado
+**Status:** `[Em Progresso]` · **Ref.:** 📘 Doc §5 (T30), T12, T13
+- [x] Rodar a consulta de parâmetros das rubricas (📘 Doc §5.3) e arquivar o resultado — *Concluído em 12/10/2026: Consulta executada em produção e relatório estruturado de 42 rubricas arquivado em docs/parametros_rubricas.md. Confirmadas 33 rubricas com cálculo nulo, ausência de incidências na maioria das rubricas de proventos e duplicidade DSR 103/104.*
 - [ ] **T30** Migration: incidências (matriz do 📘 Doc §5.2, **validada pelo contador**), `calculation_form`, `factor`, `calculation_order`; desativar duplicidade 103/104
 - [ ] **T30** Criar rubricas ausentes: salário-família, pensão alimentícia, consignado, contribuição sindical/assistencial, penosidade, banco de horas, HE 70%
 - [ ] **T13** Flags `gera_base_*` sem `OR` por `incidence_*`; unificar nomes de coluna e tela de Rubricas
