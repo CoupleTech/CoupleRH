@@ -43,7 +43,7 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 8. Migrations novas numeradas a partir de `00066_`. Toda tabela nova: **RLS habilitada + política por tenant + gatilho de auditoria** (T29).
 
 ## Estado da produção
-**Status Atual:** `[Em Progresso]` · **Fase corrente:** P0 · **Go-live folha:** bloqueado até Gate de P1, P2 e P9 · **Go-live ponto/assinatura:** bloqueado até Gate de P5/P6.
+**Status Atual:** `[Em Progresso]` · **Fase corrente:** P2 · **Go-live folha:** bloqueado até Gate de P2 e P9 · **Go-live ponto/assinatura:** bloqueado até Gate de P5/P6.
 
 ## Quadro de reabertura (fases históricas que NÃO devem ser consideradas concluídas)
 | Fase histórica | Motivo | Tratada em |
@@ -74,7 +74,7 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 **Gate:** período com erro permanece rascunho; chamada sem token retorna 401; tela eSocial identifica simulação. — **VALIDADO (TODOS OS CRITÉRIOS APROVADOS)**
 
 ## 🧮 FASE P1: Correções críticas do motor
-**Status:** `[Em Progresso]` · **Ref.:** 📘 Doc §4 (T1–T4, T6, T7, T11)
+**Status:** `[Concluído]` · **Ref.:** 📘 Doc §4 (T1–T4, T6, T7, T11)
 - [x] **T1** IRRF com base bruta, INSS real, simplificada e redutor sobre o bruto (teste da tabela do 📘 Doc) — *Concluído em 11/10/2026: IRRFCalculator e PayrollEngine corrigidos para processar rendimento tributável bruto, dedução do INSS real, comparação entre base legal vs simplificada sem sobreposição indevida, e redutor 2026 aplicado sobre o rendimento bruto. Suíte de integração com a tabela de aceite do Doc §4 criada em PayrollEngineIRRF.test.ts (6/6 cenários passando).*
 - [x] **T2** Clonar rubricas por contrato e eliminar escrita em `rubric.*` no motor — *Concluído em 11/10/2026: Clonagem de rubricas com structuredClone adicionada no PayrollContext e no loop de contratos em index.ts; eliminadas todas as mutações de rubric.* no PayrollEngine através de variáveis locais imutáveis. Teste de aceite de isolamento entre contratos consecutivos criado em RubricIsolation.test.ts (100% aprovado).*
 - [x] **T3** `salario_minimo` do parâmetro legal; migration `irrf_reduction_a/b`; remover fallbacks e constantes 2026; `HORAS_TRABALHADAS`/`DIAS_*` coerentes — *Concluído em 11/10/2026: Migration 00068 aplicada no banco de produção adicionando irrf_reduction_a e irrf_reduction_b em general_legal_parameters; UI de LegalTables/Form.tsx atualizada; fallbacks hardcoded de 2026 removidos de INSSCalculator, IRRFCalculator e PayrollContext; validação estrita de ausência de parâmetros legais; HORAS_TRABALHADAS vinculado a divisor e DIAS_UTEIS/INUTEIS aos valores reais; suíte de testes LegalParameters.test.ts cobrindo todos os critérios e fixture legalParameters.ts criada; Edge Function publicada e validada processando 22 contratos em produção com sucesso.*
@@ -82,8 +82,8 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 - [x] **T6** Rubricas 901/902/903 por código + invariante itens = totais — *Concluído em 11/10/2026: PayrollEngine.ts atualizado com busca estrita de rubricas automáticas apenas por código (901 para INSS, 902 para IRRF e 903 para FGTS) com erro explícito se ausentes no catálogo; index.ts atualizado para validar a invariante contábil (soma itens EARNING = total_proventos e DEDUCTION = total_descontos, com FGTS tipo BASE fora) antes de gravar payslips; Edge Function implantada em produção e Consulta 0.7 validada retornando exatamente 0 divergências em 84 holerites calculados.*
 - [x] **T7** Tabela legal ausente = erro; data sem `toISOString()` — *Concluído em 11/10/2026: Criado LegalTableValidator.ts com formatação de data de competência YYYY-MM-01 imune a fuso horário e validação rigorosa das tabelas legais. index.ts atualizado para rejeitar execuções sem legal_versions vigente, exigir última faixa com teto em inss_parameters, última faixa aberta (base_limit null) em irrf_parameters e salário mínimo válido em general_legal_parameters. Suíte de testes TDD criada em LegalTableValidationT7.test.ts (8/8 aprovados). Edge Function implantada e homologada em produção.*
 - [x] **T11** Ignorar contrato com admissão em mês futuro — *Concluído em 11/10/2026: Criado ContractAdmissionFilter.ts e integrado ao loop de contratos do index.ts. Contratos com admission_date posterior ao fim da competência são ignorados com continue, e dias trabalhados são calculados estritamente pela convenção comercial de DP (30 - dia_admissao + 1), tratando diasTrabalhados <= 0 para não gerar pagamentos indevidos. Suíte de testes TDD FutureAdmissionT11.test.ts (13/13 aprovados). Edge Function implantada e homologada em produção.*
-- [ ] Teste de integração motor + calculadoras (INSS e IRRF nos limites; 0, 1 e 3 dependentes)
-**Gate:** tabela de IRRF do 📘 Doc §4 (T1) verde; dois contratos seguidos sem vazamento; consulta de holerites inconsistentes = 0 linhas.
+- [x] Teste de integração motor + calculadoras (INSS e IRRF nos limites; 0, 1 e 3 dependentes) — *Concluído em 12/10/2026: Suíte de integração completa implementada em PayrollIntegrationGateP1.test.ts (7 cenários testando limites de faixas, teto do INSS, redutor e isenção do IRRF 2026, deduções de dependentes e isolamento entre execuções consecutivas; 100% aprovada).*
+**Gate:** tabela de IRRF do 📘 Doc §4 (T1) verde; dois contratos seguidos sem vazamento; consulta de holerites inconsistentes = 0 linhas. — **VALIDADO (TODOS OS CRITÉRIOS APROVADOS)**
 
 ## 📚 FASE P2: Catálogo de rubricas e incidências
 **Status:** `[Pendente]` · **Ref.:** 📘 Doc §5 (T30), T12, T13
