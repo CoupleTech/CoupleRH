@@ -5,6 +5,7 @@ import { PayrollContext, Rubric } from "./engine/PayrollContext.ts";
 import { PayrollEngine } from "./engine/PayrollEngine.ts";
 import { EmployerTaxesCalculator, LaborConfig } from "./legal/EmployerTaxesCalculator.ts";
 import { formatPeriodStartDate, validateAllLegalTables } from "./legal/LegalTableValidator.ts";
+import { shouldSkipFutureAdmission, calculateWorkingDays } from "./engine/ContractAdmissionFilter.ts";
 
 const TRUSTED_ORIGINS = [
   'https://couplerh.com.br',
@@ -403,6 +404,10 @@ serve(async (req) => {
 
     // 4. Processa o Motor para cada Contrato
     for (const contract of contracts || []) {
+      // T11: Ignorar contrato com admissão em mês futuro (Doc §4)
+      if (shouldSkipFutureAdmission(contract.admission_date, period.year, period.month)) {
+        continue;
+      }
       
       const eventos: any[] = [];
       let applicableRubrics = rubricas;
@@ -687,20 +692,8 @@ serve(async (req) => {
       }
     }
 
-      // Calcula dias trabalhados proporcionais (parse manual para evitar timezone)
-      let diasTrabalhados = 30;
-      if (contract.admission_date) {
-        const admParts = contract.admission_date.split('-');
-        const admDate = new Date(parseInt(admParts[0]), parseInt(admParts[1]) - 1, parseInt(admParts[2]));
-        const startOfMonth = new Date(period.year, period.month - 1, 1);
-        
-        if (admDate > startOfMonth) {
-           // Empregado admitido neste mês
-           // Fórmula padrão de DP: 30 - dia_admissao + 1 (em meses de 31 dias, limita-se a 30)
-           diasTrabalhados = 30 - admDate.getDate() + 1;
-           if (diasTrabalhados > 30) diasTrabalhados = 30;
-        }
-      }
+      // T11: Calcula dias trabalhados proporcionais (Doc §4)
+      let diasTrabalhados = calculateWorkingDays(contract.admission_date, period.year, period.month);
 
       // Subtrai dias de férias no mês (se for MENSAL)
       if (period.type === 'MONTHLY') {
