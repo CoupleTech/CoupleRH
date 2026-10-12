@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PayrollEngine } from '../../../supabase/functions/payroll-engine/engine/PayrollEngine';
 import { PayrollContext } from '../../../supabase/functions/payroll-engine/engine/PayrollContext';
-import { defaultTestContextData } from '../fixtures/legalParameters';
+import { defaultTestContextData, standardSystemRubrics } from '../fixtures/legalParameters';
 
 describe('PayrollEngine', () => {
   it('deve calcular Salário Proporcional e gerar Memória de Cálculo', async () => {
@@ -17,7 +17,8 @@ describe('PayrollEngine', () => {
         divisor: 30,
         calculation_order: 1,
         incidencias: { gera_base_inss: true, gera_base_irrf: true, gera_base_fgts: true }
-      }
+      },
+      ...(standardSystemRubrics as any)
     ];
 
     // Proporcional de 15 dias de um salário de 3000
@@ -70,7 +71,8 @@ describe('PayrollEngine', () => {
         calculation_order: 10,
         // IMPORTANTE: Falta deve reduzir as bases do funcionário
         incidencias: { gera_base_inss: true, gera_base_irrf: true, gera_base_fgts: true }
-      }
+      },
+      ...(standardSystemRubrics as any)
     ];
 
     const context = new PayrollContext({

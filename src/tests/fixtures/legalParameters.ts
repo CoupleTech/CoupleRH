@@ -28,6 +28,39 @@ export const testGeneralLegalParameters = {
   irrf_reduction_b: 0.133145
 };
 
+export const standardSystemRubrics = [
+  {
+    id: 'rubric-inss-901',
+    code: '901',
+    name: 'Contribuição INSS',
+    type: 'DEDUCTION' as const,
+    category: 'TAX',
+    calculation_form: 'AUTOMATICA',
+    calculation_order: 90,
+    incidencias: { gera_base_inss: false, gera_base_irrf: false, gera_base_fgts: false }
+  },
+  {
+    id: 'rubric-irrf-902',
+    code: '902',
+    name: 'IRRF Mensal',
+    type: 'DEDUCTION' as const,
+    category: 'TAX',
+    calculation_form: 'AUTOMATICA',
+    calculation_order: 95,
+    incidencias: { gera_base_inss: false, gera_base_irrf: false, gera_base_fgts: false }
+  },
+  {
+    id: 'rubric-fgts-903',
+    code: '903',
+    name: 'FGTS Mensal (Depósito)',
+    type: 'BASE' as const,
+    category: 'TAX',
+    calculation_form: 'AUTOMATICA',
+    calculation_order: 50,
+    incidencias: { gera_base_inss: false, gera_base_irrf: false, gera_base_fgts: false }
+  }
+];
+
 export const defaultTestContextData = {
   competencia: '01/2026',
   tipo_folha: 'MONTHLY',

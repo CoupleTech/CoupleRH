@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PayrollEngine } from '../../../supabase/functions/payroll-engine/engine/PayrollEngine';
 import { PayrollContext } from '../../../supabase/functions/payroll-engine/engine/PayrollContext';
-import { defaultTestContextData } from '../fixtures/legalParameters';
+import { defaultTestContextData, standardSystemRubrics } from '../fixtures/legalParameters';
 
 describe('PayrollEngine - Rescisão', () => {
   it('Cenário 1: Saldo de Salário e 13º Proporcional', async () => {
@@ -17,7 +17,8 @@ describe('PayrollEngine - Rescisão', () => {
         type: 'EARNING', category: 'THIRTEENTH', calculation_form: 'AVOS',
         calculation_base: 'SALARIO_BASE', divisor: 12, calculation_order: 2,
         incidencias: { gera_base_inss: true, gera_base_irrf: true, gera_base_fgts: true } // Na rescisão incide
-      }
+      },
+      ...(standardSystemRubrics as any)
     ];
 
     const context = new PayrollContext({

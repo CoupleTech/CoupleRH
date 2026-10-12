@@ -257,11 +257,14 @@ export class PayrollEngine {
         if (inssResult.value > 0) {
            this.context.total_descontos += inssResult.value;
            
-           // BUG 7 fix: Busca rubrica INSS por código '901' primeiro, depois por nome
-           const rubricInss = Array.from(this.context.rubricas.values()).find(r => r.code === '901' || r.code === '2001' || r.code === 'INSS_AUTO' || (r.name && r.name.toUpperCase().includes('INSS')));
+           // T6: Busca rubrica INSS exclusivamente por código '901' (Doc §4)
+           const rubricInss = Array.from(this.context.rubricas.values()).find(r => r.code === '901');
+           if (!rubricInss) {
+             throw new Error("Rubrica de sistema obrigatória ausente no catálogo: [901 - Contribuição INSS]");
+           }
 
            this.context.addMemory({
-              rubric_id: rubricInss ? rubricInss.id : 'INSS_AUTO',
+              rubric_id: rubricInss.id,
               step_name: 'INSS',
               base_value: this.context.base_inss,
               quantity_used: 1,
@@ -280,11 +283,15 @@ export class PayrollEngine {
            this.context.total_descontos += irrfResult.value;
         }
 
-        const rubricIrrf = Array.from(this.context.rubricas.values()).find(r => r.code === '902' || r.code === '2002' || r.code === 'IRRF_AUTO' || (r.name && (r.name.toUpperCase().includes('IRRF') || r.name.toUpperCase().includes('IRPF'))));
+        // T6: Busca rubrica IRRF exclusivamente por código '902' (Doc §4)
+        const rubricIrrf = Array.from(this.context.rubricas.values()).find(r => r.code === '902');
+        if (irrfResult.value > 0 && !rubricIrrf) {
+           throw new Error("Rubrica de sistema obrigatória ausente no catálogo: [902 - IRRF Mensal]");
+        }
 
-        if (baseIrrfBruta > 0 || irrfResult.value > 0) {
+        if (rubricIrrf && (baseIrrfBruta > 0 || irrfResult.value > 0)) {
            this.context.addMemory({
-              rubric_id: rubricIrrf ? rubricIrrf.id : 'IRRF_AUTO',
+              rubric_id: rubricIrrf.id,
               step_name: 'IRRF',
               base_value: irrfResult.legalBase,
               quantity_used: 1,
@@ -298,11 +305,14 @@ export class PayrollEngine {
         // FGTS
         fgtsResult = FGTSCalculator.calculate(this.context.base_fgts);
         if (fgtsResult.value > 0) {
-            // BUG 7 fix: Busca rubrica FGTS por código '903' primeiro, depois por nome
-            const rubricFgts = Array.from(this.context.rubricas.values()).find(r => r.code === '903' || r.code === '2005' || r.code === 'FGTS_AUTO' || (r.name && r.name.toUpperCase().includes('FGTS')));
+            // T6: Busca rubrica FGTS exclusivamente por código '903' (Doc §4)
+            const rubricFgts = Array.from(this.context.rubricas.values()).find(r => r.code === '903');
+            if (!rubricFgts) {
+              throw new Error("Rubrica de sistema obrigatória ausente no catálogo: [903 - FGTS Mensal]");
+            }
             
             this.context.addMemory({
-              rubric_id: rubricFgts ? rubricFgts.id : 'FGTS_AUTO',
+              rubric_id: rubricFgts.id,
               step_name: 'FGTS',
               base_value: this.context.base_fgts,
               quantity_used: 1,

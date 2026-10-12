@@ -445,7 +445,7 @@ serve(async (req) => {
         const req = vacations.find(v => v.contract_id === contract.id);
         
         if (req) {
-           applicableRubrics = rubricas.filter(r => ['501', '502', '503', '504', '602'].includes(r.code) || ['INSS_AUTO', 'IRRF_AUTO'].includes(r.code) || r.name.includes('INSS') || r.name.includes('IRRF'));
+           applicableRubrics = rubricas.filter(r => ['501', '502', '503', '504', '602', '901', '902', '903'].includes(r.code));
            
            const r501 = applicableRubrics.find(r => r.code === '501');
            if (r501) eventos.push({ rubric_id: r501.id, manual_value: (contract.base_salary / 30) * req.days_taken, quantity: req.days_taken });
@@ -496,7 +496,7 @@ serve(async (req) => {
                eventos.push({ rubric_id: r602.id, manual_value: ((contract.base_salary / 12) * avos) / 2, quantity: avos });
             }
          } else if (period.type === 'THIRTEENTH_2') {
-            applicableRubrics = rubricas.filter(r => ['601', '608'].includes(r.code) || ['INSS_AUTO', 'IRRF_AUTO'].includes(r.code) || r.name.includes('INSS') || r.name.includes('IRRF'));
+            applicableRubrics = rubricas.filter(r => ['601', '608', '901', '902', '903'].includes(r.code));
             
             const r601 = applicableRubrics.find(r => r.code === '601');
             if (r601 && avos > 0) {
@@ -820,7 +820,55 @@ serve(async (req) => {
         }
       }
 
-      // 5. Salva o cabeçalho do holerite
+      // 5. Prepara os itens e valida a invariante contábil (T6: itens = totais)
+      const validRubricIds = new Set(rubricas.map(r => r.id));
+      const rawItemsToInsert: Array<{
+        tenant_id: string;
+        rubric_id: string;
+        reference: string;
+        amount: number;
+        type: 'EARNING' | 'DEDUCTION' | 'BASE';
+      }> = [];
+
+      for (const mem of result.memoria_calculo) {
+        if (mem.result_value > 0) {
+           // Insere apenas rubricas cadastradas no BD (UUID válido)
+           if (validRubricIds.has(mem.rubric_id)) {
+              const rub = rubricas.find(r => r.id === mem.rubric_id);
+              rawItemsToInsert.push({
+                tenant_id,
+                rubric_id: mem.rubric_id,
+                reference: mem.quantity_used ? mem.quantity_used.toString() : '',
+                amount: mem.result_value,
+                type: (rub?.type as any) || 'EARNING'
+              });
+           }
+        }
+      }
+
+      // Validação da invariante contábil antes de gravar o holerite:
+      // Soma de EARNING deve fechar com total_proventos e DEDUCTION com total_descontos.
+      // Rubricas do tipo BASE (ex: FGTS 903) não entram nas somas de proventos nem de descontos.
+      const sumEarnings = rawItemsToInsert
+        .filter(i => i.type === 'EARNING')
+        .reduce((acc, i) => acc + i.amount, 0);
+      const sumDeductions = rawItemsToInsert
+        .filter(i => i.type === 'DEDUCTION')
+        .reduce((acc, i) => acc + i.amount, 0);
+
+      const diffEarnings = Math.abs(sumEarnings - result.total_proventos);
+      const diffDeductions = Math.abs(sumDeductions - result.total_descontos);
+
+      if (diffEarnings > 0.01 || diffDeductions > 0.01) {
+        errors.push({
+          contract_id: contract.id,
+          worker_id: contract.worker_id,
+          error: `Invariante violada: itens do holerite não fecham com os totais no contrato ${contract.id}. Proventos: itens=${sumEarnings.toFixed(2)}, total=${result.total_proventos.toFixed(2)} (dif: ${diffEarnings.toFixed(2)}). Descontos: itens=${sumDeductions.toFixed(2)}, total=${result.total_descontos.toFixed(2)} (dif: ${diffDeductions.toFixed(2)}).`,
+        });
+        continue;
+      }
+
+      // 6. Salva o cabeçalho do holerite (somente após validar a invariante)
       const { data: payslip, error: payslipError } = await supabase
         .from('payslips')
         .insert({
@@ -847,28 +895,9 @@ serve(async (req) => {
         
       if (payslipError) throw payslipError;
 
-      // 6. Salva os itens e memória de cálculo
-      // BUG 8 fix: Validar rubric_id contra UUIDs reais ao invés de usar .includes('-')
-      const validRubricIds = new Set(rubricas.map(r => r.id));
-      const itemsToInsert = [];
-      for (const mem of result.memoria_calculo) {
-        if (mem.result_value > 0) {
-           // Insere apenas rubricas cadastradas no BD (UUID válido)
-           if (validRubricIds.has(mem.rubric_id)) {
-              const rub = rubricas.find(r => r.id === mem.rubric_id);
-              itemsToInsert.push({
-                tenant_id,
-                payslip_id: payslip.id,
-                rubric_id: mem.rubric_id,
-                reference: mem.quantity_used ? mem.quantity_used.toString() : '',
-                amount: mem.result_value,
-                type: rub ? rub.type : 'EARNING'
-              });
-           }
-        }
-      }
-      
-      if (itemsToInsert.length > 0) {
+      // 7. Salva os itens vinculando o payslip_id recém-criado
+      if (rawItemsToInsert.length > 0) {
+         const itemsToInsert = rawItemsToInsert.map(i => ({ ...i, payslip_id: payslip.id }));
          await supabase.from('payslip_items').insert(itemsToInsert);
       }
 

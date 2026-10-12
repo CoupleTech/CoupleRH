@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PayrollEngine } from '../../../supabase/functions/payroll-engine/engine/PayrollEngine';
 import { PayrollContext, Rubric } from '../../../supabase/functions/payroll-engine/engine/PayrollContext';
-import { defaultTestContextData } from '../fixtures/legalParameters';
+import { defaultTestContextData, standardSystemRubrics } from '../fixtures/legalParameters';
 
 // Função auxiliar que replica a apuração de dias úteis e repousos de uma competência (sem normalização artificial)
 export function calculateMonthDays(year: number, month: number, holidays: string[] = []): { dias_uteis: number; dias_inuteis: number } {
@@ -53,7 +53,8 @@ describe('T4: DSR com Dias Reais e Remoção da Normalização para 30 Dias (Doc
         inss: true, irrf: true, fgts: true, inss_patronal: true,
         rat: true, terceiros: true, gera_base_inss: true, gera_base_irrf: true, gera_base_fgts: true
       }
-    }
+    },
+    ...(standardSystemRubrics as any)
   ];
 
   it('1. Fev/2026: deve apurar 24 dias úteis e 4 domingos reais (sem normalização para 26)', () => {

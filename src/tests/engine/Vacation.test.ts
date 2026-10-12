@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PayrollEngine } from '../../../supabase/functions/payroll-engine/engine/PayrollEngine';
 import { PayrollContext } from '../../../supabase/functions/payroll-engine/engine/PayrollContext';
-import { defaultTestContextData } from '../fixtures/legalParameters';
+import { defaultTestContextData, standardSystemRubrics } from '../fixtures/legalParameters';
 
 describe('PayrollEngine - Férias', () => {
   it('Cenário 1: Pagamento de Férias Gozadas (30 dias) + 1/3 Constitucional', async () => {
@@ -23,7 +23,8 @@ describe('PayrollEngine - Férias', () => {
         type: 'EARNING', category: 'VACATION', calculation_form: 'PERCENTUAL',
         calculation_base: 'R501', percentage: 33.3333, calculation_order: 6,
         incidencias: { gera_base_inss: true, gera_base_irrf: true, gera_base_fgts: true }
-      }
+      },
+      ...(standardSystemRubrics as any)
     ];
 
     const context = new PayrollContext({
@@ -113,7 +114,8 @@ describe('PayrollEngine - Férias', () => {
         calculation_base: null, calculation_order: 20,
         // É apenas um abatimento financeiro do que já foi pago. As bases legais já foram recolhidas no recibo de férias.
         incidencias: { gera_base_inss: false, gera_base_irrf: false, gera_base_fgts: false }
-      }
+      },
+      ...(standardSystemRubrics as any)
     ];
 
     const context = new PayrollContext({

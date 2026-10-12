@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PayrollEngine } from '../../../supabase/functions/payroll-engine/engine/PayrollEngine';
 import { PayrollContext, Rubric } from '../../../supabase/functions/payroll-engine/engine/PayrollContext';
-import { defaultTestContextData } from '../fixtures/legalParameters';
+import { defaultTestContextData, standardSystemRubrics } from '../fixtures/legalParameters';
 
 describe('T2: Isolar Rubricas por Colaborador e Eliminar Vazamento entre Contratos (Doc §4)', () => {
   it('dois contratos seguidos com a mesma lista de rubricas: o DSR do segundo não herda o percentual do primeiro', async () => {
@@ -35,7 +35,8 @@ describe('T2: Isolar Rubricas por Colaborador e Eliminar Vazamento entre Contrat
           inss: true, irrf: true, fgts: true, inss_patronal: true,
           rat: true, terceiros: true, gera_base_inss: true, gera_base_irrf: true, gera_base_fgts: true
         }
-      }
+      },
+      ...(standardSystemRubrics as any)
     ];
 
     // CONTRATO 1:

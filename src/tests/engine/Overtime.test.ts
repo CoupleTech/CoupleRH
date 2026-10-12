@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PayrollEngine } from '../../../supabase/functions/payroll-engine/engine/PayrollEngine';
 import { PayrollContext } from '../../../supabase/functions/payroll-engine/engine/PayrollContext';
-import { defaultTestContextData } from '../fixtures/legalParameters';
+import { defaultTestContextData, standardSystemRubrics } from '../fixtures/legalParameters';
 
 describe('PayrollEngine - Horas Extras e DSR', () => {
   it('Cenário 1: Cálculo padrão de HE 50% e HE 100% com divisor de 220h', async () => {
@@ -23,7 +23,8 @@ describe('PayrollEngine - Horas Extras e DSR', () => {
         type: 'EARNING', category: 'HORA_EXTRA', calculation_form: 'HORAS',
         calculation_base: 'SALARIO_BASE', divisor: 220, factor: 2.0, calculation_order: 3,
         incidencias: { gera_base_inss: true, gera_base_irrf: true, gera_base_fgts: true }
-      }
+      },
+      ...(standardSystemRubrics as any)
     ];
 
     const context = new PayrollContext({

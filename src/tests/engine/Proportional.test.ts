@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PayrollEngine } from '../../../supabase/functions/payroll-engine/engine/PayrollEngine';
 import { PayrollContext } from '../../../supabase/functions/payroll-engine/engine/PayrollContext';
-import { defaultTestContextData } from '../fixtures/legalParameters';
+import { defaultTestContextData, standardSystemRubrics } from '../fixtures/legalParameters';
 
 describe('PayrollEngine - Salário Proporcional', () => {
   it('Cenário 1: Salário proporcional de Admissão no meio do mês (15 dias trabalhados)', async () => {
@@ -11,7 +11,8 @@ describe('PayrollEngine - Salário Proporcional', () => {
         type: 'EARNING', category: 'SALARY', calculation_form: 'FIXO',
         calculation_base: 'SALARIO_BASE', divisor: 30, calculation_order: 1,
         incidencias: { gera_base_inss: true, gera_base_irrf: true, gera_base_fgts: true }
-      }
+      },
+      ...(standardSystemRubrics as any)
     ];
 
     const context = new PayrollContext({
@@ -50,7 +51,8 @@ describe('PayrollEngine - Salário Proporcional', () => {
         type: 'DEDUCTION', category: 'OTHER', calculation_form: 'DIAS',
         calculation_base: 'SALARIO_BASE', divisor: 30, calculation_order: 10,
         incidencias: { gera_base_inss: true, gera_base_irrf: true, gera_base_fgts: true } // Faltas reduzem as bases
-      }
+      },
+      ...(standardSystemRubrics as any)
     ];
 
     const context = new PayrollContext({
@@ -94,11 +96,12 @@ describe('PayrollEngine - Salário Proporcional', () => {
         incidencias: { gera_base_inss: true, gera_base_irrf: true, gera_base_fgts: true }
       },
       {
-        id: 'r3', code: '901', name: 'DSR sobre Faltas',
+        id: 'r3', code: '801', name: 'DSR sobre Faltas',
         type: 'DEDUCTION', category: 'OTHER', calculation_form: 'DIAS',
         calculation_base: 'SALARIO_BASE', divisor: 30, calculation_order: 11,
         incidencias: { gera_base_inss: true, gera_base_irrf: true, gera_base_fgts: true }
-      }
+      },
+      ...(standardSystemRubrics as any)
     ];
 
     const context = new PayrollContext({
