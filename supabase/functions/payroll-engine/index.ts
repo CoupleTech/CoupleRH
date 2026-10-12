@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.0";
 import { PayrollContext, Rubric } from "./engine/PayrollContext.ts";
 import { PayrollEngine } from "./engine/PayrollEngine.ts";
 import { EmployerTaxesCalculator, LaborConfig } from "./legal/EmployerTaxesCalculator.ts";
+import { formatPeriodStartDate, validateAllLegalTables } from "./legal/LegalTableValidator.ts";
 
 const TRUSTED_ORIGINS = [
   'https://couplerh.com.br',
@@ -235,43 +236,56 @@ serve(async (req) => {
       .eq('tenant_id', tenant_id)
       .eq('is_irrf_dependent', true);
 
-    // 3.4.1 Busca Versão de Parâmetros Legais Ativa para a Competência
-    const periodStartDate = new Date(period.year, period.month - 1, 1).toISOString().split('T')[0];
-    const { data: legalVersions } = await supabase
-      .from('legal_versions')
-      .select('id, version_name')
-      .lte('valid_from', periodStartDate)
-      .order('valid_from', { ascending: false });
-
-    let inss_parameters = [];
-    let irrf_parameters = [];
-    let general_legal_parameters = {};
+    // 3.4.1 Busca Versão de Parâmetros Legais Ativa para a Competência (T7: sem toISOString)
+    const periodStartDate = formatPeriodStartDate(period.year, period.month);
     
-    if (legalVersions && legalVersions.length > 0) {
-      // Pega a versão mais recente válida ou a que não tem valid_to ou que valid_to >= periodStartDate
-      // Como o Supabase JS não suporta um filtro complexo OR nativamente na mesma query sem string, fazemos no JS para MVP
-      const { data: lv2 } = await supabase
-        .from('legal_versions')
-        .select('id')
-        .lte('valid_from', periodStartDate)
-        .or(`valid_to.gte.${periodStartDate},valid_to.is.null`)
-        .order('valid_from', { ascending: false })
-        .limit(1);
+    // Busca versão vigente na data de início da competência
+    const { data: activeVersions, error: lvError } = await supabase
+      .from('legal_versions')
+      .select('id, version_name, valid_from, valid_to')
+      .lte('valid_from', periodStartDate)
+      .or(`valid_to.gte.${periodStartDate},valid_to.is.null`)
+      .order('valid_from', { ascending: false })
+      .limit(1);
 
-      const activeVersionId = (lv2 && lv2.length > 0) ? lv2[0].id : legalVersions[0].id;
-
-      const { data: inssData } = await supabase.from('inss_parameters').select('*').eq('version_id', activeVersionId).order('bracket_number');
-      const { data: irrfData } = await supabase.from('irrf_parameters').select('*').eq('version_id', activeVersionId).order('bracket_number');
-      const { data: generalData } = await supabase.from('general_legal_parameters').select('*').eq('version_id', activeVersionId).limit(1);
-
-      inss_parameters = inssData || [];
-      irrf_parameters = irrfData || [];
-      general_legal_parameters = (generalData && generalData.length > 0) ? generalData[0] : {};
+    if (lvError || !activeVersions || activeVersions.length === 0) {
+      throw new Error(`Nenhuma versão de parâmetros legais (legal_versions) vigente encontrada para a competência ${period.month}/${period.year} (início em ${periodStartDate}).`);
     }
 
-    if (!general_legal_parameters || !general_legal_parameters.minimum_wage || Number(general_legal_parameters.minimum_wage) <= 0) {
-      throw new Error(`Parâmetro legal obrigatório ausente: 'minimum_wage' (salário mínimo) não cadastrado na versão legal vigente da competência ${period.month}/${period.year}.`);
-    }
+    const activeVersion = activeVersions[0];
+    const activeVersionId = activeVersion.id;
+
+    const { data: inssData, error: inssError } = await supabase
+      .from('inss_parameters')
+      .select('*')
+      .eq('version_id', activeVersionId)
+      .order('bracket_number');
+
+    const { data: irrfData, error: irrfError } = await supabase
+      .from('irrf_parameters')
+      .select('*')
+      .eq('version_id', activeVersionId)
+      .order('bracket_number');
+
+    const { data: generalData, error: genError } = await supabase
+      .from('general_legal_parameters')
+      .select('*')
+      .eq('version_id', activeVersionId)
+      .limit(1);
+
+    const inss_parameters = inssData || [];
+    const irrf_parameters = irrfData || [];
+    const general_legal_parameters = (generalData && generalData.length > 0) ? generalData[0] : null;
+
+    // T7: Validação estrita de integridade das tabelas legais
+    validateAllLegalTables({
+      version: activeVersion,
+      inssBrackets: inss_parameters,
+      irrfBrackets: irrf_parameters,
+      generalParams: general_legal_parameters,
+      periodMonth: period.month,
+      periodYear: period.year
+    });
 
     const rubricas = dbRubrics.map((r: any) => ({
       id: r.id,
