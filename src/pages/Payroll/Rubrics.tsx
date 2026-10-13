@@ -151,7 +151,7 @@ export default function () {
       setDivisor(r.divisor ?? "");
       setFactor(r.factor ?? "");
       setQuantity(r.quantity ?? "");
-      setCalculationOrder(r.calculation_order || 50);
+      setCalculationOrder(r.calculation_order ?? 50);
       setFormula(r.formula || "");
       setInss(r.incidence_inss || false);
       setIrrf(r.incidence_irrf || false);

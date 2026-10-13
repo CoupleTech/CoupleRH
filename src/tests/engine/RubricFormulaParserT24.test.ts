@@ -274,8 +274,9 @@ describe('T24: RubricFormulaParser — Parser de Fórmulas na AST e Motor', () =
 
       // Variável R220 deve estar registrada no contexto com valor 0
       expect(ctx.getVariable('R220')).toBe(0);
-      // Variável numérica 220 NÃO deve ter sido registrada ou sobrescrita
-      expect(ctx.getVariable('220')).toBe(0);
+      // Variável numérica 220 NÃO deve ter sido registrada no contexto
+      expect(ctx.hasVariable('220')).toBe(false);
+      expect(() => ctx.getVariable('220')).toThrowError(/Variável ou base de cálculo inexistente/);
     });
   });
 });

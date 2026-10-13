@@ -30,12 +30,14 @@ export class PayrollEngine {
         let calcForm = rubric.calculation_form;
 
         // Se tiver evento variável lançado para esta rubrica, pega a quantidade ou valor manual
+        let hasManualValue = false;
         if (eventos.length > 0) {
             quantidade = eventos.reduce((acc, ev) => acc + (ev.quantity || 0), 0) || quantidade;
-            const eventManualValue = eventos.reduce((acc, ev) => acc + (ev.manual_value || 0), 0);
-            if (eventManualValue > 0) {
-                valorCalculado = eventManualValue;
-                formulaUsada = 'MANUAL_VALUE';
+            const manualEvents = eventos.filter(ev => ev.manual_value !== undefined && ev.manual_value !== null);
+            if (manualEvents.length > 0) {
+                hasManualValue = true;
+                valorCalculado = manualEvents.reduce((acc, ev) => acc + (ev.manual_value || 0), 0);
+                formulaUsada = valorCalculado === 0 ? 'MANUAL_VALUE_ZERO' : 'MANUAL_VALUE';
             }
         } 
 
@@ -137,8 +139,8 @@ export class PayrollEngine {
             if (!factor) factor = 1.0;
         }
         
-        // Se o valorCalculado ainda for 0 (ou seja, não tinha valor manual explícito, apenas a quantidade foi injetada), calcula!
-        if (valorCalculado === 0) {
+        // Se o valorCalculado ainda não foi definido manualmente, calcula!
+        if (!hasManualValue) {
             if (calcForm === 'FORMULA' && rubric.formula) {
                 const knownCodes = new Set(Array.from(this.context.rubricas.values()).map(r => r.code));
                 const currentParser = new RubricFormulaParser(this.context.variables, knownCodes);
@@ -222,12 +224,12 @@ export class PayrollEngine {
 
         valorCalculado = round2(valorCalculado);
 
-        if (valorCalculado > 0) {
+        if (valorCalculado !== 0) {
             // Adiciona memória
             this.context.addMemory({
                 rubric_id: rubric.id,
                 step_name: rubric.name,
-                base_value: calcBaseName ? this.context.getVariable(calcBaseName) : 0,
+                base_value: calcBaseName && this.context.hasVariable(calcBaseName) ? this.context.getVariable(calcBaseName) : 0,
                 quantity_used: quantidade,
                 percentage_used: percentage || 0,
                 parsed_formula: formulaUsada,
@@ -263,7 +265,19 @@ export class PayrollEngine {
                 this.context.setVariable('BASE_DSR_NOTURNO', round2(currentBaseDSRNoturno + valorCalculado));
             }
 
-          }
+        } else if (hasManualValue) {
+            // Registro explícito na memória de cálculo quando um evento manual for lançado com valor 0
+            this.context.addMemory({
+                rubric_id: rubric.id,
+                step_name: rubric.name,
+                base_value: calcBaseName && this.context.hasVariable(calcBaseName) ? this.context.getVariable(calcBaseName) : 0,
+                quantity_used: quantidade,
+                percentage_used: percentage || 0,
+                parsed_formula: formulaUsada,
+                result_value: 0,
+                origin: rubric.calculation_form
+            });
+        }
 
           // T24: Atualiza a variável com o código da rubrica (sempre com prefixo R{code})
           // Não salvar rubric.code puro para não colidir com constantes numéricas (ex: 220, 30)

@@ -200,6 +200,9 @@ export class PayrollContext {
       'DIAS_INUTEIS': this.dias_inuteis,
       'DIVISOR': this.divisor,
       'DEPENDENTES': data.num_dependentes || 0,
+      'BASE_DSR': 0,
+      'BASE_DSR_NOTURNO': 0,
+      'BASE_HORA_EXTRA': 0,
     };
 
     // T24: Pré-carregar todas as rubricas do catálogo com valor 0 na variável R{code}
@@ -215,7 +218,14 @@ export class PayrollContext {
   }
 
   getVariable(name: string): number {
-    return this.variables[name] || 0;
+    if (name in this.variables) {
+      return this.variables[name];
+    }
+    throw new Error(`Variável ou base de cálculo inexistente no contexto: '${name}'`);
+  }
+
+  hasVariable(name: string): boolean {
+    return name in this.variables;
   }
 
   addMemory(mem: CalculationMemory) {

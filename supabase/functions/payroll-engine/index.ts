@@ -147,7 +147,7 @@ serve(async (req) => {
 
     let queryContracts = supabase
       .from('employment_contracts')
-      .select('id, worker_id, company_id, base_salary, status, admission_date, receives_advance, work_schedules(weekly_hours, divisor), contract_types(has_inss, has_fgts)')
+      .select('id, worker_id, company_id, base_salary, status, admission_date, receives_advance, work_schedules(weekly_hours, divisor), contract_types(has_inss, has_fgts), workers(id, person_id)')
       .eq('tenant_id', tenant_id)
       .eq('company_id', company_id)
       .eq('status', 'ACTIVE');
@@ -180,6 +180,16 @@ serve(async (req) => {
       
     if (contractsError) throw contractsError;
 
+    // T25: Extrair IDs dos contratos e pessoas selecionadas para filtrar as buscas e evitar carregar o tenant inteiro
+    const contractIds = (contracts || []).map((c: any) => c.id);
+    const personIds = Array.from(
+      new Set(
+        (contracts || [])
+          .map((c: any) => c.workers?.person_id)
+          .filter(Boolean)
+      )
+    );
+
     // 3. Busca Rubricas
     const { data: dbRubrics, error: rubricsError } = await supabase
       .from('payroll_rubrics')
@@ -195,22 +205,27 @@ serve(async (req) => {
       .select('id, labor_config')
       .eq('tenant_id', tenant_id);
 
-    // 3.1 Busca Benefícios Ativos
-    const { data: employeeBenefits } = await supabase
-      .from('employee_benefits')
-      .select(`
-        contract_id,
-        custom_discount_value,
-        benefits_catalog (
-          id,
-          name,
-          discount_type,
-          default_discount_value,
-          rubric_id
-        )
-      `)
-      .eq('tenant_id', tenant_id)
-      .eq('status', 'ACTIVE');
+    // 3.1 Busca Benefícios Ativos (filtrados pelos contratos do período)
+    let employeeBenefits: any[] = [];
+    if (contractIds.length > 0) {
+      const { data: benefits } = await supabase
+        .from('employee_benefits')
+        .select(`
+          contract_id,
+          custom_discount_value,
+          benefits_catalog (
+            id,
+            name,
+            discount_type,
+            default_discount_value,
+            rubric_id
+          )
+        `)
+        .eq('tenant_id', tenant_id)
+        .eq('status', 'ACTIVE')
+        .in('contract_id', contractIds);
+      employeeBenefits = benefits || [];
+    }
 
     // 3.2 Busca Eventos Variáveis da Competência
     const { data: variableEvents } = await supabase
@@ -219,24 +234,39 @@ serve(async (req) => {
       .eq('tenant_id', tenant_id)
       .eq('period_id', period_id);
 
-    // 3.3 Busca Descontos Fixos (empréstimos, pensões, etc.)
-    const { data: employeeDeductions } = await supabase
-      .from('employee_deductions')
-      .select('*, payroll_rubrics (id, code, name, type)')
-      .eq('tenant_id', tenant_id);
+    // 3.3 Busca Descontos Fixos (filtrados pelos contratos do período)
+    let employeeDeductions: any[] = [];
+    if (contractIds.length > 0) {
+      const { data: deductions } = await supabase
+        .from('employee_deductions')
+        .select('*, payroll_rubrics (id, code, name, type)')
+        .eq('tenant_id', tenant_id)
+        .in('contract_id', contractIds);
+      employeeDeductions = deductions || [];
+    }
 
-    // 3.4 Busca Adicionais e Proventos Fixos (insalubridade, etc.)
-    const { data: employeeFixedEvents } = await supabase
-      .from('employee_fixed_events')
-      .select('*, payroll_rubrics (id, code, name, type)')
-      .eq('tenant_id', tenant_id);
+    // 3.4 Busca Adicionais e Proventos Fixos (filtrados pelos contratos do período)
+    let employeeFixedEvents: any[] = [];
+    if (contractIds.length > 0) {
+      const { data: fixedEvents } = await supabase
+        .from('employee_fixed_events')
+        .select('*, payroll_rubrics (id, code, name, type)')
+        .eq('tenant_id', tenant_id)
+        .in('contract_id', contractIds);
+      employeeFixedEvents = fixedEvents || [];
+    }
 
-    // 3.4.2 Busca Dependentes (BUG 5 fix - dependentes nunca eram carregados)
-    const { data: allDependents } = await supabase
-      .from('dependents')
-      .select('id, person_id, is_irrf_dependent, is_family_allowance_dependent, birth_date')
-      .eq('tenant_id', tenant_id)
-      .eq('is_irrf_dependent', true);
+    // 3.4.2 Busca Dependentes (filtrados pelas pessoas dos contratos do período)
+    let allDependents: any[] = [];
+    if (personIds.length > 0) {
+      const { data: deps } = await supabase
+        .from('dependents')
+        .select('id, person_id, is_irrf_dependent, is_family_allowance_dependent, birth_date')
+        .eq('tenant_id', tenant_id)
+        .eq('is_irrf_dependent', true)
+        .in('person_id', personIds);
+      allDependents = deps || [];
+    }
 
     // 3.4.1 Busca Versão de Parâmetros Legais Ativa para a Competência (T7: sem toISOString)
     const periodStartDate = formatPeriodStartDate(period.year, period.month);
@@ -304,7 +334,7 @@ serve(async (req) => {
       divisor: r.divisor,
       factor: r.factor,
       formula: r.formula,
-      calculation_order: r.calculation_order || 100,
+      calculation_order: r.calculation_order ?? 100,
       incidencias: {
         inss: r.incidence_inss || false,
         irrf: r.incidence_irrf || false,
@@ -703,20 +733,12 @@ serve(async (req) => {
           }
       }
 
-      // BUG 5 fix: Contar dependentes para IRRF
-      // Relação: contract → worker_id → workers → person_id → dependents(person_id)
+      // BUG 5 / T25: Contar dependentes para IRRF utilizando o person_id já trazido no contrato
+      // Relação: contract → workers → person_id → dependents(person_id)
       let numDependentesIRRF = 0;
-      if (allDependents && allDependents.length > 0) {
-        // Busca o person_id do worker deste contrato
-        const { data: workerData } = await supabase
-          .from('workers')
-          .select('person_id')
-          .eq('id', contract.worker_id)
-          .single();
-        
-        if (workerData?.person_id) {
-          numDependentesIRRF = allDependents.filter(d => d.person_id === workerData.person_id).length;
-        }
+      const workerPersonId = contract.workers?.person_id;
+      if (workerPersonId && allDependents && allDependents.length > 0) {
+        numDependentesIRRF = allDependents.filter((d: any) => d.person_id === workerPersonId).length;
       }
 
       const contextData = {
