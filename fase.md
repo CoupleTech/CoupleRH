@@ -96,8 +96,8 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 **Gate:** nenhuma rubrica ativa sem forma de cálculo; matriz de incidência assinada pelo contador (registrar em Pendências). — **VALIDADO (TODOS OS CRITÉRIOS APROVADOS)**
 
 ## 🧱 FASE P3: Integridade e motor orientado a dados
-**Status:** `[Pendente]` · **Ref.:** 📘 Doc §4 (T9, T10, T21–T25), §6
-- [ ] **T21** `money.ts` (centavos/decimal, HALF_UP) e substituição de `Math.round(x*100)/100`
+**Status:** `[Em Progresso]` · **Ref.:** 📘 Doc §4 (T9, T10, T21–T25), §6
+- [x] **T21** `money.ts` (centavos/decimal, HALF_UP) e substituição de `Math.round(x*100)/100` — *Concluído em 13/10/2026 (commit `36f43f6`): criado utilitário `money.ts` com política HALF_UP simétrica, operações aritméticas baseadas em centavos inteiros (`addMoney`, `subtractMoney`, `multiplyMoney`, `divideMoney`, `sumMoney`, `toCents`, `fromCents`), eliminação completa de `Math.round(x*100)/100` e operações float em `PayrollEngine`, `INSSCalculator`, `IRRFCalculator`, `FGTSCalculator`, `EmployerTaxesCalculator`, `RubricFormulaParser`, `index.ts` e `vacationPrint`. Suíte de testes TDD `MoneyPropertyT21.test.ts` implementada com teste de propriedade validando que líquido = proventos − descontos e soma dos itens fecham com exatidão em 1.000 casos aleatórios (100% aprovado).*
 - [ ] **T22** `rubric_kind` (migration, backfill, UI obrigatória) e motor por `kind`; corrigir precedência de `isAdicionalNoturno`
 - [ ] **T23** DAG com dependências de fórmula e bases dinâmicas
 - [ ] **T24** Parser: variáveis na AST, tokenizer estrito, comparadores, vírgula decimal, erros explícitos; remover variável só com código numérico
