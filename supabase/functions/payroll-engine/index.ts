@@ -12,6 +12,11 @@ import {
   buildAtomicPayrollPayload,
   type RawCalculatedPayslip,
 } from "./engine/AtomicPersistence.ts";
+import {
+  aggregateCompanyBases,
+  calculateConsolidatedEmployerTaxes,
+  type ExistingPayslipBase,
+} from "./engine/CompanyTaxesAggregator.ts";
 
 const TRUSTED_ORIGINS = [
   'https://couplerh.com.br',
@@ -446,12 +451,17 @@ serve(async (req) => {
       }
     }
 
-    // T9: Nenhum delete ou insert no banco antes de calcular 100% dos contratos em memória.
-    // A limpeza de dados anteriores ocorre de forma atômica dentro da RPC save_payroll_period.
+    // T9/T10: Mapeamento de contrato para empresa e cálculo de holerites em memória
+    const contractCompanyMap: Record<string, string> = {};
+    for (const c of contracts || []) {
+      if (c.id && c.company_id) {
+        contractCompanyMap[c.id] = c.company_id;
+      }
+    }
+
     const calculatedPayslips: RawCalculatedPayslip[] = [];
     const results = [];
     const errors: Array<{ contract_id: string; worker_id: string; error: string }> = [];
-    const companyTotals: Record<string, { base_inss: number, base_fgts: number }> = {};
 
     // 4. Processa o Motor para cada Contrato
     for (const contract of contracts || []) {
@@ -915,14 +925,6 @@ serve(async (req) => {
         })),
       });
 
-      // Acumula bases para impostos patronais da empresa
-      const cId = contract.company_id;
-      if (cId) {
-          if (!companyTotals[cId]) companyTotals[cId] = { base_inss: 0, base_fgts: 0 };
-          companyTotals[cId].base_inss += result.bases.inss;
-          companyTotals[cId].base_fgts += result.bases.fgts;
-      }
-
       results.push({ contract_id: contract.id, net: result.liquido, status: result.status });
     }
 
@@ -944,28 +946,43 @@ serve(async (req) => {
       );
     }
 
-    // 6.5 Calcula Impostos Patronais por Empresa
-    const companyTaxesToInsert = [];
-    for (const cId of Object.keys(companyTotals)) {
-       const totals = companyTotals[cId];
-       const comp = companies?.find(c => c.id === cId);
-       const laborConfig = comp?.labor_config as LaborConfig;
-       
-       const taxes = EmployerTaxesCalculator.calculate(totals.base_inss, totals.base_fgts, laborConfig);
-       
-       companyTaxesToInsert.push({
-           tenant_id,
-           period_id,
-           company_id: cId,
-           total_base_inss: totals.base_inss,
-           total_base_fgts: totals.base_fgts,
-           inss_patronal: taxes.inss_patronal,
-           rat_adjusted: taxes.rat_adjusted,
-           terceiros: taxes.terceiros,
-           fgts_patronal: taxes.fgts_patronal,
-           total_taxes: taxes.total
-       });
+    // 6.5 Calcula Impostos Patronais por Empresa a partir de TODOS os holerites do período (T10)
+    let existingPayslipsForTaxes: ExistingPayslipBase[] = [];
+
+    // Se for recálculo de contrato específico, busca os demais holerites já existentes no banco do período
+    if (contract_id_filter) {
+      const { data: otherPayslips } = await supabase
+        .from('payslips')
+        .select('contract_id, base_inss, base_fgts, employment_contracts!inner(company_id)')
+        .eq('period_id', period_id)
+        .neq('contract_id', contract_id_filter);
+
+      if (otherPayslips) {
+        existingPayslipsForTaxes = otherPayslips.map((p: any) => ({
+          contract_id: p.contract_id,
+          company_id: p.employment_contracts?.company_id,
+          base_inss: Number(p.base_inss) || 0,
+          base_fgts: Number(p.base_fgts) || 0,
+        }));
+      }
     }
+
+    const consolidatedCompanyTotals = aggregateCompanyBases({
+      calculatedPayslips: calculatedPayslips.map((p) => ({
+        contract_id: p.contract_id,
+        base_inss: p.base_inss,
+        base_fgts: p.base_fgts,
+      })),
+      existingPayslips: existingPayslipsForTaxes,
+      contractCompanyMap,
+    });
+
+    const companyTaxesToInsert = calculateConsolidatedEmployerTaxes({
+      tenant_id,
+      period_id,
+      companyTotals: consolidatedCompanyTotals,
+      companies: companies || [],
+    });
 
     // 7. Persistência Atômica Transacional via RPC save_payroll_period (T9)
     const atomicPayload = buildAtomicPayrollPayload({
