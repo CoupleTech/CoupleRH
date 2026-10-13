@@ -140,7 +140,8 @@ export class PayrollEngine {
         // Se o valorCalculado ainda for 0 (ou seja, não tinha valor manual explícito, apenas a quantidade foi injetada), calcula!
         if (valorCalculado === 0) {
             if (calcForm === 'FORMULA' && rubric.formula) {
-                const currentParser = new RubricFormulaParser(this.context.variables);
+                const knownCodes = new Set(Array.from(this.context.rubricas.values()).map(r => r.code));
+                const currentParser = new RubricFormulaParser(this.context.variables, knownCodes);
                 valorCalculado = currentParser.evaluate(rubric.formula);
             }
             else if ((calcForm === 'HORAS' || calcForm === 'HOURS') && calcBaseName) {
@@ -262,10 +263,12 @@ export class PayrollEngine {
                 this.context.setVariable('BASE_DSR_NOTURNO', round2(currentBaseDSRNoturno + valorCalculado));
             }
 
-            // Atualiza a variável com o código da rubrica para poder ser usada por outras
+          }
+
+          // T24: Atualiza a variável com o código da rubrica (sempre com prefixo R{code})
+          // Não salvar rubric.code puro para não colidir com constantes numéricas (ex: 220, 30)
+          if (rubric.code) {
             this.context.setVariable(`R${rubric.code}`, valorCalculado);
-            // Também salva o código sem prefixo para retrocompatibilidade
-            this.context.setVariable(rubric.code, valorCalculado);
           }
         } catch (err: any) {
           throw new Error(`[Rubrica ${rubric.code || 'S/C'} - ${rubric.name || 'Sem Nome'}] ${err.message}`);

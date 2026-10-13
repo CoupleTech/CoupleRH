@@ -201,6 +201,13 @@ export class PayrollContext {
       'DIVISOR': this.divisor,
       'DEPENDENTES': data.num_dependentes || 0,
     };
+
+    // T24: Pré-carregar todas as rubricas do catálogo com valor 0 na variável R{code}
+    for (const r of Array.from(this.rubricas.values())) {
+      if (r.code) {
+        this.variables[`R${r.code}`] = 0;
+      }
+    }
   }
 
   setVariable(name: string, value: number) {
