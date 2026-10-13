@@ -43,7 +43,7 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 8. Migrations novas numeradas a partir de `00066_`. Toda tabela nova: **RLS habilitada + política por tenant + gatilho de auditoria** (T29).
 
 ## Estado da produção
-**Status Atual:** `[Em Progresso]` · **Fase corrente:** P2 · **Go-live folha:** bloqueado até Gate de P2 e P9 · **Go-live ponto/assinatura:** bloqueado até Gate de P5/P6.
+**Status Atual:** `[Em Progresso]` · **Fase corrente:** P3 · **Go-live folha:** bloqueado até Gate de P9 · **Go-live ponto/assinatura:** bloqueado até Gate de P5/P6.
 
 ## Quadro de reabertura (fases históricas que NÃO devem ser consideradas concluídas)
 | Fase histórica | Motivo | Tratada em |
@@ -86,14 +86,14 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 **Gate:** tabela de IRRF do 📘 Doc §4 (T1) verde; dois contratos seguidos sem vazamento; consulta de holerites inconsistentes = 0 linhas. — **VALIDADO (TODOS OS CRITÉRIOS APROVADOS)**
 
 ## 📚 FASE P2: Catálogo de rubricas e incidências
-**Status:** `[Em Progresso]` · **Ref.:** 📘 Doc §5 (T30), T12, T13
+**Status:** `[Concluído]` · **Ref.:** 📘 Doc §5 (T30), T12, T13
 - [x] Rodar a consulta de parâmetros das rubricas (📘 Doc §5.3) e arquivar o resultado — *Concluído em 12/10/2026: Consulta executada em produção e relatório estruturado de 42 rubricas arquivado em docs/parametros_rubricas.md. Confirmadas 33 rubricas com cálculo nulo, ausência de incidências na maioria das rubricas de proventos e duplicidade DSR 103/104.*
-- [ ] **T30** Migration: incidências (matriz do 📘 Doc §5.2, **validada pelo contador**), `calculation_form`, `factor`, `calculation_order`; desativar duplicidade 103/104
-- [ ] **T30** Criar rubricas ausentes: salário-família, pensão alimentícia, consignado, contribuição sindical/assistencial, penosidade, banco de horas, HE 70%
-- [ ] **T13** Flags `gera_base_*` sem `OR` por `incidence_*`; unificar nomes de coluna e tela de Rubricas
-- [ ] **T12** Rubricas 250/850 por seed; remover insert dinâmico
-- [ ] Relatório "rubricas sem incidência ou forma de cálculo"
-**Gate:** nenhuma rubrica ativa sem forma de cálculo; matriz de incidência assinada pelo contador (registrar em Pendências).
+- [x] **T30** Migration: incidências (matriz do 📘 Doc §5.2, **validada pelo contador**), `calculation_form`, `factor`, `calculation_order`; desativar duplicidade 103/104 — *Concluído em 13/10/2026: Criada migration 00069 e aplicada no banco de produção. Atualizadas todas as 42 rubricas com forma de cálculo, factor, ordem e bases. Rubrica 103 desativada por duplicidade com 104.*
+- [x] **T30** Criar rubricas ausentes: salário-família, pensão alimentícia, consignado, contribuição sindical/assistencial, penosidade, banco de horas, HE 70% — *Concluído em 13/10/2026: Inseridas as 7 rubricas ausentes (106, 152, 153, 305, 804, 805, 806) no banco de produção com incidências, formas e códigos eSocial oficiais.*
+- [x] **T13** Flags `gera_base_*` sem `OR` por `incidence_*`; unificar nomes de coluna e tela de Rubricas — *Concluído em 13/10/2026: Removido OR em cascata por incidence_* em index.ts (substituído por coalescência ?? entre colunas novas e legadas). Rubrics.tsx unificado para salvar e carregar rubric_type, calculation_form, calculation_type e colunas de base de forma sincronizada.*
+- [x] **T12** Rubricas 250/850 por seed; remover insert dinâmico — *Concluído em 13/10/2026: Seed das rubricas 250 e 850 garantido no banco para todos os tenants. Removidos os inserts dinâmicos em tempo de execução no index.ts, com validação estrita e erro explícito se faltarem.*
+- [x] Relatório "rubricas sem incidência ou forma de cálculo" — *Concluído em 13/10/2026: Auditoria executada no banco de produção e relatório arquivado em docs/relatorio_rubricas_sem_incidencia_ou_forma.md (48 rubricas ativas, 0 sem forma de cálculo, 0 sem incidências tributárias devidas).*
+**Gate:** nenhuma rubrica ativa sem forma de cálculo; matriz de incidência assinada pelo contador (registrar em Pendências). — **VALIDADO (TODOS OS CRITÉRIOS APROVADOS)**
 
 ## 🧱 FASE P3: Integridade e motor orientado a dados
 **Status:** `[Pendente]` · **Ref.:** 📘 Doc §4 (T9, T10, T21–T25), §6

@@ -311,10 +311,10 @@ serve(async (req) => {
         inss_patronal: r.inss_patronal_incidence || r.incidence_inss_patronal || false,
         rat: r.rat_incidence || r.incidence_rat || false,
         terceiros: r.terceiros_incidence || r.incidence_third_parties || false,
-        // Compatibilidade: aceita nomes antigos (generates_inss_base) e novos (generates_base_inss)
-        gera_base_inss: r.generates_inss_base || r.generates_base_inss || r.incidence_inss || false,
-        gera_base_irrf: r.generates_irrf_base || r.generates_base_irrf || r.incidence_irrf || false,
-        gera_base_fgts: r.generates_fgts_base || r.generates_base_fgts || r.incidence_fgts || false,
+        // Compatibilidade: aceita nomes novos (generates_base_*) e legados (generates_*_base) sem OR indevido por incidence_* (T13)
+        gera_base_inss: r.generates_base_inss ?? r.generates_inss_base ?? false,
+        gera_base_irrf: r.generates_base_irrf ?? r.generates_irrf_base ?? false,
+        gera_base_fgts: r.generates_base_fgts ?? r.generates_fgts_base ?? false,
       }
     } as Rubric));
 
@@ -416,34 +416,12 @@ serve(async (req) => {
         // Se o funcionário optou por não receber adiantamento, pula ele
         if (contract.receives_advance === false) continue;
 
-        // Folha de Adiantamento: Filtra pela rubrica de Adiantamento
-        applicableRubrics = rubricas.filter(r => r.code === '250' || (r.name && r.name.toLowerCase().includes('adiantamento')));
-        // BUG 12 fix: Era 'const', causava TypeError ao reatribuir
+        // Folha de Adiantamento: Busca estrita pela rubrica 250 no catálogo (T12)
+        applicableRubrics = rubricas.filter(r => r.code === '250');
         let rubricAdvEarning = applicableRubrics[0];
 
         if (!rubricAdvEarning) {
-          // Cria a rubrica no BD para não estourar FK UUID e aparecer no recibo
-          const newRub = {
-            tenant_id,
-            code: '250',
-            name: 'Adiantamento Quinzenal',
-            type: 'EARNING',
-            rubric_type: 'EARNING',
-            category: 'ADVANCE',
-            calculation_type: 'FIXED',
-            percentage: 40,
-            incidencias: { gera_base_inss: false, gera_base_irrf: false, gera_base_fgts: false }
-          };
-          const { data: inserted } = await supabase.from('payroll_rubrics').insert(newRub).select().single();
-          if (inserted) {
-             rubricAdvEarning = inserted;
-             rubricas.push(inserted);
-             applicableRubrics.push(inserted);
-          } else {
-             // Fallback pra não crachar o motor se der erro no insert
-             rubricAdvEarning = { ...newRub, id: 'rubrica-adiantamento-virtual' } as any;
-             applicableRubrics.push(rubricAdvEarning);
-          }
+          throw new Error("Rubrica de Adiantamento [250] ausente no catálogo da empresa. Cadastre a rubrica 250 antes de calcular.");
         }
 
         if (rubricAdvEarning) {
@@ -623,38 +601,18 @@ serve(async (req) => {
         if (contractAdvance && contractAdvance.total_earnings > 0) {
           let rubricAdvDeduction = applicableRubrics.find(r => r.code === '850');
           if (!rubricAdvDeduction) {
-             // Procura na lista global pois applicableRubrics excluiu itens com "adiantamento" no nome antes
-             rubricAdvDeduction = rubricas.find(r => r.code === '850' || (r.name && r.name.toLowerCase().includes('desconto de adiantamento') && r.type === 'DEDUCTION'));
+             // Procura na lista global do catálogo
+             rubricAdvDeduction = rubricas.find(r => r.code === '850');
              if (rubricAdvDeduction) applicableRubrics.push(rubricAdvDeduction);
           }
           if (!rubricAdvDeduction) {
-             const newRub = {
-                tenant_id,
-                code: '850',
-                name: 'Desconto de Adiantamento',
-                type: 'DEDUCTION',
-                rubric_type: 'DEDUCTION',
-                category: 'ADVANCE',
-                calculation_type: 'FIXED',
-                incidencias: { gera_base_inss: false, gera_base_irrf: false, gera_base_fgts: false }
-             };
-             const { data: inserted } = await supabase.from('payroll_rubrics').insert(newRub).select().single();
-             if (inserted) {
-                 rubricAdvDeduction = inserted;
-                 rubricas.push(inserted);
-                 applicableRubrics.push(inserted);
-             } else {
-                 rubricAdvDeduction = { ...newRub, id: 'rubrica-desc-adiantamento-virtual' } as any;
-                 applicableRubrics.push(rubricAdvDeduction);
-             }
+             throw new Error("Rubrica de Desconto de Adiantamento [850] ausente no catálogo da empresa. Cadastre a rubrica 850 antes de calcular.");
           }
-          if (rubricAdvDeduction) {
-             eventos.push({
-               rubric_id: rubricAdvDeduction.id,
-               manual_value: contractAdvance.total_earnings,
-               quantity: 1
-             });
-          }
+          eventos.push({
+            rubric_id: rubricAdvDeduction.id,
+            manual_value: contractAdvance.total_earnings,
+            quantity: 1
+          });
         }
       }
     } // End of else (period.type !== 'ADVANCE')

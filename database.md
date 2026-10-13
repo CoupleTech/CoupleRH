@@ -11229,4 +11229,20 @@ SET
 NOTIFY pgrst, 'reload schema';
 ```
 
+### Migration `00069_catalogo_rubricas_incidencias_t30.sql` (Fase P2 / T30, T12, T13)
+- **Objetivo**: Parametrização completa do Catálogo de Rubricas CLT 2026, consolidação da Matriz de Incidências tributárias (INSS, IRRF, FGTS e encargos patronais), eliminação de duplicidades operacionais (DSR 103 vs 104), inserção das rubricas ausentes exigidas por lei/convenções e seed das rubricas de adiantamento (250 e 850).
+- **Alterações**:
+  - Desativação da rubrica de DSR duplicada (`103`), preservando a `104` (DSR sobre variáveis) e `170` (DSR sobre horas extras).
+  - Atualização cadastral e tributária de todas as 42 rubricas existentes em todos os tenants com `calculation_form`, `calculation_type`, `calculation_order`, `factor` e incidências explícitas.
+  - Inclusão das 7 rubricas ausentes do catálogo:
+    - `106` Salário Família (Provento, benefício previdenciário isento, eSocial 1409).
+    - `152` Banco de Horas Crédito (Provento, horas extras compensatórias com fator 1.5, eSocial 1004).
+    - `153` Hora Extra 70% (Provento, adicional normativo CCT/ACT com fator 1.7, eSocial 1003).
+    - `305` Adicional de Penosidade (Provento, percentual sobre salário base, eSocial 1204).
+    - `804` Pensão Alimentícia (Desconto judicial dedutível do IRRF, eSocial 9200).
+    - `805` Empréstimo Consignado (Desconto em folha, eSocial 9210).
+    - `806` Contribuição Sindical/Assistencial (Desconto autorizado, eSocial 9230).
+  - Seed garantido das rubricas `250` (Adiantamento Quinzenal) e `850` (Desconto de Adiantamento) para todos os tenants, permitindo eliminar o insert dinâmico no motor (T12).
+
+
 

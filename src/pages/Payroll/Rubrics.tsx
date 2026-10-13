@@ -24,6 +24,7 @@ interface Rubric {
   category: string;
   origin: string;
   calculation_type: string;
+  calculation_form?: string;
   calculation_base?: string;
   percentage?: number | null;
   divisor?: number | null;
@@ -40,6 +41,10 @@ interface Rubric {
   generates_base_inss: boolean;
   generates_base_irrf: boolean;
   generates_base_fgts: boolean;
+  generates_inss_base?: boolean;
+  generates_irrf_base?: boolean;
+  generates_fgts_base?: boolean;
+  rubric_type?: string;
   valid_from: string;
   valid_to?: string;
   version: number;
@@ -137,7 +142,7 @@ export default function () {
       setType(r.type || "EARNING");
       setCategory(r.category || "SALARY");
       setOrigin(r.origin || "MANUAL");
-      setCalculationType(r.calculation_type || "FIXO");
+      setCalculationType(r.calculation_form || r.calculation_type || "FIXO");
       setCalculationBase(r.calculation_base || "");
       setPercentage(r.percentage ?? "");
       setDivisor(r.divisor ?? "");
@@ -151,9 +156,9 @@ export default function () {
       setIncidenceInssPatronal(r.incidence_inss_patronal || false);
       setIncidenceRat(r.incidence_rat || false);
       setIncidenceThirdParties(r.incidence_third_parties || false);
-      setGeneratesBaseInss(r.generates_base_inss || false);
-      setGeneratesBaseIrrf(r.generates_base_irrf || false);
-      setGeneratesBaseFgts(r.generates_base_fgts || false);
+      setGeneratesBaseInss(r.generates_base_inss ?? r.generates_inss_base ?? false);
+      setGeneratesBaseIrrf(r.generates_base_irrf ?? r.generates_irrf_base ?? false);
+      setGeneratesBaseFgts(r.generates_base_fgts ?? r.generates_fgts_base ?? false);
       setEsocialCode(r.esocial_code || "");
       setEsocialDescription(r.esocial_description || "");
       setValidFrom(r.valid_from ? r.valid_from.split("T")[0] : new Date().toISOString().split("T")[0]);
@@ -208,9 +213,11 @@ export default function () {
         name,
         description,
         type,
+        rubric_type: type,
         category,
         origin,
         calculation_type: calculationType,
+        calculation_form: calculationType,
         calculation_base: calculationBase || null,
         percentage: percentage === "" ? null : percentage,
         divisor: divisor === "" ? null : divisor,
@@ -227,6 +234,9 @@ export default function () {
         generates_base_inss: generatesBaseInss,
         generates_base_irrf: generatesBaseIrrf,
         generates_base_fgts: generatesBaseFgts,
+        generates_inss_base: generatesBaseInss,
+        generates_irrf_base: generatesBaseIrrf,
+        generates_fgts_base: generatesBaseFgts,
         esocial_code: esocialCode,
         esocial_description: esocialDescription,
         valid_from: validFrom,
