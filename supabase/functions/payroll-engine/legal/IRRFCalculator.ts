@@ -1,4 +1,5 @@
 import { IrrfBracket, GeneralLegalParameters } from '../engine/PayrollContext.ts';
+import { round2 } from '../utils/money.ts';
 
 export interface IrrfCalculationResult {
   value: number;
@@ -84,11 +85,11 @@ export class IRRFCalculator {
     const finalIrrf = Math.max(0, irrfBruto - reductionAmount);
 
     return {
-      value: Math.round(finalIrrf * 100) / 100,
+      value: round2(finalIrrf),
       usedSimplified,
-      legalBase: Math.max(0, Math.round(calcBase * 100) / 100),
-      grossIncome: Math.round(grossIncome * 100) / 100,
-      reductionAmount: Math.round(reductionAmount * 100) / 100
+      legalBase: Math.max(0, round2(calcBase)),
+      grossIncome: round2(grossIncome),
+      reductionAmount: round2(reductionAmount)
     };
   }
 }

@@ -6,6 +6,7 @@ import { PayrollEngine } from "./engine/PayrollEngine.ts";
 import { EmployerTaxesCalculator, LaborConfig } from "./legal/EmployerTaxesCalculator.ts";
 import { formatPeriodStartDate, validateAllLegalTables } from "./legal/LegalTableValidator.ts";
 import { shouldSkipFutureAdmission, calculateWorkingDays } from "./engine/ContractAdmissionFilter.ts";
+import { round2, sumMoney, subtractMoney } from "./utils/money.ts";
 
 const TRUSTED_ORIGINS = [
   'https://couplerh.com.br',
@@ -814,15 +815,19 @@ serve(async (req) => {
       // Validação da invariante contábil antes de gravar o holerite:
       // Soma de EARNING deve fechar com total_proventos e DEDUCTION com total_descontos.
       // Rubricas do tipo BASE (ex: FGTS 903) não entram nas somas de proventos nem de descontos.
-      const sumEarnings = rawItemsToInsert
-        .filter(i => i.type === 'EARNING')
-        .reduce((acc, i) => acc + i.amount, 0);
-      const sumDeductions = rawItemsToInsert
-        .filter(i => i.type === 'DEDUCTION')
-        .reduce((acc, i) => acc + i.amount, 0);
+      const sumEarnings = sumMoney(
+        rawItemsToInsert
+          .filter(i => i.type === 'EARNING')
+          .map(i => i.amount)
+      );
+      const sumDeductions = sumMoney(
+        rawItemsToInsert
+          .filter(i => i.type === 'DEDUCTION')
+          .map(i => i.amount)
+      );
 
-      const diffEarnings = Math.abs(sumEarnings - result.total_proventos);
-      const diffDeductions = Math.abs(sumDeductions - result.total_descontos);
+      const diffEarnings = Math.abs(subtractMoney(sumEarnings, result.total_proventos));
+      const diffDeductions = Math.abs(subtractMoney(sumDeductions, result.total_descontos));
 
       if (diffEarnings > 0.01 || diffDeductions > 0.01) {
         errors.push({

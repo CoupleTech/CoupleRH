@@ -1,3 +1,5 @@
+import { round2, sumMoney, subtractMoney } from './money';
+
 export const calculateVacationReceipt = (
   baseSalary: number,
   daysTaken: number,
@@ -24,16 +26,16 @@ export const calculateVacationReceipt = (
   }
 
   // 1. Proventos divididos
-  const m1Ferias = Math.round(((baseSalary / 30) * m1Days) * 100) / 100;
-  const m1Ferias13 = Math.round((m1Ferias / 3) * 100) / 100;
+  const m1Ferias = round2((baseSalary / 30) * m1Days);
+  const m1Ferias13 = round2(m1Ferias / 3);
 
-  const m2Ferias = m2Days > 0 ? Math.round(((baseSalary / 30) * m2Days) * 100) / 100 : 0;
-  const m2Ferias13 = m2Days > 0 ? Math.round((m2Ferias / 3) * 100) / 100 : 0;
+  const m2Ferias = m2Days > 0 ? round2((baseSalary / 30) * m2Days) : 0;
+  const m2Ferias13 = m2Days > 0 ? round2(m2Ferias / 3) : 0;
   
-  const abono = Math.round(((baseSalary / 30) * cashAllowanceDays) * 100) / 100;
-  const abono13 = Math.round((abono / 3) * 100) / 100;
+  const abono = round2((baseSalary / 30) * cashAllowanceDays);
+  const abono13 = round2(abono / 3);
 
-  const totalProventos = m1Ferias + m1Ferias13 + m2Ferias + m2Ferias13 + abono + abono13;
+  const totalProventos = sumMoney([m1Ferias, m1Ferias13, m2Ferias, m2Ferias13, abono, abono13]);
   
   // 2. Descontos - INSS (separado por competência)
   const calcINSS = (base: number) => {
@@ -53,7 +55,7 @@ export const calculateVacationReceipt = (
       }
       currentBase = b.limit;
     }
-    return Math.round(inss * 100) / 100;
+    return round2(inss);
   };
 
   const m1Inss = calcINSS(m1Ferias + m1Ferias13);
@@ -91,10 +93,10 @@ export const calculateVacationReceipt = (
     const redutor = 978.62 - (0.133145 * totalBase);
     irrf = Math.max(0, irrf - Math.max(0, redutor));
   }
-  irrf = Math.round(irrf * 100) / 100;
+  irrf = round2(irrf);
 
-  const totalDescontos = totalInss + irrf;
-  const liquido = totalProventos - totalDescontos;
+  const totalDescontos = sumMoney([totalInss, irrf]);
+  const liquido = subtractMoney(totalProventos, totalDescontos);
   
   const getMonthStr = (d: Date) => {
     const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];

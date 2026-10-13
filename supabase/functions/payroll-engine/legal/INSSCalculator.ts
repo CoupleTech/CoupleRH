@@ -1,4 +1,5 @@
 import { InssBracket } from '../engine/PayrollContext.ts';
+import { round2 } from '../utils/money.ts';
 
 export class INSSCalculator {
   public static calculate(base: number, brackets: InssBracket[] = []): { value: number, breakdown: { bracket: number, amount: number, rate: number }[] } {
@@ -34,7 +35,7 @@ export class INSSCalculator {
     }
 
     return {
-      value: Math.round(inss * 100) / 100,
+      value: round2(inss),
       breakdown
     };
   }

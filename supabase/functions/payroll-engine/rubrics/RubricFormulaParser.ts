@@ -1,3 +1,5 @@
+import { round2 } from '../utils/money.ts';
+
 export class FormulaError extends Error {
   constructor(message: string) {
     super(message);
@@ -137,7 +139,7 @@ export class RubricFormulaParser {
           case 'MIN': return Math.min(...args);
           case 'MAX': return Math.max(...args);
           case 'IF': return args[0] !== 0 ? args[1] : args[2]; 
-          case 'ROUND': return Math.round(args[0] * 100) / 100;
+          case 'ROUND': return round2(args[0]);
           default: throw new FormulaError(`Unknown function: ${node.name}`);
         }
     }

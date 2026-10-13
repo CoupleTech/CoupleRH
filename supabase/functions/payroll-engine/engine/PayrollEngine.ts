@@ -4,6 +4,7 @@ import { RubricFormulaParser } from '../rubrics/RubricFormulaParser.ts';
 import { INSSCalculator } from '../legal/INSSCalculator.ts';
 import { IRRFCalculator } from '../legal/IRRFCalculator.ts';
 import { FGTSCalculator } from '../legal/FGTSCalculator.ts';
+import { round2, addMoney, subtractMoney } from '../utils/money.ts';
 
 export class PayrollEngine {
   context: PayrollContext;
@@ -184,7 +185,7 @@ export class PayrollEngine {
             }
         }
 
-        valorCalculado = Math.round(valorCalculado * 100) / 100;
+        valorCalculado = round2(valorCalculado);
 
         if (valorCalculado > 0) {
             // Adiciona memória
@@ -201,30 +202,30 @@ export class PayrollEngine {
 
             // Atualiza totais
             if (rubric.type === 'EARNING') {
-                this.context.total_proventos += valorCalculado;
+                this.context.total_proventos = addMoney(this.context.total_proventos, valorCalculado);
             } else if (rubric.type === 'DEDUCTION') {
-                this.context.total_descontos += valorCalculado;
+                this.context.total_descontos = addMoney(this.context.total_descontos, valorCalculado);
             }
 
             // BUG 3 fix: Atualiza Bases Legais — Descontos SUBTRAEM das bases
             if (rubric.incidencias.gera_base_inss) {
-              this.context.base_inss += (rubric.type === 'DEDUCTION' ? -valorCalculado : valorCalculado);
+              this.context.base_inss = round2(this.context.base_inss + (rubric.type === 'DEDUCTION' ? -valorCalculado : valorCalculado));
             }
             if (rubric.incidencias.gera_base_irrf) {
-              this.context.base_irrf += (rubric.type === 'EARNING' ? valorCalculado : -valorCalculado);
+              this.context.base_irrf = round2(this.context.base_irrf + (rubric.type === 'EARNING' ? valorCalculado : -valorCalculado));
             }
             if (rubric.incidencias.gera_base_fgts) {
-              this.context.base_fgts += (rubric.type === 'DEDUCTION' ? -valorCalculado : valorCalculado);
+              this.context.base_fgts = round2(this.context.base_fgts + (rubric.type === 'DEDUCTION' ? -valorCalculado : valorCalculado));
             }
 
             // Acumula bases dinâmicas
             if (isOvertime || rubric.category === 'COMMISSION') {
                 const currentBaseDSR = this.context.getVariable('BASE_DSR') || 0;
-                this.context.setVariable('BASE_DSR', currentBaseDSR + valorCalculado);
+                this.context.setVariable('BASE_DSR', round2(currentBaseDSR + valorCalculado));
             }
             if (isAdicionalNoturno) {
                 const currentBaseDSRNoturno = this.context.getVariable('BASE_DSR_NOTURNO') || 0;
-                this.context.setVariable('BASE_DSR_NOTURNO', currentBaseDSRNoturno + valorCalculado);
+                this.context.setVariable('BASE_DSR_NOTURNO', round2(currentBaseDSRNoturno + valorCalculado));
             }
 
             // Atualiza a variável com o código da rubrica para poder ser usada por outras
@@ -255,7 +256,7 @@ export class PayrollEngine {
         // INSS
         inssResult = INSSCalculator.calculate(this.context.base_inss, this.context.inss_parameters);
         if (inssResult.value > 0) {
-           this.context.total_descontos += inssResult.value;
+           this.context.total_descontos = addMoney(this.context.total_descontos, inssResult.value);
            
            // T6: Busca rubrica INSS exclusivamente por código '901' (Doc §4)
            const rubricInss = Array.from(this.context.rubricas.values()).find(r => r.code === '901');
@@ -280,7 +281,7 @@ export class PayrollEngine {
         irrfResult = IRRFCalculator.calculate(baseIrrfBruta, inssResult.value, dependentes, this.context.irrf_parameters, this.context.general_legal_parameters); 
         
         if (irrfResult.value > 0) {
-           this.context.total_descontos += irrfResult.value;
+           this.context.total_descontos = addMoney(this.context.total_descontos, irrfResult.value);
         }
 
         // T6: Busca rubrica IRRF exclusivamente por código '902' (Doc §4)
@@ -325,7 +326,7 @@ export class PayrollEngine {
       }
 
       // BUG 11 fix: Alerta sobre líquido negativo na memória (não impede cálculo mas registra)
-      const liquido = Math.round((this.context.total_proventos - this.context.total_descontos) * 100) / 100;
+      const liquido = subtractMoney(this.context.total_proventos, this.context.total_descontos);
       if (liquido < 0) {
         this.context.addMemory({
           rubric_id: 'VALIDACAO',
@@ -340,17 +341,17 @@ export class PayrollEngine {
       }
 
       return {
-        total_proventos: Math.round(this.context.total_proventos * 100) / 100,
-        total_descontos: Math.round(this.context.total_descontos * 100) / 100,
+        total_proventos: round2(this.context.total_proventos),
+        total_descontos: round2(this.context.total_descontos),
         total_inss: inssResult.value,
         total_irrf: irrfResult.value,
         total_fgts: fgtsResult.value,
         total_encargos_patronais: 0, // Outro escopo
         liquido: liquido,
         bases: {
-          inss: Math.round(this.context.base_inss * 100) / 100,
-          irrf: Math.round(irrfResult.legalBase * 100) / 100,
-          fgts: Math.round(this.context.base_fgts * 100) / 100
+          inss: round2(this.context.base_inss),
+          irrf: round2(irrfResult.legalBase),
+          fgts: round2(this.context.base_fgts)
         },
         memoria_calculo: this.context.memoria,
         status: liquido < 0 ? 'ALERTA_LIQUIDO_NEGATIVO' : 'CALCULADA'

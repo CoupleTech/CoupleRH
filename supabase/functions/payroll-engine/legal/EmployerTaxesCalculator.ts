@@ -1,3 +1,5 @@
+import { round2, sumMoney } from '../utils/money.ts';
+
 export interface LaborConfig {
   inss_patronal_percentage?: number; // default 20
   rat_percentage?: number;           // default 2
@@ -22,19 +24,19 @@ export class EmployerTaxesCalculator {
     const fapMult = config?.fap_multiplier ?? 1.0;
     const terceirosPerc = config?.terceiros_percentage ?? 5.8;
 
-    const inss_patronal = baseInss * (inssPerc / 100);
-    const rat_adjusted = baseInss * ((ratPerc * fapMult) / 100);
-    const terceiros = baseInss * (terceirosPerc / 100);
-    const fgts_patronal = baseFgts * 0.08;
+    const inss_patronal = round2(baseInss * (inssPerc / 100));
+    const rat_adjusted = round2(baseInss * ((ratPerc * fapMult) / 100));
+    const terceiros = round2(baseInss * (terceirosPerc / 100));
+    const fgts_patronal = round2(baseFgts * 0.08);
 
-    const total = inss_patronal + rat_adjusted + terceiros + fgts_patronal;
+    const total = sumMoney([inss_patronal, rat_adjusted, terceiros, fgts_patronal]);
 
     return {
-      inss_patronal: Math.round(inss_patronal * 100) / 100,
-      rat_adjusted: Math.round(rat_adjusted * 100) / 100,
-      terceiros: Math.round(terceiros * 100) / 100,
-      fgts_patronal: Math.round(fgts_patronal * 100) / 100,
-      total: Math.round(total * 100) / 100,
+      inss_patronal,
+      rat_adjusted,
+      terceiros,
+      fgts_patronal,
+      total,
     };
   }
 }
