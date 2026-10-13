@@ -7,6 +7,11 @@ import { EmployerTaxesCalculator, LaborConfig } from "./legal/EmployerTaxesCalcu
 import { formatPeriodStartDate, validateAllLegalTables } from "./legal/LegalTableValidator.ts";
 import { shouldSkipFutureAdmission, calculateWorkingDays } from "./engine/ContractAdmissionFilter.ts";
 import { round2, sumMoney, subtractMoney } from "./utils/money.ts";
+import {
+  validatePeriodStatusForCalculation,
+  buildAtomicPayrollPayload,
+  type RawCalculatedPayslip,
+} from "./engine/AtomicPersistence.ts";
 
 const TRUSTED_ORIGINS = [
   'https://couplerh.com.br',
@@ -89,13 +94,16 @@ serve(async (req) => {
       );
     }
 
+    let period_id: string | null = null;
+    let supabase: any = null;
+
     const body = await req.json();
-    const period_id = body.period_id;
+    period_id = body.period_id;
     const contract_id_filter = body.contract_id; // Optional: run for a specific contract
 
     if (!period_id) throw new Error("period_id is required");
     
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    supabase = createClient(supabaseUrl, supabaseKey);
 
     // 1. Busca a competência (Período de Folha)
     const { data: period, error: periodError } = await supabase
@@ -122,8 +130,29 @@ serve(async (req) => {
       );
     }
 
-    if (['CONFERENCE', 'CLOSED', 'CANCELED'].includes(period.status)) {
-      throw new Error(`A folha está no status ${period.status} e não pode ser recalculada. Por favor, volte o status para rascunho (reabrir) se precisar alterar.`);
+    // 0.3 Validação de Status e Trava de Concorrência (T9)
+    const statusValidation = validatePeriodStatusForCalculation(period.status);
+    if (!statusValidation.canCalculate) {
+      return new Response(
+        JSON.stringify({ error: statusValidation.error }),
+        { status: statusValidation.httpStatus || 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Trava de Concorrência atômica: atualiza status para CALCULATING
+    const { data: lockUpdated, error: lockError } = await supabase
+      .from('payroll_periods')
+      .update({ status: 'CALCULATING' })
+      .eq('id', period_id)
+      .neq('status', 'CALCULATING')
+      .neq('status', 'CLOSED')
+      .select('id, status');
+
+    if (lockError || !lockUpdated || lockUpdated.length === 0) {
+      return new Response(
+        JSON.stringify({ error: "Cálculo concorrente detectado: o período de folha já está sendo processado." }),
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // 0.4 Buscar Feriados
@@ -417,19 +446,9 @@ serve(async (req) => {
       }
     }
 
-    // Limpa holerites e impostos anteriores para garantir idempotência do recálculo
-    let payslipsQuery = supabase.from('payslips').delete().eq('period_id', period_id);
-    let taxesQuery = supabase.from('payroll_company_taxes').delete().eq('period_id', period_id);
-
-    if (contract_id_filter) {
-      payslipsQuery = payslipsQuery.eq('contract_id', contract_id_filter);
-      // Se processar apenas 1 contrato, a reconstrução da tabela de company_taxes fica comprometida.
-      // O ideal é a company_taxes ser gerada só no fechamento, mas no MVP ignoramos delete se for contrato único.
-    } else {
-      await taxesQuery;
-    }
-    await payslipsQuery;
-
+    // T9: Nenhum delete ou insert no banco antes de calcular 100% dos contratos em memória.
+    // A limpeza de dados anteriores ocorre de forma atômica dentro da RPC save_payroll_period.
+    const calculatedPayslips: RawCalculatedPayslip[] = [];
     const results = [];
     const errors: Array<{ contract_id: string; worker_id: string; error: string }> = [];
     const companyTotals: Record<string, { base_inss: number, base_fgts: number }> = {};
@@ -861,42 +880,30 @@ serve(async (req) => {
         continue;
       }
 
-      // 6. Salva o cabeçalho do holerite (somente após validar a invariante)
-      const { data: payslip, error: payslipError } = await supabase
-        .from('payslips')
-        .insert({
-          tenant_id,
-          period_id,
-          contract_id: contract.id,
-          total_earnings: result.total_proventos,
-          total_deductions: result.total_descontos,
-          net_salary: result.liquido,
-          base_inss: result.bases.inss,
-          base_irrf: result.bases.irrf,
-          base_fgts: result.bases.fgts,
-          fgts_month: result.total_fgts,
-          status: 'CALCULATED',
-          engine_version: '1.0.0',
-          rubrics_version: '1.0.0',
-          rules_version: '1.0.0',
-          inss_table_version: '2026.1',
-          irrf_table_version: '2026.1',
-          fgts_table_version: '1.0.0'
-        })
-        .select()
-        .single();
-        
-      if (payslipError) throw payslipError;
-
-      // 7. Salva os itens vinculando o payslip_id recém-criado
-      if (rawItemsToInsert.length > 0) {
-         const itemsToInsert = rawItemsToInsert.map(i => ({ ...i, payslip_id: payslip.id }));
-         await supabase.from('payslip_items').insert(itemsToInsert);
-      }
-
-      const memToInsert = result.memoria_calculo.map(m => ({
-          tenant_id,
-          payslip_id: payslip.id,
+      // 6. Acumula o holerite calculado em memória (T9 - Persistência Atômica)
+      calculatedPayslips.push({
+        contract_id: contract.id,
+        total_earnings: result.total_proventos,
+        total_deductions: result.total_descontos,
+        net_salary: result.liquido,
+        base_inss: result.bases.inss,
+        base_irrf: result.bases.irrf,
+        base_fgts: result.bases.fgts,
+        fgts_month: result.total_fgts,
+        status: 'CALCULATED',
+        engine_version: '1.0.0',
+        rubrics_version: '1.0.0',
+        rules_version: '1.0.0',
+        inss_table_version: '2026.1',
+        irrf_table_version: '2026.1',
+        fgts_table_version: '1.0.0',
+        items: rawItemsToInsert.map(i => ({
+          rubric_id: i.rubric_id,
+          reference: i.reference,
+          amount: i.amount,
+          type: i.type,
+        })),
+        memory: result.memoria_calculo.map(m => ({
           step_name: m.step_name,
           base_value: m.base_value,
           quantity_used: m.quantity_used,
@@ -904,9 +911,9 @@ serve(async (req) => {
           parsed_formula: m.parsed_formula,
           result_value: m.result_value,
           origin: m.origin,
-          engine_version: '1.0.0'
-      }));
-      await supabase.from('payroll_memory_calc').insert(memToInsert);
+          engine_version: '1.0.0',
+        })),
+      });
 
       // Acumula bases para impostos patronais da empresa
       const cId = contract.company_id;
@@ -919,8 +926,14 @@ serve(async (req) => {
       results.push({ contract_id: contract.id, net: result.liquido, status: result.status });
     }
 
-    // T5: Se houver erros de cálculo em qualquer contrato, aborta persistência e responde 422
+    // T5/T9: Se houver erros de cálculo em qualquer contrato, aborta e restaura status do período
     if (errors.length > 0) {
+      await supabase
+        .from('payroll_periods')
+        .update({ status: 'DRAFT' })
+        .eq('id', period_id)
+        .eq('status', 'CALCULATING');
+
       return new Response(
         JSON.stringify({
           success: false,
@@ -931,7 +944,7 @@ serve(async (req) => {
       );
     }
 
-    // 6.5 Calcula e Salva Impostos Patronais por Empresa
+    // 6.5 Calcula Impostos Patronais por Empresa
     const companyTaxesToInsert = [];
     for (const cId of Object.keys(companyTotals)) {
        const totals = companyTotals[cId];
@@ -954,21 +967,46 @@ serve(async (req) => {
        });
     }
 
-    if (companyTaxesToInsert.length > 0) {
-       await supabase.from('payroll_company_taxes').insert(companyTaxesToInsert);
-    }
+    // 7. Persistência Atômica Transacional via RPC save_payroll_period (T9)
+    const atomicPayload = buildAtomicPayrollPayload({
+      tenant_id,
+      period_id,
+      contract_id_filter: contract_id_filter || null,
+      payslips: calculatedPayslips,
+      company_taxes: companyTaxesToInsert,
+    });
 
-    // 7. Atualiza data de processamento e status para CALCULATED
-    await supabase.from('payroll_periods').update({ 
-      processing_date: new Date().toISOString(),
-      status: 'CALCULATED'
-    }).eq('id', period_id);
+    const { data: saveResult, error: saveError } = await supabase.rpc('save_payroll_period', {
+      p_period_id: period_id,
+      p_payload: atomicPayload,
+    });
+
+    if (saveError) {
+      await supabase
+        .from('payroll_periods')
+        .update({ status: 'DRAFT' })
+        .eq('id', period_id)
+        .eq('status', 'CALCULATING');
+
+      throw new Error(`Falha na persistência atômica da folha: ${saveError.message}`);
+    }
 
     return new Response(
       JSON.stringify({ success: true, processed: results.length, results }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   } catch (error: any) {
+    try {
+      if (supabase && period_id) {
+        await supabase
+          .from('payroll_periods')
+          .update({ status: 'DRAFT' })
+          .eq('id', period_id)
+          .eq('status', 'CALCULATING');
+      }
+    } catch (_) {
+      // Ignora erro no reset do status
+    }
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
