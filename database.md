@@ -11274,5 +11274,22 @@ NOTIFY pgrst, 'reload schema';
     - Inserção da linha consolidada contendo as bases totais de `base_inss`, `base_fgts` e tributos patronais calculados para todos os contratos da empresa naquele período.
   - Notificação de reload do schema PostgREST (`NOTIFY pgrst, 'reload schema'`).
 
+### Migration `00073_rubric_model_v2.sql` (Fase P3 / §6 Modelo v2)
+- **Objetivo**: Implementação do Modelo v2 de rubricas, introduzindo auditoria, governança, ciclo de vida com versionamento (`status` DRAFT/APPROVED/ACTIVE/RETIRED), matriz de incidências por contexto (`rubric_incidences`) e parametrização de bases de cálculo dinâmicas orientadas a dados (`calculation_bases` e `calculation_base_members`).
+- **Alterações**:
+  - Alterações em `public.payroll_rubrics`:
+    - Adicionadas colunas `esocial_nature`, `is_system`, `status` (com constraint `CHECK (status IN ('DRAFT', 'APPROVED', 'ACTIVE', 'RETIRED'))`), `legal_basis`, `approved_by` e `approved_at`;
+    - Backfill marcando `is_system = true` para todas as 42 rubricas estruturais do catálogo oficial;
+  - Criação da tabela `public.rubric_incidences`:
+    - Chave primária composta `UNIQUE(rubric_id, context)`;
+    - Campos: `context` (`MONTHLY`, `VACATION`, `THIRTEENTH`, `TERMINATION`, `ALL`), `inss`, `irrf`, `fgts`, `irrf_mode`, `integra_dsr`, `media_ferias`, `media_13`, `inss_patronal`, `rat`, `terceiros`;
+    - Habilitada RLS com políticas por tenant e gatilho de auditoria (`audit.audit_trigger_func()`);
+    - Backfill migrando incidências existentes para o contexto `MONTHLY`;
+  - Criação das tabelas `public.calculation_bases` e `public.calculation_base_members`:
+    - Parametrização dinâmica das bases `BASE_HORA_EXTRA`, `BASE_DSR`, `BASE_DSR_NOTURNO`, `BASE_FERIAS`, `BASE_13`, `BASE_INSS`, `BASE_IRRF`, `BASE_FGTS` com operações `ADD` e `SUBTRACT` por `kind` e `rubric_id`;
+    - Habilitada RLS;
+  - Adicionada coluna `rubric_version_id UUID REFERENCES public.payroll_rubrics(id)` na tabela `public.payslip_items`.
+  - Notificação de reload do schema PostgREST (`NOTIFY pgrst, 'reload schema'`).
+
 
 
