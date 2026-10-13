@@ -39,12 +39,47 @@ export class PayrollEngine {
             }
         } 
 
-        const isOvertime = rubric.category === 'OVERTIME' || rubric.category === 'HORA_EXTRA' || (rubric.name || '').toUpperCase().includes('HORA EXTRA');
-        const isDsrNoturno = rubric.code === '171' || (rubric.name || '').toUpperCase().includes('NOTURNO DSR') || (rubric.name || '').toUpperCase().includes('DSR SOBRE ADICIONAL NOTURNO');
-        const isDsr = (rubric.category === 'DSR' || rubric.code === '1011' || rubric.code === '170' || rubric.code === '104' || ((rubric.name || '').toUpperCase().includes('DSR') && !isDsrNoturno)) && rubric.type === 'EARNING';
-        const isAdicionalNoturno = rubric.code === '301' || (rubric.name || '').toUpperCase().includes('NOTURNO') && !isDsrNoturno;
-        const isInsalubridade = rubric.code === '302' || (rubric.name || '').toUpperCase().includes('INSALUBRIDADE');
-        const isPericulosidade = rubric.code === '303' || (rubric.name || '').toUpperCase().includes('PERICULOSIDADE');
+        const kind = rubric.rubric_kind;
+
+        let isSalaryBase: boolean;
+        let isOvertime: boolean;
+        let isDsr: boolean;
+        let isDsrNoturno: boolean;
+        let isAdicionalNoturno: boolean;
+        let isInsalubridade: boolean;
+        let isPericulosidade: boolean;
+        let isAbsence: boolean;
+        let isLate: boolean;
+        let isCommission: boolean;
+
+        if (kind) {
+          // MOTOR ORIENTADO A DADOS (T22: kind explícito com tipagem estrita de type)
+          isSalaryBase = kind === 'SALARY_BASE' && rubric.type === 'EARNING';
+          isOvertime = kind === 'OVERTIME' && rubric.type === 'EARNING';
+          isDsr = kind === 'DSR' && rubric.type === 'EARNING';
+          isDsrNoturno = kind === 'DSR_NOTURNO' && rubric.type === 'EARNING';
+          isAdicionalNoturno = kind === 'ADIC_NOTURNO' && rubric.type === 'EARNING';
+          isInsalubridade = kind === 'INSALUBRIDADE' && rubric.type === 'EARNING';
+          isPericulosidade = kind === 'PERICULOSIDADE' && rubric.type === 'EARNING';
+          isAbsence = kind === 'ABSENCE' && rubric.type === 'DEDUCTION';
+          isLate = kind === 'LATE' && rubric.type === 'DEDUCTION';
+          isCommission = kind === 'COMMISSION' && rubric.type === 'EARNING';
+        } else {
+          // HEURÍSTICAS LEGADAS (Fallback temporário com console.warn conforme Doc §4 T22)
+          console.warn(`[Rubrica ${rubric.code || 'S/C'} - ${rubric.name || 'Sem Nome'}] rubric_kind não definido; acionando heurística legada.`);
+
+          isSalaryBase = (rubric.category === 'SALARY' || rubric.code === '101' || rubric.code === '1001' || (rubric.name || '').toLowerCase().includes('salário base') || (rubric.name || '').toLowerCase().includes('salario base')) && rubric.type === 'EARNING';
+          isOvertime = (rubric.category === 'OVERTIME' || rubric.category === 'HORA_EXTRA' || (rubric.name || '').toUpperCase().includes('HORA EXTRA')) && rubric.type === 'EARNING';
+          isDsrNoturno = (rubric.code === '171' || (rubric.name || '').toUpperCase().includes('NOTURNO DSR') || (rubric.name || '').toUpperCase().includes('DSR SOBRE ADICIONAL NOTURNO')) && rubric.type === 'EARNING';
+          isDsr = (rubric.category === 'DSR' || rubric.code === '1011' || rubric.code === '170' || rubric.code === '104' || ((rubric.name || '').toUpperCase().includes('DSR') && !isDsrNoturno)) && rubric.type === 'EARNING';
+          // Precedência corrigida: descarta DSR noturno e exige EARNING
+          isAdicionalNoturno = (rubric.code === '301' || ((rubric.name || '').toUpperCase().includes('NOTURNO') && !isDsrNoturno)) && rubric.type === 'EARNING';
+          isInsalubridade = (rubric.code === '302' || (rubric.name || '').toUpperCase().includes('INSALUBRIDADE')) && rubric.type === 'EARNING';
+          isPericulosidade = (rubric.code === '303' || (rubric.name || '').toUpperCase().includes('PERICULOSIDADE')) && rubric.type === 'EARNING';
+          isAbsence = (rubric.code === '801' || (rubric.name || '').toUpperCase().includes('FALTA')) && rubric.type === 'DEDUCTION';
+          isLate = (rubric.code === '802' || rubric.code === '803' || (rubric.name || '').toUpperCase().includes('ATRASO')) && rubric.type === 'DEDUCTION';
+          isCommission = (rubric.category === 'COMMISSION' || (rubric.name || '').toUpperCase().includes('COMISSAO') || (rubric.name || '').toUpperCase().includes('COMISSÃO')) && rubric.type === 'EARNING';
+        }
 
         // T2: Variáveis locais para eliminar qualquer mutação no objeto rubric
         let calcBaseName = rubric.calculation_base;
@@ -52,7 +87,7 @@ export class PayrollEngine {
         let percentage = rubric.percentage;
         let divisor = rubric.divisor;
 
-        // Override inteligente para garantir que rubricas do sistema calculem corretamente independente de como foram cadastradas na UI
+        // Configuração inteligente de base/fatores para rubricas com cálculo automatizado
         if (isOvertime) {
             calcForm = 'HORAS';
             if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
@@ -93,10 +128,10 @@ export class PayrollEngine {
             calcForm = 'PERCENTUAL';
             if (!calcBaseName) calcBaseName = rubric.code === '502' ? 'R501' : 'R503';
             if (!percentage) percentage = 33.3333; // 1/3
-        } else if (rubric.code === '801' || rubric.code === '210') {
+        } else if (isAbsence || rubric.code === '801' || rubric.code === '210') {
             calcForm = 'DIAS';
             if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
-        } else if (rubric.code === '802' || rubric.code === '211') {
+        } else if (isLate || rubric.code === '802' || rubric.code === '211') {
             calcForm = 'HORAS';
             if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
             if (!factor) factor = 1.0;
@@ -162,13 +197,12 @@ export class PayrollEngine {
                 formulaUsada = `DIAS(${calcBaseName} / 30 * ${quantidade})`;
             }
             else if (calcForm === 'FIXO' || calcForm === 'FIXED') {
-                const isBaseSalary = rubric.code === '1001' || rubric.code === '101' || (rubric.name || '').toLowerCase().includes('salário base') || (rubric.name || '').toLowerCase().includes('salario base');
-                const effectiveBase = calcBaseName || (isBaseSalary ? 'SALARIO_BASE' : null);
+                const effectiveBase = calcBaseName || (isSalaryBase ? 'SALARIO_BASE' : null);
                 
-                if (effectiveBase && isBaseSalary) {
+                if (effectiveBase && isSalaryBase) {
                   const val = this.context.getVariable(effectiveBase);
-                  // Proporcionaliza o salário base se admissão/rescisão ocorreu no mês
-                  if (rubric.category === 'SALARY' && this.context.dias_trabalhados < 30) {
+                  // Proporcionaliza o salário base se admissão/rescisão ocorreu no mês (T22: orientado a kind)
+                  if (this.context.dias_trabalhados < 30) {
                       valorCalculado = (val / 30) * this.context.dias_trabalhados;
                   } else {
                       valorCalculado = val;
@@ -219,7 +253,7 @@ export class PayrollEngine {
             }
 
             // Acumula bases dinâmicas
-            if (isOvertime || rubric.category === 'COMMISSION') {
+            if (isOvertime || isCommission) {
                 const currentBaseDSR = this.context.getVariable('BASE_DSR') || 0;
                 this.context.setVariable('BASE_DSR', round2(currentBaseDSR + valorCalculado));
             }

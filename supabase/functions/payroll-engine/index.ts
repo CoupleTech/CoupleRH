@@ -295,6 +295,7 @@ serve(async (req) => {
       name: r.name,
       type: r.type,
       category: r.category,
+      rubric_kind: r.rubric_kind || undefined,
       // BUG R3 fix: Normaliza valores de calculation_form/calculation_type para o formato do motor
       calculation_form: normalizeCalcForm(r.calculation_form || r.calculation_type || 'FIXED'),
       calculation_base: r.calculation_base,

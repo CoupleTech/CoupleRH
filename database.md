@@ -11244,5 +11244,14 @@ NOTIFY pgrst, 'reload schema';
     - `806` Contribuição Sindical/Assistencial (Desconto autorizado, eSocial 9230).
   - Seed garantido das rubricas `250` (Adiantamento Quinzenal) e `850` (Desconto de Adiantamento) para todos os tenants, permitindo eliminar o insert dinâmico no motor (T12).
 
+### Migration `00070_add_rubric_kind.sql` (Fase P3 / T22)
+- **Objetivo**: Adicionar a coluna `rubric_kind` na tabela `public.payroll_rubrics` com constraint de validação e backfill de todas as rubricas existentes, permitindo que o motor de cálculo opere de maneira orientada a dados e tipos explícitos sem depender de heurísticas por nome ou código.
+- **Alterações**:
+  - `ALTER TABLE public.payroll_rubrics ADD COLUMN IF NOT EXISTS rubric_kind TEXT;`
+  - Backfill executado para todos os códigos e categorias de rubricas ativas e inativas de todos os tenants.
+  - `ALTER TABLE public.payroll_rubrics ALTER COLUMN rubric_kind SET DEFAULT 'OTHER';`
+  - `ALTER TABLE public.payroll_rubrics ALTER COLUMN rubric_kind SET NOT NULL;`
+  - Constraint `payroll_rubrics_rubric_kind_check` validando a lista oficial de tipos suportados pelo motor (`SALARY_BASE`, `OVERTIME`, `DSR`, `DSR_NOTURNO`, `ADIC_NOTURNO`, `INSALUBRIDADE`, `PERICULOSIDADE`, `ABSENCE`, `LATE`, `COMMISSION`, `FAMILY_SALARY`, `ALIMONY`, `LOAN`, `UNION`, `ADVANCE`, `BENEFIT`, `VACATION`, `THIRTEENTH`, `TERMINATION`, `INSS`, `IRRF`, `FGTS`, `OTHER`).
+
 
 

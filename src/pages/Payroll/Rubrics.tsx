@@ -45,6 +45,7 @@ interface Rubric {
   generates_irrf_base?: boolean;
   generates_fgts_base?: boolean;
   rubric_type?: string;
+  rubric_kind?: string;
   valid_from: string;
   valid_to?: string;
   version: number;
@@ -79,6 +80,7 @@ export default function () {
   const [description, setDescription] = useState("");
   const [type, setType] = useState("EARNING");
   const [category, setCategory] = useState("SALARY");
+  const [rubricKind, setRubricKind] = useState("OTHER");
   const [origin, setOrigin] = useState("MANUAL");
   const [calculationType, setCalculationType] = useState("FIXO");
   const [calculationBase, setCalculationBase] = useState("");
@@ -141,6 +143,7 @@ export default function () {
       setDescription(r.description || "");
       setType(r.type || "EARNING");
       setCategory(r.category || "SALARY");
+      setRubricKind(r.rubric_kind || "OTHER");
       setOrigin(r.origin || "MANUAL");
       setCalculationType(r.calculation_form || r.calculation_type || "FIXO");
       setCalculationBase(r.calculation_base || "");
@@ -169,6 +172,7 @@ export default function () {
       setDescription("");
       setType("EARNING");
       setCategory("SALARY");
+      setRubricKind("OTHER");
       setOrigin("MANUAL");
       setCalculationType("FIXO");
       setCalculationBase("");
@@ -200,6 +204,12 @@ export default function () {
     setSaving(true);
 
     try {
+      if (!rubricKind) {
+        toast.error("O campo Tipo do Motor (rubric_kind) é obrigatório.");
+        setSaving(false);
+        return;
+      }
+
       const { data: userData } = await supabase.auth.getUser();
       const { data: tenantData } = await supabase
         .from("tenant_users")
@@ -214,6 +224,7 @@ export default function () {
         description,
         type,
         rubric_type: type,
+        rubric_kind: rubricKind,
         category,
         origin,
         calculation_type: calculationType,
@@ -398,7 +409,7 @@ export default function () {
                         <div>
                           <p className="font-bold text-slate-900">{r.name}</p>
                           <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mt-1">
-                            {r.category} • {r.origin}
+                            {r.rubric_kind ? <span className="text-primary-600 font-extrabold">{r.rubric_kind}</span> : r.category} • {r.origin}
                           </p>
                         </div>
                       </div>
@@ -554,7 +565,7 @@ export default function () {
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       <div>
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
                           Natureza (Tipo)
@@ -568,6 +579,41 @@ export default function () {
                           <option value="DEDUCTION">Desconto (-) Retenções</option>
                           <option value="BASE">Base de Cálculo (=) Informativo</option>
                           <option value="INFORMATIVE">Informativa</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                          Tipo do Motor (kind) <span className="text-rose-500 font-bold">*</span>
+                        </label>
+                        <select
+                          required
+                          value={rubricKind}
+                          onChange={(e) => setRubricKind(e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-primary-500 outline-none font-semibold text-slate-800"
+                        >
+                          <option value="SALARY_BASE">Salário Base (SALARY_BASE)</option>
+                          <option value="OVERTIME">Hora Extra (OVERTIME)</option>
+                          <option value="DSR">DSR s/ Horas e Comissões (DSR)</option>
+                          <option value="DSR_NOTURNO">DSR s/ Adicional Noturno (DSR_NOTURNO)</option>
+                          <option value="ADIC_NOTURNO">Adicional Noturno (ADIC_NOTURNO)</option>
+                          <option value="INSALUBRIDADE">Insalubridade (INSALUBRIDADE)</option>
+                          <option value="PERICULOSIDADE">Periculosidade (PERICULOSIDADE)</option>
+                          <option value="COMMISSION">Comissão / Gratificação (COMMISSION)</option>
+                          <option value="ABSENCE">Falta Injustificada / Suspensão (ABSENCE)</option>
+                          <option value="LATE">Atraso / Saída Antecipada (LATE)</option>
+                          <option value="FAMILY_SALARY">Salário-Família (FAMILY_SALARY)</option>
+                          <option value="ALIMONY">Pensão Alimentícia (ALIMONY)</option>
+                          <option value="LOAN">Empréstimo Consignado (LOAN)</option>
+                          <option value="UNION">Contribuição Sindical (UNION)</option>
+                          <option value="ADVANCE">Adiantamento Salarial (ADVANCE)</option>
+                          <option value="BENEFIT">Benefício VT/VR/Plano (BENEFIT)</option>
+                          <option value="VACATION">Férias e 1/3 (VACATION)</option>
+                          <option value="THIRTEENTH">13º Salário (THIRTEENTH)</option>
+                          <option value="TERMINATION">Verba Rescisória (TERMINATION)</option>
+                          <option value="INSS">INSS Oficial (INSS)</option>
+                          <option value="IRRF">IRRF Oficial (IRRF)</option>
+                          <option value="FGTS">FGTS Oficial (FGTS)</option>
+                          <option value="OTHER">Outros Diversos (OTHER)</option>
                         </select>
                       </div>
                       <div>

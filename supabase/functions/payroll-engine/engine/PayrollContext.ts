@@ -1,9 +1,35 @@
+export type RubricKind =
+  | 'SALARY_BASE'
+  | 'OVERTIME'
+  | 'DSR'
+  | 'DSR_NOTURNO'
+  | 'ADIC_NOTURNO'
+  | 'INSALUBRIDADE'
+  | 'PERICULOSIDADE'
+  | 'ABSENCE'
+  | 'LATE'
+  | 'COMMISSION'
+  | 'FAMILY_SALARY'
+  | 'ALIMONY'
+  | 'LOAN'
+  | 'UNION'
+  | 'ADVANCE'
+  | 'BENEFIT'
+  | 'VACATION'
+  | 'THIRTEENTH'
+  | 'TERMINATION'
+  | 'INSS'
+  | 'IRRF'
+  | 'FGTS'
+  | 'OTHER';
+
 export interface Rubric {
   id: string;
   code: string;
   name: string;
   type: 'EARNING' | 'DEDUCTION' | 'NEUTRAL';
   category: string;
+  rubric_kind?: RubricKind;
   calculation_form: string;
   calculation_base?: string;
   percentage?: number;
