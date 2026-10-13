@@ -1,7 +1,30 @@
-import { round2, multiplyMoney, divideMoney } from '../utils/money';
+import { round2 } from '../utils/money';
 import { RubricFormulaParser, FormulaError } from '../../supabase/functions/payroll-engine/rubrics/RubricFormulaParser';
-import { RubricKind } from '../../supabase/functions/payroll-engine/engine/PayrollContext';
-export type { RubricKind };
+
+export type RubricKind =
+  | 'SALARY_BASE'
+  | 'OVERTIME'
+  | 'DSR'
+  | 'DSR_NOTURNO'
+  | 'ADIC_NOTURNO'
+  | 'INSALUBRIDADE'
+  | 'PERICULOSIDADE'
+  | 'ABSENCE'
+  | 'LATE'
+  | 'COMMISSION'
+  | 'FAMILY_SALARY'
+  | 'ALIMONY'
+  | 'LOAN'
+  | 'UNION'
+  | 'ADVANCE'
+  | 'BENEFIT'
+  | 'VACATION'
+  | 'THIRTEENTH'
+  | 'TERMINATION'
+  | 'INSS'
+  | 'IRRF'
+  | 'FGTS'
+  | 'OTHER';
 
 export interface RubricIncidenceFlags {
   inss: boolean;

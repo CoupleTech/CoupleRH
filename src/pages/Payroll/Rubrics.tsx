@@ -29,10 +29,12 @@ import {
   validateRubricConfig,
   createNewRubricVersion,
   PUBLISHED_VARIABLES,
+} from "../../services/rubricWizardService";
+import type {
   RubricConfig,
   SimulationEmployeeContext,
+  RubricKind,
 } from "../../services/rubricWizardService";
-import { RubricKind } from "../../../supabase/functions/payroll-engine/engine/PayrollContext";
 
 interface Rubric {
   id: string;
