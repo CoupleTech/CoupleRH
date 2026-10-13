@@ -11266,5 +11266,13 @@ NOTIFY pgrst, 'reload schema';
     - Rollback total automático pelo PostgreSQL em caso de falha de integridade ou erro interno.
   - Concessão de permissões de execução: `GRANT EXECUTE ON FUNCTION public.save_payroll_period(UUID, JSONB) TO authenticated, service_role;`.
 
+### Migration `00072_recalculate_company_taxes_t10.sql` (Fase P3 / T10)
+- **Objetivo**: Aprimorar a procedure `save_payroll_period` para apagar e reinserir uma linha por empresa em `payroll_company_taxes` com as bases consolidadas de todos os colaboradores do período, garantindo a integridade dos encargos patronais inclusive em recálculos de contrato individual.
+- **Alterações**:
+  - Atualização da função PL/pgSQL `public.save_payroll_period(p_period_id UUID, p_payload JSONB)`:
+    - No bloco de impostos patronais, adicionada a deleção prévia por empresa no período (`DELETE FROM public.payroll_company_taxes WHERE period_id = p_period_id AND company_id = (v_tax->>'company_id')::UUID;`);
+    - Inserção da linha consolidada contendo as bases totais de `base_inss`, `base_fgts` e tributos patronais calculados para todos os contratos da empresa naquele período.
+  - Notificação de reload do schema PostgREST (`NOTIFY pgrst, 'reload schema'`).
+
 
 
