@@ -17,6 +17,11 @@ import {
   calculateConsolidatedEmployerTaxes,
   type ExistingPayslipBase,
 } from "./engine/CompanyTaxesAggregator.ts";
+import {
+  resolveRubricIncidence,
+  isRubricEligibleForCalculation,
+  type RubricContext,
+} from "./engine/RubricModelV2.ts";
 
 const TRUSTED_ORIGINS = [
   'https://couplerh.com.br',
@@ -224,7 +229,7 @@ serve(async (req) => {
       )
     );
 
-    // 3. Busca Rubricas
+    // 3. Busca Rubricas e Matriz de Incidências por Contexto (Modelo v2)
     const { data: dbRubrics, error: rubricsError } = await supabase
       .from('payroll_rubrics')
       .select('*')
@@ -232,6 +237,11 @@ serve(async (req) => {
       .neq('is_active', false);
       
     if (rubricsError) throw rubricsError;
+
+    const { data: dbIncidences } = await supabase
+      .from('rubric_incidences')
+      .select('*')
+      .eq('tenant_id', tenant_id);
 
     // Busca Configurações Trabalhistas das Empresas do Tenant
     const { data: companies } = await supabase
@@ -353,36 +363,52 @@ serve(async (req) => {
       periodYear: period.year
     });
 
-    const rubricas = dbRubrics.map((r: any) => ({
-      id: r.id,
-      code: r.code,
-      name: r.name,
-      type: r.type,
-      category: r.category,
-      rubric_kind: r.rubric_kind || undefined,
-      // BUG R3 fix: Normaliza valores de calculation_form/calculation_type para o formato do motor
-      calculation_form: normalizeCalcForm(r.calculation_form || r.calculation_type || 'FIXED'),
-      calculation_base: r.calculation_base,
-      percentage: r.percentage,
-      quantity: r.quantity,
-      divisor: r.divisor,
-      factor: r.factor,
-      formula: r.formula,
-      calculation_order: r.calculation_order ?? 100,
-      incidencias: {
-        inss: r.incidence_inss || false,
-        irrf: r.incidence_irrf || false,
-        fgts: r.incidence_fgts || false,
-        // Compatibilidade: aceita nomes antigos (inss_patronal_incidence) e novos (incidence_inss_patronal)
-        inss_patronal: r.inss_patronal_incidence || r.incidence_inss_patronal || false,
-        rat: r.rat_incidence || r.incidence_rat || false,
-        terceiros: r.terceiros_incidence || r.incidence_third_parties || false,
-        // Compatibilidade: aceita nomes novos (generates_base_*) e legados (generates_*_base) sem OR indevido por incidence_* (T13)
-        gera_base_inss: r.generates_base_inss ?? r.generates_inss_base ?? false,
-        gera_base_irrf: r.generates_base_irrf ?? r.generates_irrf_base ?? false,
-        gera_base_fgts: r.generates_base_fgts ?? r.generates_fgts_base ?? false,
-      }
-    } as Rubric));
+    // Mapeamento e resolução de incidências contextuais da rubrica (§6 Modelo v2)
+    const rubricContext: RubricContext =
+      period.type === 'VACATION' ? 'VACATION' :
+      (period.type === '13TH' || period.type === 'THIRTEENTH_1' || period.type === 'THIRTEENTH_2') ? 'THIRTEENTH' :
+      period.type === 'TERMINATION' ? 'TERMINATION' : 'MONTHLY';
+
+    const activeDbRubrics = (dbRubrics || []).filter((r: any) =>
+      isRubricEligibleForCalculation(r.status || 'ACTIVE', periodStartDate, r.valid_from, r.valid_to)
+    );
+
+    const rubricas = activeDbRubrics.map((r: any) => {
+      const inc = resolveRubricIncidence(r, rubricContext, dbIncidences || []);
+      return {
+        id: r.id,
+        code: r.code,
+        name: r.name,
+        type: r.type,
+        category: r.category,
+        rubric_kind: r.rubric_kind || undefined,
+        status: r.status || 'ACTIVE',
+        is_system: r.is_system || false,
+        esocial_nature: r.esocial_nature || undefined,
+        legal_basis: r.legal_basis || undefined,
+        version: r.version || 1,
+        // Normaliza valores de calculation_form para o formato do motor
+        calculation_form: normalizeCalcForm(r.calculation_form || r.calculation_type || 'FIXED'),
+        calculation_base: r.calculation_base,
+        percentage: r.percentage,
+        quantity: r.quantity,
+        divisor: r.divisor,
+        factor: r.factor,
+        formula: r.formula,
+        calculation_order: r.calculation_order ?? 100,
+        incidencias: {
+          inss: inc.inss,
+          irrf: inc.irrf,
+          fgts: inc.fgts,
+          inss_patronal: inc.inss_patronal,
+          rat: inc.rat,
+          terceiros: inc.terceiros,
+          gera_base_inss: inc.inss,
+          gera_base_irrf: inc.irrf,
+          gera_base_fgts: inc.fgts,
+        }
+      } as Rubric;
+    });
 
     // 3.5 Busca Adiantamentos (se for folha MENSAL) para realizar o Desconto
     let advancePayslips: any[] = [];

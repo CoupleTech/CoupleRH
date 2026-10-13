@@ -30,6 +30,11 @@ export interface Rubric {
   type: 'EARNING' | 'DEDUCTION' | 'NEUTRAL';
   category: string;
   rubric_kind?: RubricKind;
+  status?: 'DRAFT' | 'APPROVED' | 'ACTIVE' | 'RETIRED';
+  is_system?: boolean;
+  esocial_nature?: string;
+  legal_basis?: string;
+  version?: number;
   calculation_form: string;
   calculation_base?: string;
   percentage?: number;
