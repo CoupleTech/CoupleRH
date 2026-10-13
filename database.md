@@ -11253,5 +11253,18 @@ NOTIFY pgrst, 'reload schema';
   - `ALTER TABLE public.payroll_rubrics ALTER COLUMN rubric_kind SET NOT NULL;`
   - Constraint `payroll_rubrics_rubric_kind_check` validando a lista oficial de tipos suportados pelo motor (`SALARY_BASE`, `OVERTIME`, `DSR`, `DSR_NOTURNO`, `ADIC_NOTURNO`, `INSALUBRIDADE`, `PERICULOSIDADE`, `ABSENCE`, `LATE`, `COMMISSION`, `FAMILY_SALARY`, `ALIMONY`, `LOAN`, `UNION`, `ADVANCE`, `BENEFIT`, `VACATION`, `THIRTEENTH`, `TERMINATION`, `INSS`, `IRRF`, `FGTS`, `OTHER`).
 
+### Migration `00071_atomic_save_payroll_period.sql` (Fase P3 / T9)
+- **Objetivo**: Implementar persistência atômica transacional da folha de pagamento via RPC PostgreSQL `save_payroll_period` e suporte a trava de concorrência com o estado `CALCULATING`.
+- **Alterações**:
+  - `ALTER TABLE public.payroll_periods DROP CONSTRAINT IF EXISTS payroll_periods_status_check;`
+  - `ALTER TABLE public.payroll_periods ADD CONSTRAINT payroll_periods_status_check CHECK (status IN ('DRAFT', 'CALCULATING', 'CALCULATED', 'CONFERENCE', 'CLOSED', 'REOPENED', 'CANCELED'));`
+  - Criação da função PL/pgSQL transacional `public.save_payroll_period(p_period_id UUID, p_payload JSONB)` com `SECURITY DEFINER` e `SET search_path = public`:
+    - Validação de existência e imutabilidade de período fechado (`CLOSED`);
+    - Deleção atômica de holerites e impostos anteriores na mesma transação da gravação (suportando filtro de contrato individual ou folha completa);
+    - Inserção em lote de `payslips`, `payslip_items`, `payroll_memory_calc` e `payroll_company_taxes`;
+    - Atualização transacional de `payroll_periods` para `status = 'CALCULATED'` e `processing_date = NOW()`;
+    - Rollback total automático pelo PostgreSQL em caso de falha de integridade ou erro interno.
+  - Concessão de permissões de execução: `GRANT EXECUTE ON FUNCTION public.save_payroll_period(UUID, JSONB) TO authenticated, service_role;`.
+
 
 
