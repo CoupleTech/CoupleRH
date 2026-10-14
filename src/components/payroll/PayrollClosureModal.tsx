@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import {
   payrollClosureService,
-  ClosureValidationResult
+  type ClosureValidationResult
 } from '../../services/payroll/payrollClosureService';
 import { toast } from 'sonner';
 
