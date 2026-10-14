@@ -28,6 +28,10 @@ import {
   isRubricEligibleForCalculation,
   type RubricContext,
 } from "./engine/RubricModelV2.ts";
+import {
+  isDeductionEligibleForPeriod,
+  calculateDeductionAmount,
+} from "./engine/DeductionEligibility.ts";
 
 const TRUSTED_ORIGINS = [
   'https://couplerh.com.br',
@@ -766,31 +770,33 @@ serve(async (req) => {
     } // End of else (period.type !== 'ADVANCE')
 
     // ==========================================
-    // DEDUÇÕES FIXAS (TODAS AS FOLHAS MENSAL/ADVANCE)
+    // DEDUÇÕES FIXAS (T17: Filtradas por elegibilidade do período e apply_on_types)
     // ==========================================
     const contractDeductions = employeeDeductions?.filter(d => {
        if (d.contract_id !== contract.id) return false;
-       if (d.is_active === false) return false;
-       
-       if (period.type === 'ADVANCE' && d.deduct_on_advance !== true) return false;
-       if (period.type === 'MONTHLY' && d.deduct_on_advance === true) return false;
-       
-       const periodDate = new Date(period.year, period.month - 1, 1);
-       if (d.start_date && new Date(d.start_date) > new Date(period.year, period.month, 0)) return false;
-       if (d.end_date && new Date(d.end_date) < periodDate) return false;
-       
-       return true;
+       return isDeductionEligibleForPeriod(d, period.type, period.year, period.month);
     }) || [];
     
     for (const d of contractDeductions) {
       if (d.rubric_id && d.value > 0) {
-        eventos.push({
-          rubric_id: d.rubric_id,
-          manual_value: d.value,
-          quantity: 1
-        });
+        let valorFinal = Number(d.value);
+        if (d.amount_type === 'PERCENTAGE') {
+          valorFinal = calculateDeductionAmount(d, contract.base_salary);
+        } else if (d.total_limit && d.total_limit > 0 && valorFinal > d.total_limit) {
+          valorFinal = Number(d.total_limit);
+        }
+
+        if (valorFinal > 0) {
+          eventos.push({
+            rubric_id: d.rubric_id,
+            manual_value: valorFinal,
+            value_type: d.amount_type === 'PERCENTAGE' ? 'PERCENT' : 'AMOUNT',
+            percentage: d.amount_type === 'PERCENTAGE' ? d.value : undefined,
+            quantity: 1
+          });
+        }
         
-        // BUG FIX: Garante que a rubrica de dedução conste em applicableRubrics (vital p/ folha de Adiantamento)
+        // BUG FIX: Garante que a rubrica de dedução conste em applicableRubrics (vital p/ folha de Adiantamento, Férias ou 13º)
         if (!applicableRubrics.find(r => r.id === d.rubric_id)) {
             const rub = rubricas.find(r => r.id === d.rubric_id);
             if (rub) applicableRubrics.push(rub);

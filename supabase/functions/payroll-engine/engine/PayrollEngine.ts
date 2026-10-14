@@ -95,6 +95,7 @@ export class PayrollEngine {
         let isAbsence: boolean;
         let isLate: boolean;
         let isCommission: boolean;
+        let isAlimony: boolean;
 
         if (kind) {
           // MOTOR ORIENTADO A DADOS (T22: kind explícito com tipagem estrita de type)
@@ -108,6 +109,7 @@ export class PayrollEngine {
           isAbsence = kind === 'ABSENCE' && rubric.type === 'DEDUCTION';
           isLate = kind === 'LATE' && rubric.type === 'DEDUCTION';
           isCommission = kind === 'COMMISSION' && rubric.type === 'EARNING';
+          isAlimony = (kind === 'ALIMONY' || rubric.code === '804') && rubric.type === 'DEDUCTION';
         } else {
           // HEURÍSTICAS LEGADAS (Fallback temporário com console.warn conforme Doc §4 T22)
           console.warn(`[Rubrica ${rubric.code || 'S/C'} - ${rubric.name || 'Sem Nome'}] rubric_kind não definido; acionando heurística legada.`);
@@ -123,6 +125,7 @@ export class PayrollEngine {
           isAbsence = (rubric.code === '801' || (rubric.name || '').toUpperCase().includes('FALTA')) && rubric.type === 'DEDUCTION';
           isLate = (rubric.code === '802' || rubric.code === '803' || (rubric.name || '').toUpperCase().includes('ATRASO')) && rubric.type === 'DEDUCTION';
           isCommission = (rubric.category === 'COMMISSION' || (rubric.name || '').toUpperCase().includes('COMISSAO') || (rubric.name || '').toUpperCase().includes('COMISSÃO')) && rubric.type === 'EARNING';
+          isAlimony = (rubric.code === '804' || (rubric.name || '').toLowerCase().includes('pensão') || (rubric.name || '').toLowerCase().includes('pensao')) && rubric.type === 'DEDUCTION';
         }
 
         let isNonElectedHazard = false;
@@ -160,7 +163,7 @@ export class PayrollEngine {
                     return ev.manual_value !== undefined && ev.manual_value !== null;
                 }
                 // Sem value_type definido: se rubric for percentual, não trata como AMOUNT se <= 100
-                if (!ev.value_type && (calcForm === 'PERCENTUAL' || isInsalubridade || isPericulosidade)) {
+                if (!ev.value_type && (calcForm === 'PERCENTUAL' || isInsalubridade || isPericulosidade || isAlimony)) {
                     if (ev.manual_value !== undefined && ev.manual_value !== null && ev.manual_value > 0 && ev.manual_value <= 100) {
                         percentage = ev.manual_value;
                         return false;
@@ -181,7 +184,9 @@ export class PayrollEngine {
         }
 
         // Configuração inteligente de base/fatores para rubricas com cálculo automatizado
-        if (isOvertime) {
+        if (isSalaryBase) {
+            if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
+        } else if (isOvertime) {
             calcForm = 'HORAS';
             if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
             if (!factor) factor = 1.5;
@@ -228,6 +233,9 @@ export class PayrollEngine {
             calcForm = 'HORAS';
             if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
             if (!factor) factor = 1.0;
+        } else if (isAlimony) {
+            calcForm = 'PERCENTUAL';
+            if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
         }
         
         // Se o valorCalculado ainda não foi definido manualmente, calcula!
@@ -335,6 +343,11 @@ export class PayrollEngine {
                 this.context.total_descontos = addMoney(this.context.total_descontos, valorCalculado);
             }
 
+            // T17: Registra total de Pensão Alimentícia judicial
+            if (isAlimony) {
+                this.context.total_alimony = addMoney(this.context.total_alimony, valorCalculado);
+            }
+
             // BUG 3 fix: Atualiza Bases Legais — Descontos SUBTRAEM das bases
             if (rubric.incidencias.gera_base_inss) {
               this.context.base_inss = round2(this.context.base_inss + (rubric.type === 'DEDUCTION' ? -valorCalculado : valorCalculado));
@@ -429,9 +442,17 @@ export class PayrollEngine {
            });
         }
 
-        // IRRF: Base bruta, INSS real, dependentes e parâmetros legais (T1/Doc §4)
+        // IRRF: Base bruta, INSS real, dependentes, pensão alimentícia e parâmetros legais (T1/T17/Doc §4)
         const dependentes = this.context.getVariable('DEPENDENTES') || 0;
-        irrfResult = IRRFCalculator.calculate(baseIrrfBruta, inssResult.value, dependentes, this.context.irrf_parameters, this.context.general_legal_parameters); 
+        const totalAlimony = this.context.total_alimony || 0;
+        irrfResult = IRRFCalculator.calculate(
+          baseIrrfBruta, 
+          inssResult.value, 
+          dependentes, 
+          this.context.irrf_parameters, 
+          this.context.general_legal_parameters,
+          totalAlimony
+        ); 
         
         if (irrfResult.value > 0) {
            this.context.total_descontos = addMoney(this.context.total_descontos, irrfResult.value);
@@ -444,13 +465,17 @@ export class PayrollEngine {
         }
 
         if (rubricIrrf && (baseIrrfBruta > 0 || irrfResult.value > 0)) {
+           const formulaDesc = totalAlimony > 0
+             ? `${irrfResult.usedSimplified ? 'Simplificada' : 'Deduções Legais'} (Bruto: ${baseIrrfBruta}, Redutor: ${irrfResult.reductionAmount ?? 0}, Pensão Alimentícia: R$ ${totalAlimony.toFixed(2)})`
+             : `${irrfResult.usedSimplified ? 'Simplificada' : 'Deduções Legais'} (Bruto: ${baseIrrfBruta}, Redutor: ${irrfResult.reductionAmount ?? 0})`;
+
            this.context.addMemory({
               rubric_id: rubricIrrf.id,
               step_name: 'IRRF',
               base_value: irrfResult.legalBase,
               quantity_used: 1,
               percentage_used: 0,
-              parsed_formula: `${irrfResult.usedSimplified ? 'Simplificada' : 'Deduções Legais'} (Bruto: ${baseIrrfBruta}, Redutor: ${irrfResult.reductionAmount ?? 0})`,
+              parsed_formula: formulaDesc,
               result_value: irrfResult.value,
               origin: 'AUTOMATICA'
            });

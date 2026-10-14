@@ -163,6 +163,8 @@ export class PayrollContext {
   allow_cumulative_hazard_allowances: boolean = false;
   // T16: Base de INSS já tributada em outras folhas da mesma competência (férias, complementar, etc.)
   base_inss_already_taxed: number = 0;
+  // T17: Total de pensão alimentícia judicial apurada (dedutível da base de IRRF)
+  total_alimony: number = 0;
   
   // Variables tracking
   variables: Record<string, number>;
@@ -196,6 +198,7 @@ export class PayrollContext {
     this.eventos = data.eventos || [];
     this.allow_cumulative_hazard_allowances = Boolean(data.allow_cumulative_hazard_allowances);
     this.base_inss_already_taxed = Number(data.base_inss_already_taxed || 0);
+    this.total_alimony = Number(data.total_alimony || 0);
     this.contract_incidences = data.contract_incidences || null;
     this.inss_parameters = data.inss_parameters || [];
     this.irrf_parameters = data.irrf_parameters || [];

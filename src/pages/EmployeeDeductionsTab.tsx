@@ -36,8 +36,18 @@ interface Deduction {
   end_date: string | null;
   notes: string | null;
   deduct_on_advance: boolean;
+  apply_on_types?: string[] | null;
   payroll_rubrics: Rubric;
 }
+
+const PAYROLL_TYPES_LIST = [
+  { id: 'MONTHLY', label: 'Folha Mensal' },
+  { id: 'ADVANCE', label: 'Adiantamento (Vale)' },
+  { id: 'VACATION', label: 'Férias' },
+  { id: 'THIRTEENTH_1', label: '13º (1ª Parcela)' },
+  { id: 'THIRTEENTH_2', label: '13º (2ª Parcela)' },
+  { id: 'COMPLEMENTARY', label: 'Complementar' },
+];
 
 export default function ({
   contractId,
@@ -62,6 +72,7 @@ export default function ({
   const [notes, setNotes] = useState("");
   const [selectedRubric, setSelectedRubric] = useState("");
   const [deductOnAdvance, setDeductOnAdvance] = useState(false);
+  const [applyOnTypes, setApplyOnTypes] = useState<string[]>(['MONTHLY']);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -127,6 +138,7 @@ export default function ({
     setNotes("");
     setSelectedRubric("");
     setDeductOnAdvance(false);
+    setApplyOnTypes(["MONTHLY"]);
     setIsModalOpen(true);
   };
 
@@ -141,6 +153,13 @@ export default function ({
     setNotes(d.notes || "");
     setSelectedRubric(d.rubric_id);
     setDeductOnAdvance(d.deduct_on_advance);
+    if (Array.isArray(d.apply_on_types) && d.apply_on_types.length > 0) {
+      setApplyOnTypes(d.apply_on_types);
+    } else if (d.deduct_on_advance) {
+      setApplyOnTypes(["ADVANCE"]);
+    } else {
+      setApplyOnTypes(["MONTHLY"]);
+    }
     setIsModalOpen(true);
   };
 
@@ -155,6 +174,8 @@ export default function ({
         .eq("user_id", userData.user?.id)
         .single();
 
+      const finalApplyTypes = applyOnTypes.length > 0 ? applyOnTypes : ["MONTHLY"];
+
       const payload = {
         tenant_id: tenantData?.tenant_id,
         contract_id: contractId,
@@ -166,7 +187,8 @@ export default function ({
         start_date: startDate,
         end_date: endDate || null,
         notes: notes || null,
-        deduct_on_advance: deductOnAdvance,
+        deduct_on_advance: finalApplyTypes.includes("ADVANCE") && !finalApplyTypes.includes("MONTHLY"),
+        apply_on_types: finalApplyTypes,
         is_active: true,
       };
 
@@ -337,6 +359,26 @@ export default function ({
                     </div>
                   )}
 
+                  {/* Badges de Tipos de Folha (T17: apply_on_types) */}
+                  <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] text-slate-400 font-semibold mr-1">Folhas:</span>
+                    {(d.apply_on_types && d.apply_on_types.length > 0 ? d.apply_on_types : (d.deduct_on_advance ? ['ADVANCE'] : ['MONTHLY'])).map((tId) => {
+                      const opt = PAYROLL_TYPES_LIST.find(p => p.id === tId);
+                      return (
+                        <span key={tId} className="text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                          {opt ? opt.label : tId}
+                        </span>
+                      );
+                    })}
+                  </div>
+
+                  {d.deduction_type === 'ALIMONY' && (
+                    <div className="bg-violet-50 text-violet-700 text-[10px] font-medium p-1.5 rounded border border-violet-100 flex items-center gap-1.5">
+                      <Scale size={12} className="shrink-0 text-violet-600" />
+                      <span>Dedutível do IRRF (Art. 4º Lei 9.250/95)</span>
+                    </div>
+                  )}
+
                   {d.notes && (
                     <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded border border-slate-100 mt-2">
                       {d.notes}
@@ -496,17 +538,56 @@ export default function ({
                   ></textarea>
                 </div>
 
-                <div className="flex items-center gap-3 bg-amber-50 p-3 rounded-lg border border-amber-200 mt-4">
-                  <input
-                    type="checkbox"
-                    id="deductOnAdvance"
-                    checked={deductOnAdvance}
-                    onChange={(e) => setDeductOnAdvance(e.target.checked)}
-                    className="w-4 h-4 text-amber-600 rounded border-amber-300 focus:ring-amber-500"
-                  />
-                  <label htmlFor="deductOnAdvance" className="text-xs font-bold text-amber-800 cursor-pointer">
-                    Descontar no Adiantamento (Vale) em vez do Mensal
-                  </label>
+                {/* Seletor de Tipos de Folha (T17: apply_on_types) */}
+                <div className="border-t border-slate-100 pt-4 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                      Incidência por Tipo de Folha
+                    </label>
+                    <span className="text-[10px] text-slate-400">Padrão: Apenas Folha Mensal</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {PAYROLL_TYPES_LIST.map((pt) => {
+                      const isChecked = applyOnTypes.includes(pt.id);
+                      return (
+                        <label
+                          key={pt.id}
+                          className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                            isChecked
+                              ? 'bg-primary-50/50 border-primary-200 text-primary-900 font-semibold'
+                              : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setApplyOnTypes([...applyOnTypes, pt.id]);
+                              } else {
+                                setApplyOnTypes(applyOnTypes.filter((t) => t !== pt.id));
+                              }
+                            }}
+                            className="w-3.5 h-3.5 text-primary-600 rounded border-slate-300 focus:ring-primary-500"
+                          />
+                          <span>{pt.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  {type === 'ALIMONY' && (
+                    <div className="bg-violet-50 p-2.5 rounded-lg border border-violet-100 text-xs text-violet-800 flex items-start gap-2 mt-2">
+                      <Scale size={16} className="text-violet-600 mt-0.5 shrink-0" />
+                      <div>
+                        <span className="font-bold">Regra Legal de Pensão Alimentícia:</span>
+                        <p className="text-[11px] text-violet-700 mt-0.5">
+                          O valor é 100% dedutível da base de cálculo do IRRF (Art. 4º da Lei 9.250/95). Selecione as folhas conforme determinação judicial (normalmente Mensal, Férias e 13º Salário).
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -11318,3 +11318,21 @@ COMMENT ON COLUMN public.employment_contracts.allow_cumulative_hazard_allowances
 
 NOTIFY pgrst, 'reload schema';
 ```
+
+### Migration `00075_deductions_apply_on_types_t17.sql` (Fase P4 / T17)
+- **Objetivo**: Adicionar a coluna `apply_on_types TEXT[] DEFAULT NULL` na tabela `public.employee_deductions` para permitir a parametrização explícita dos tipos de folha onde cada dedução fixa do colaborador é devida (ex: `MONTHLY`, `ADVANCE`, `VACATION`, `THIRTEENTH_1`, `THIRTEENTH_2`, `COMPLEMENTARY`), prevenindo o vazamento indevido de descontos em férias ou 13º salário e suportando regras de decisão judicial para pensão alimentícia.
+- **Alterações**:
+  - `ALTER TABLE public.employee_deductions ADD COLUMN IF NOT EXISTS apply_on_types TEXT[] DEFAULT NULL;`
+  - Comentário explicativo adicionado no dicionário de dados do PostgreSQL.
+
+```sql
+-- Migration: 00075_deductions_apply_on_types_t17
+-- Fase P4 / Tarefa T17: Descontos fixos por tipo de folha (apply_on_types) e regra de pensão alimentícia
+
+ALTER TABLE public.employee_deductions
+ADD COLUMN IF NOT EXISTS apply_on_types TEXT[] DEFAULT NULL;
+
+COMMENT ON COLUMN public.employee_deductions.apply_on_types IS 
+'Tipos de folha aos quais a dedução fixa se aplica (ex: MONTHLY, ADVANCE, VACATION, THIRTEENTH_1, THIRTEENTH_2, COMPLEMENTARY). Se nulo ou vazio, adota o padrão: MONTHLY ou ADVANCE de acordo com deduct_on_advance, sem vazar para Férias ou 13º.';
+```
+
