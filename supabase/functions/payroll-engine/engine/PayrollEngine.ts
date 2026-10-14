@@ -235,18 +235,18 @@ export class PayrollEngine {
                 quantidade = calculateReducedNightHours(quantidade);
             }
         } else if (rubric.code === '502' || rubric.code === '504') {
-            calcForm = 'PERCENTUAL';
+            if (!calcForm) calcForm = 'PERCENTUAL';
             if (!calcBaseName) calcBaseName = rubric.code === '502' ? 'R501' : 'R503';
             if (!percentage) percentage = 33.3333; // 1/3
-        } else if (isAbsence || rubric.code === '801' || rubric.code === '210') {
-            calcForm = 'DIAS';
+        } else if ((isAbsence || rubric.code === '801' || rubric.code === '210') && rubric.type === 'DEDUCTION') {
+            if (!calcForm) calcForm = 'DIAS';
             if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
-        } else if (isLate || rubric.code === '802' || rubric.code === '211') {
-            calcForm = 'HORAS';
+        } else if ((isLate || rubric.code === '802' || rubric.code === '211') && rubric.type === 'DEDUCTION') {
+            if (!calcForm) calcForm = 'HORAS';
             if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
             if (!factor) factor = 1.0;
         } else if (isAlimony) {
-            calcForm = 'PERCENTUAL';
+            if (!calcForm || calcForm === 'MANUAL') calcForm = 'PERCENTUAL';
             if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
         }
         
