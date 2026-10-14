@@ -5,6 +5,7 @@ import { INSSCalculator } from '../legal/INSSCalculator.ts';
 import { IRRFCalculator } from '../legal/IRRFCalculator.ts';
 import { FGTSCalculator } from '../legal/FGTSCalculator.ts';
 import { round2, addMoney, subtractMoney } from '../utils/money.ts';
+import { calculateReducedNightHours } from '../legal/NightWorkCalculator.ts';
 
 export class PayrollEngine {
   context: PayrollContext;
@@ -188,26 +189,31 @@ export class PayrollEngine {
             if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
         } else if (isOvertime) {
             calcForm = 'HORAS';
-            if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
-            if (!factor) factor = 1.5;
+            if (!calcBaseName || calcBaseName === 'SALARIO_BASE') calcBaseName = 'BASE_HORA_EXTRA';
+            if (!factor && rubric.percentage) {
+                factor = 1 + (rubric.percentage / 100);
+            }
+            if (!factor) {
+                throw new Error(`Fator multiplicador obrigatório não configurado para a rubrica de Hora Extra [${rubric.code || 'S/C'} - ${rubric.name || 'Sem Nome'}].`);
+            }
         } else if (isDsrNoturno) {
             calcForm = 'PERCENTUAL';
             if (!calcBaseName) calcBaseName = 'BASE_DSR_NOTURNO';
             if (!percentage) {
-                if (this.context.dias_uteis > 0 && this.context.dias_inuteis > 0) {
+                if (this.context.dias_uteis > 0) {
                     percentage = (this.context.dias_inuteis / this.context.dias_uteis) * 100;
                 } else {
-                    percentage = 20; // 20% fallback (1/5)
+                    throw new Error("Calendário da competência inválido para apuração do DSR Noturno: dias úteis devem ser maiores que zero.");
                 }
             }
         } else if (isDsr) {
             calcForm = 'PERCENTUAL';
             if (!calcBaseName) calcBaseName = 'BASE_DSR';
             if (!percentage) {
-                if (this.context.dias_uteis > 0 && this.context.dias_inuteis > 0) {
+                if (this.context.dias_uteis > 0) {
                     percentage = (this.context.dias_inuteis / this.context.dias_uteis) * 100;
                 } else {
-                    percentage = 20; // 20% fallback (1/5)
+                    throw new Error("Calendário da competência inválido para apuração do DSR: dias úteis devem ser maiores que zero.");
                 }
             }
         } else if (isInsalubridade) {
@@ -221,7 +227,13 @@ export class PayrollEngine {
         } else if (isAdicionalNoturno) {
             calcForm = 'HORAS';
             if (!calcBaseName) calcBaseName = 'SALARIO_BASE';
-            if (!factor) factor = 0.20; // 20%
+            if (!factor) factor = 0.20; // 20% padrão CLT
+
+            // T18: Suporte a hora noturna reduzida (Art. 73 § 1º CLT: 52min30s)
+            const shouldApplyNightReduction = (rubric as any).apply_night_reduction === true || eventos.some(ev => (ev as any).apply_night_reduction === true || (ev as any).reduced_hours === true);
+            if (shouldApplyNightReduction && quantidade > 0) {
+                quantidade = calculateReducedNightHours(quantidade);
+            }
         } else if (rubric.code === '502' || rubric.code === '504') {
             calcForm = 'PERCENTUAL';
             if (!calcBaseName) calcBaseName = rubric.code === '502' ? 'R501' : 'R503';
@@ -247,12 +259,16 @@ export class PayrollEngine {
             }
             else if ((calcForm === 'HORAS' || calcForm === 'HOURS') && calcBaseName) {
                 if (quantidade > 0) {
-                    const baseVal = this.context.getVariable(calcBaseName);
-                    const effFactor = factor || 1.5;
+                    const rawBaseVal = this.context.getVariable(calcBaseName);
+                    const baseVal = (calcBaseName === 'BASE_HORA_EXTRA' && rawBaseVal === 0) ? this.context.salario_base : rawBaseVal;
+                    const effFactor = factor;
+                    if (isOvertime && (!effFactor || effFactor <= 0)) {
+                        throw new Error(`Fator multiplicador obrigatório não configurado para a rubrica de Hora Extra [${rubric.code || 'S/C'} - ${rubric.name || 'Sem Nome'}].`);
+                    }
                     const effDivisor = divisor || this.context.getVariable('DIVISOR') || 220;
                     const valorHora = baseVal / effDivisor;
-                    valorCalculado = (valorHora * effFactor) * quantidade;
-                    formulaUsada = `(${baseVal} / ${effDivisor}) * ${effFactor} * ${quantidade}`;
+                    valorCalculado = (valorHora * (effFactor || 1.0)) * quantidade;
+                    formulaUsada = `(${baseVal} / ${effDivisor}) * ${effFactor || 1.0} * ${quantidade}`;
                 } else {
                     valorCalculado = 0;
                     formulaUsada = `HORAS_ZERADAS`;
@@ -264,10 +280,10 @@ export class PayrollEngine {
                     let perc = percentage;
                     
                     if (!perc && (isDsr || isDsrNoturno)) {
-                        if (this.context.dias_uteis > 0 && this.context.dias_inuteis > 0) {
+                        if (this.context.dias_uteis > 0) {
                             perc = (this.context.dias_inuteis / this.context.dias_uteis) * 100;
                         } else {
-                            perc = 20;
+                            throw new Error("Calendário da competência inválido para apuração do DSR: dias úteis devem ser maiores que zero.");
                         }
                     }
                     
@@ -359,14 +375,31 @@ export class PayrollEngine {
               this.context.base_fgts = round2(this.context.base_fgts + (rubric.type === 'DEDUCTION' ? -valorCalculado : valorCalculado));
             }
 
-            // Acumula bases dinâmicas
-            if (isOvertime || isCommission) {
+            // Acumula bases dinâmicas (T18 / Doc §4 / Súmula 264 TST)
+            // BASE_HORA_EXTRA inclui salário base e adicionais habituais (insalubridade, periculosidade, noturno, etc.)
+            if (isSalaryBase || isInsalubridade || isPericulosidade || isAdicionalNoturno || rubric.category === 'ALLOWANCE') {
+                const currentBaseHE = this.context.getVariable('BASE_HORA_EXTRA') || 0;
+                this.context.setVariable('BASE_HORA_EXTRA', addMoney(currentBaseHE, valorCalculado));
+            }
+
+            // BASE_DSR inclui horas extras, comissões e demais variáveis habituais com flag integra_dsr
+            const integraDsr = rubric.incidencias?.integra_dsr === true || (rubric as any).integra_dsr === true;
+            if (isOvertime || isCommission || integraDsr) {
                 const currentBaseDSR = this.context.getVariable('BASE_DSR') || 0;
-                this.context.setVariable('BASE_DSR', round2(currentBaseDSR + valorCalculado));
+                this.context.setVariable('BASE_DSR', addMoney(currentBaseDSR, valorCalculado));
             }
             if (isAdicionalNoturno) {
                 const currentBaseDSRNoturno = this.context.getVariable('BASE_DSR_NOTURNO') || 0;
-                this.context.setVariable('BASE_DSR_NOTURNO', round2(currentBaseDSRNoturno + valorCalculado));
+                this.context.setVariable('BASE_DSR_NOTURNO', addMoney(currentBaseDSRNoturno, valorCalculado));
+
+                // Se a empresa não possui rubrica específica de DSR_NOTURNO no catálogo, o noturno integra o DSR geral
+                const hasSpecificDsrNoturno = Array.from(this.context.rubricas.values()).some(
+                    r => r.rubric_kind === 'DSR_NOTURNO' || r.code === '171' || (r.name || '').toUpperCase().includes('DSR SOBRE ADICIONAL NOTURNO')
+                );
+                if (!hasSpecificDsrNoturno || integraDsr) {
+                    const currentBaseDSR = this.context.getVariable('BASE_DSR') || 0;
+                    this.context.setVariable('BASE_DSR', addMoney(currentBaseDSR, valorCalculado));
+                }
             }
 
         } else if (hasManualValue) {
