@@ -135,3 +135,25 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   - Integrado botão de acesso direto "Guias & Obrigações" nas telas de Cálculos (`Calculations.tsx`) e Relatórios (`Reports.tsx`).
   - Suíte de testes TDD `src/tests/payroll/PayrollObligationsAndProvisions.test.ts` implementada com 100% de aprovação (6/6 testes).
   - **Fase P7 homologada**: Período fechado com imutabilidade estrita CLT, versionamento, auditoria e totalizadores fiscais/contábeis 100% aderentes aos holerites. Total global do projeto ampliado para **431 testes verdes em 64 arquivos de teste**.
+
+---
+
+## 8. MÓDULO DE PONTO ELETRÔNICO: CORREÇÃO E ROBUSTEZ NA IMPORTAÇÃO DE ARQUIVO AFD (PORTARIA MTP 671/2021)
+
+- **Causa Raiz do Erro Identificada**: O componente `TimeManagement.tsx` invocava `AfdImportService.importAfdFile({ tenant_id, company_id, file_name, file_content })`, enquanto `afdImportService.ts` apenas exportava a classe com a função de parsing `processAfdImport`, disparando a exceção `TypeError: AfdImportService.importAfdFile is not a function`.
+- **Implementação do Método `AfdImportService.importAfdFile`**:
+  - Validação de entrada de `tenant_id` e conteúdo de arquivo.
+  - Idempotência criptográfica por hash SHA-256 em nível de arquivo com consulta na tabela `afd_files`.
+  - Extração de metadados do cabeçalho (Registro 1): identificador do empregador, CNPJ, CEI/CAEPF, número de fabricação do REP e período.
+  - Vínculo automático ou provisionamento do relógio físico na tabela `time_devices` (ex: relógios Control iD pelo número de série de 17 dígitos).
+  - Consulta e mapeamento de colaboradores por CPF limpo ou PIS (11 e 12 dígitos) para vinculação a `worker_id` e `contract_id`.
+  - Idempotência individual por par `device_id:nsr` para evitar violação de unicidade ou duplicatas.
+  - Inserção em lotes (*batch insert*) de 500 registros em `time_punch_records`, viabilizando arquivos volumosos com dezenas de milhares de marcações sem gargalo de payload HTTP.
+  - Registro do envio e conciliação na tabela `afd_files` e atualização de `last_nsr` e `last_sync_at` no dispositivo.
+- **Aprimoramento do Parser `afdParser.ts`**:
+  - Tratamento nativo do Registro Tipo 9 (Trailer de encerramento padrão `999999999`), eliminando falso positivo de lacuna de NSR.
+  - Tratamento de linhas não-numéricas de rodapé (assinaturas digitais ICP-Brasil em base64 com chaves SHA-256 emitidas por fabricantes homologados pelo MTE).
+  - Extração e separação limpa do campo CEI/CAEPF (posições 25 a 37), preservando o nome exato da Razão Social da empresa.
+- **Resultados e Cobertura**:
+  - Testado com arquivo real de 19.625 linhas de relógio físico Control iD (`00014003710008237`), processando com sucesso 18.573 batidas em apenas ~430ms sem erros.
+  - Suíte de testes TDD implementada em `src/tests/time/AfdImportFileService.test.ts`. Total global do projeto ampliado para **435 testes verdes em 65 arquivos de teste**.
