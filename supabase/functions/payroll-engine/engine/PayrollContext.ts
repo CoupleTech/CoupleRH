@@ -161,6 +161,8 @@ export class PayrollContext {
   irrf_parameters?: IrrfBracket[];
   general_legal_parameters?: GeneralLegalParameters;
   allow_cumulative_hazard_allowances: boolean = false;
+  // T16: Base de INSS já tributada em outras folhas da mesma competência (férias, complementar, etc.)
+  base_inss_already_taxed: number = 0;
   
   // Variables tracking
   variables: Record<string, number>;
@@ -193,6 +195,7 @@ export class PayrollContext {
     this.rubricas = new Map((data.rubricas || []).map((r: Rubric) => [r.id, structuredClone(r)]));
     this.eventos = data.eventos || [];
     this.allow_cumulative_hazard_allowances = Boolean(data.allow_cumulative_hazard_allowances);
+    this.base_inss_already_taxed = Number(data.base_inss_already_taxed || 0);
     this.contract_incidences = data.contract_incidences || null;
     this.inss_parameters = data.inss_parameters || [];
     this.irrf_parameters = data.irrf_parameters || [];

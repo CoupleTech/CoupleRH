@@ -395,10 +395,17 @@ export class PayrollEngine {
         // T1: Guarda base bruta de IRRF ANTES de processar o INSS
         const baseIrrfBruta = this.context.base_irrf;
 
-        // INSS
-        inssResult = INSSCalculator.calculate(this.context.base_inss, this.context.inss_parameters);
-        if (inssResult.value > 0) {
-           this.context.total_descontos = addMoney(this.context.total_descontos, inssResult.value);
+        // INSS (T16: Consolidado com base já tributada em outras folhas da mesma competência)
+        inssResult = INSSCalculator.calculate(
+          this.context.base_inss, 
+          this.context.inss_parameters,
+          this.context.base_inss_already_taxed
+        );
+
+        if (inssResult.value > 0 || this.context.base_inss_already_taxed > 0) {
+           if (inssResult.value > 0) {
+             this.context.total_descontos = addMoney(this.context.total_descontos, inssResult.value);
+           }
            
            // T6: Busca rubrica INSS exclusivamente por código '901' (Doc §4)
            const rubricInss = Array.from(this.context.rubricas.values()).find(r => r.code === '901');
@@ -406,13 +413,17 @@ export class PayrollEngine {
              throw new Error("Rubrica de sistema obrigatória ausente no catálogo: [901 - Contribuição INSS]");
            }
 
+           const formulaDesc = this.context.base_inss_already_taxed > 0
+             ? `INSS_CONSOLIDADO(Base Atual: R$ ${this.context.base_inss.toFixed(2)}, Base Já Tributada: R$ ${this.context.base_inss_already_taxed.toFixed(2)}, INSS Devido: R$ ${inssResult.value.toFixed(2)})`
+             : JSON.stringify(inssResult.breakdown);
+
            this.context.addMemory({
               rubric_id: rubricInss.id,
               step_name: 'INSS',
               base_value: this.context.base_inss,
               quantity_used: 1,
               percentage_used: 0,
-              parsed_formula: JSON.stringify(inssResult.breakdown),
+              parsed_formula: formulaDesc,
               result_value: inssResult.value,
               origin: 'AUTOMATICA'
            });

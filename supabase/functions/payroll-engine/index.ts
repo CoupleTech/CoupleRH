@@ -487,6 +487,27 @@ serve(async (req) => {
       }
     }
 
+    // 3.8 T16: Busca bases de INSS já tributadas em outras folhas da mesma competência para os contratos
+    let existingCompetencePayslips: any[] = [];
+    if (period.type !== 'THIRTEENTH_1' && period.type !== 'THIRTEENTH_2') {
+      let queryOtherPayslips = supabase
+        .from('payslips')
+        .select('contract_id, base_inss, payroll_periods!inner(id, type, year, month, status)')
+        .eq('tenant_id', tenant_id)
+        .eq('payroll_periods.year', period.year)
+        .eq('payroll_periods.month', period.month)
+        .neq('period_id', period_id)
+        .in('payroll_periods.type', ['MONTHLY', 'VACATION', 'COMPLEMENTARY'])
+        .in('payroll_periods.status', ['CLOSED', 'CONFERENCE', 'CALCULATED']);
+
+      if (contractIds.length > 0) {
+        queryOtherPayslips = queryOtherPayslips.in('contract_id', contractIds);
+      }
+
+      const { data: otherData } = await queryOtherPayslips;
+      existingCompetencePayslips = otherData || [];
+    }
+
     // T9/T10: Mapeamento de contrato para empresa e cálculo de holerites em memória
     const contractCompanyMap: Record<string, string> = {};
     for (const c of contracts || []) {
@@ -829,6 +850,11 @@ serve(async (req) => {
         numDependentesIRRF = allDependents.filter((d: any) => d.person_id === workerPersonId).length;
       }
 
+      // T16: Consolida a base de INSS já tributada de outras folhas do mesmo contrato e competência
+      const previousBaseInss = existingCompetencePayslips
+        .filter((p: any) => p.contract_id === contract.id)
+        .reduce((sum: number, p: any) => sumMoney(sum, p.base_inss || 0), 0);
+
       const contextData = {
         competencia: `${period.month}/${period.year}`,
         tipo_folha: period.type,
@@ -844,6 +870,7 @@ serve(async (req) => {
         rubricas: applicableRubrics.map((r: any) => structuredClone(r)),
         eventos: eventos,
         allow_cumulative_hazard_allowances: Boolean(contract.allow_cumulative_hazard_allowances),
+        base_inss_already_taxed: previousBaseInss,
         contract_incidences: contract.contract_types,
         inss_parameters: inss_parameters,
         irrf_parameters: irrf_parameters,
