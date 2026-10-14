@@ -293,9 +293,11 @@ export class PayrollClosureService {
           amount
         ),
         employment_contracts (
-          persons (
-            name,
-            cpf
+          workers (
+            people (
+              full_name,
+              cpf
+            )
           )
         )
       `)
@@ -307,7 +309,7 @@ export class PayrollClosureService {
     }
 
     const payslipsForValidation: PayslipForValidation[] = (data || []).map((row: any) => {
-      const person = row.employment_contracts?.persons;
+      const person = row.employment_contracts?.workers?.people;
       const items: PayslipItemValidation[] = (row.payslip_items || []).map((item: any) => ({
         type: item.type,
         amount: Number(item.amount) || 0,
@@ -316,7 +318,7 @@ export class PayrollClosureService {
       return {
         id: row.id,
         contract_id: row.contract_id,
-        employee_name: person?.name || `Contrato ${String(row.contract_id).substring(0, 8)}`,
+        employee_name: person?.full_name || `Contrato ${String(row.contract_id).substring(0, 8)}`,
         employee_cpf: person?.cpf,
         status: row.status,
         total_earnings: Number(row.total_earnings) || 0,

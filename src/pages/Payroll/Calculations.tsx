@@ -15,6 +15,7 @@ import {
   X,
   Trash2,
   ShieldCheck,
+  TrendingUp,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useCompany } from "../../contexts/CompanyContext";
@@ -279,7 +280,7 @@ export default function () {
       .select(
         `
         id, contract_id, total_earnings, total_deductions, net_salary,
-        base_inss, base_irrf, base_fgts, fgts_month, version,
+        base_inss, base_irrf, base_fgts, fgts_month,
         employment_contracts (
           company_id,
           workers (
