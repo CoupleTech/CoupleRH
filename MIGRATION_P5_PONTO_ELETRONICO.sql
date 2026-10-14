@@ -644,12 +644,13 @@ CREATE POLICY "Employees can view their own punch records"
     TO authenticated
     USING (
         tenant_id = ANY (public.user_tenant_ids())
-        AND EXISTS (
-            SELECT 1 FROM public.employment_contracts ec
-            JOIN public.workers w ON w.id = ec.worker_id
-            JOIN public.people p ON p.id = w.person_id
-            WHERE ec.id = time_punch_records.contract_id
-            AND (p.user_id = auth.uid() OR ec.worker_id = auth.uid() OR p.cpf = (SELECT cpf FROM public.people WHERE user_id = auth.uid() LIMIT 1))
+        AND (
+            worker_id IN (SELECT id FROM public.workers WHERE user_id = auth.uid())
+            OR contract_id IN (
+                SELECT ec.id FROM public.employment_contracts ec
+                JOIN public.workers w ON w.id = ec.worker_id
+                WHERE w.user_id = auth.uid()
+            )
         )
     );
 
@@ -673,6 +674,19 @@ CREATE POLICY "Tenant Admins and DP can manage time_daily_summary"
             WHERE user_id = auth.uid() 
             AND tenant_users.tenant_id = time_daily_summary.tenant_id 
             AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
+        )
+    );
+
+DROP POLICY IF EXISTS "Employees can view their own daily summary" ON public.time_daily_summary;
+CREATE POLICY "Employees can view their own daily summary"
+    ON public.time_daily_summary FOR SELECT
+    TO authenticated
+    USING (
+        tenant_id = ANY (public.user_tenant_ids())
+        AND contract_id IN (
+            SELECT ec.id FROM public.employment_contracts ec
+            JOIN public.workers w ON w.id = ec.worker_id
+            WHERE w.user_id = auth.uid()
         )
     );
 

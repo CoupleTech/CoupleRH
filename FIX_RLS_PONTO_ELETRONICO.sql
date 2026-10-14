@@ -4,13 +4,15 @@
 -- Idempotente: pode ser executado múltiplas vezes com total segurança.
 -- ==============================================================================
 
--- 1. CONCEDER PERMISSÕES (GRANTS) PARA USUÁRIOS AUTENTICADOS E SERVICE_ROLE
+-- 1. CONCEDER PERMISSÕES COMPLETAS
 GRANT ALL ON public.time_devices TO authenticated, service_role;
 GRANT ALL ON public.afd_files TO authenticated, service_role;
 GRANT ALL ON public.time_punch_records TO authenticated, service_role;
 GRANT ALL ON public.time_daily_summary TO authenticated, service_role;
 GRANT ALL ON public.timesheets TO authenticated, service_role;
 GRANT ALL ON public.timesheet_contests TO authenticated, service_role;
+GRANT ALL ON public.time_bank_accounts TO authenticated, service_role;
+GRANT ALL ON public.time_bank_transactions TO authenticated, service_role;
 
 GRANT SELECT ON public.time_devices TO anon;
 GRANT SELECT ON public.time_punch_records TO anon;
@@ -100,12 +102,13 @@ CREATE POLICY "Employees can view their own punch records"
     TO authenticated
     USING (
         tenant_id = ANY (public.user_tenant_ids())
-        AND EXISTS (
-            SELECT 1 FROM public.employment_contracts ec
-            JOIN public.workers w ON w.id = ec.worker_id
-            JOIN public.people p ON p.id = w.person_id
-            WHERE ec.id = time_punch_records.contract_id
-            AND (p.user_id = auth.uid() OR ec.worker_id = auth.uid() OR p.cpf = (SELECT cpf FROM public.people WHERE user_id = auth.uid() LIMIT 1))
+        AND (
+            worker_id IN (SELECT id FROM public.workers WHERE user_id = auth.uid())
+            OR contract_id IN (
+                SELECT ec.id FROM public.employment_contracts ec
+                JOIN public.workers w ON w.id = ec.worker_id
+                WHERE w.user_id = auth.uid()
+            )
         )
     );
 
@@ -133,7 +136,20 @@ CREATE POLICY "Tenant Admins and DP can manage time_daily_summary"
         )
     );
 
--- 7. RPC ATÔMICA DE ALTA PERFORMANCE PARA INSERÇÃO EM LOTE DE BATIDAS AFD (SECURITY DEFINER)
+DROP POLICY IF EXISTS "Employees can view their own daily summary" ON public.time_daily_summary;
+CREATE POLICY "Employees can view their own daily summary"
+    ON public.time_daily_summary FOR SELECT
+    TO authenticated
+    USING (
+        tenant_id = ANY (public.user_tenant_ids())
+        AND contract_id IN (
+            SELECT ec.id FROM public.employment_contracts ec
+            JOIN public.workers w ON w.id = ec.worker_id
+            WHERE w.user_id = auth.uid()
+        )
+    );
+
+-- 7. RPC ATÔMICA PARA IMPORTAÇÃO EM LOTE DE BATIDAS AFD (SECURITY DEFINER)
 CREATE OR REPLACE FUNCTION public.import_afd_punch_records(
     p_tenant_id UUID,
     p_company_id UUID,
@@ -203,5 +219,5 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.import_afd_punch_records(UUID, UUID, UUID, JSONB) TO authenticated, service_role;
 
--- 8. RECARREGAR O SCHEMA CACHE DO POSTGREST IMEDIATAMENTE
+-- 8. RECARREGAR O SCHEMA CACHE DO POSTGREST
 NOTIFY pgrst, 'reload schema';
