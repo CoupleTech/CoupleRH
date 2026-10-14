@@ -1187,6 +1187,7 @@ export default function () {
           periodLabel={`${getMonthName(activePeriod.month)} / ${activePeriod.year}`}
           payslipCount={payslips.length}
           totalNet={payslips.reduce((acc, p) => acc + (Number(p.net_salary) || 0), 0)}
+          onOpenAudit={() => setShowAuditModal(true)}
           onSuccess={async () => {
             await fetchPeriods();
             await fetchPayslips(activePeriod.id);

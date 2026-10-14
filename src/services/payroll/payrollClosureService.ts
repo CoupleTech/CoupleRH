@@ -24,6 +24,48 @@ export interface ReopeningRecord {
   user_name?: string;
 }
 
+export interface PayslipItemValidation {
+  type: 'EARNING' | 'DEDUCTION' | string;
+  amount: number;
+}
+
+export interface PayslipForValidation {
+  id?: string;
+  contract_id: string;
+  employee_name?: string;
+  employee_cpf?: string;
+  status: string;
+  calculation_error?: string;
+  total_earnings: number;
+  total_deductions: number;
+  net_salary: number;
+  items?: PayslipItemValidation[];
+}
+
+export type ClosureErrorCategory =
+  | 'CALCULATION_ERROR'
+  | 'NEGATIVE_NET'
+  | 'INCOMPLETE_DATA'
+  | 'MATH_INCONSISTENCY'
+  | 'EMPTY_PERIOD';
+
+export interface ClosureErrorDetail {
+  payslip_id?: string;
+  contract_id: string;
+  employee_name: string;
+  employee_cpf?: string;
+  reason: string;
+  category: ClosureErrorCategory;
+}
+
+export interface ClosureValidationResult {
+  canClose: boolean;
+  blockingErrorsCount: number;
+  errorDetails: ClosureErrorDetail[];
+  warningCount: number;
+  warnings?: string[];
+}
+
 export class PayrollClosureService {
   /**
    * Perfis autorizados a executar reabertura formal de folha fechada
@@ -33,6 +75,129 @@ export class PayrollClosureService {
     'tenant_admin',
     'dp_manager',
   ]);
+
+  /**
+   * Valida se uma lista de holerites está íntegra e sem colaboradores em erro para permitir o fechamento
+   */
+  public validatePayslipsForClosure(payslips: PayslipForValidation[]): ClosureValidationResult {
+    const errorDetails: ClosureErrorDetail[] = [];
+
+    if (!payslips || payslips.length === 0) {
+      errorDetails.push({
+        contract_id: '',
+        employee_name: 'Período sem holerites',
+        reason: 'Nenhum holerite foi gerado ou processado para este período de folha.',
+        category: 'EMPTY_PERIOD',
+      });
+      return {
+        canClose: false,
+        blockingErrorsCount: 1,
+        errorDetails,
+        warningCount: 0,
+        warnings: [],
+      };
+    }
+
+    for (const p of payslips) {
+      const statusUpper = (p.status || '').toUpperCase();
+      const empName = p.employee_name || `Contrato ${p.contract_id.substring(0, 8)}...`;
+      const net = Number(p.net_salary || 0);
+      const earnings = Number(p.total_earnings || 0);
+      const deductions = Number(p.total_deductions || 0);
+
+      // 1. Status de erro explícito
+      if (
+        statusUpper === 'ERROR' ||
+        statusUpper.includes('ERROR') ||
+        statusUpper === 'ERRO_CALCULO' ||
+        Boolean(p.calculation_error)
+      ) {
+        errorDetails.push({
+          payslip_id: p.id,
+          contract_id: p.contract_id,
+          employee_name: empName,
+          employee_cpf: p.employee_cpf,
+          category: 'CALCULATION_ERROR',
+          reason:
+            p.calculation_error ||
+            'O cálculo deste colaborador falhou durante o processamento da folha.',
+        });
+        continue;
+      }
+
+      // 2. Salário líquido negativo (vedado pelo Art. 462 da CLT)
+      if (net < 0) {
+        errorDetails.push({
+          payslip_id: p.id,
+          contract_id: p.contract_id,
+          employee_name: empName,
+          employee_cpf: p.employee_cpf,
+          category: 'NEGATIVE_NET',
+          reason: `Salário líquido negativo (R$ ${net.toFixed(2)}). A legislação trabalhista veda que descontos excedam a remuneração integral do empregado sem saldo devedor acordado.`,
+        });
+        continue;
+      }
+
+      // 3. Invariante Matemática T6: Itens vs Totais
+      if (p.items && p.items.length > 0) {
+        const sumEarnings = p.items
+          .filter((i) => i.type === 'EARNING')
+          .reduce((acc, i) => acc + Number(i.amount || 0), 0);
+        const sumDeductions = p.items
+          .filter((i) => i.type === 'DEDUCTION')
+          .reduce((acc, i) => acc + Number(i.amount || 0), 0);
+
+        if (
+          Math.abs(sumEarnings - earnings) > 0.01 ||
+          Math.abs(sumDeductions - deductions) > 0.01
+        ) {
+          errorDetails.push({
+            payslip_id: p.id,
+            contract_id: p.contract_id,
+            employee_name: empName,
+            employee_cpf: p.employee_cpf,
+            category: 'MATH_INCONSISTENCY',
+            reason: `Inconsistência matemática (T6): A soma dos itens discriminados diverge dos totais do cabeçalho do holerite (divergência proventos/descontos).`,
+          });
+          continue;
+        }
+      }
+
+      // 4. Invariante Líquido = Proventos - Descontos
+      if (Math.abs(net - (earnings - deductions)) > 0.01) {
+        errorDetails.push({
+          payslip_id: p.id,
+          contract_id: p.contract_id,
+          employee_name: empName,
+          employee_cpf: p.employee_cpf,
+          category: 'MATH_INCONSISTENCY',
+          reason: `Inconsistência matemática: O salário líquido apurado (R$ ${net.toFixed(2)}) não bate com a equação Proventos (R$ ${earnings.toFixed(2)}) menos Descontos (R$ ${deductions.toFixed(2)}).`,
+        });
+        continue;
+      }
+    }
+
+    return {
+      canClose: errorDetails.length === 0,
+      blockingErrorsCount: errorDetails.length,
+      errorDetails,
+      warningCount: 0,
+      warnings: [],
+    };
+  }
+
+  /**
+   * Lança exceção se houver impedimentos para o fechamento
+   */
+  public assertCanClosePeriod(payslips: PayslipForValidation[]): void {
+    const result = this.validatePayslipsForClosure(payslips);
+    if (!result.canClose) {
+      const errCount = result.blockingErrorsCount;
+      throw new Error(
+        `Fechamento de folha bloqueado (CLT/Compliance): Existem ${errCount} colaborador(es) em erro ou inconsistência impeditiva no período. Regularize os cálculos antes de fechar a folha.`
+      );
+    }
+  }
 
   /**
    * 1. Valida se a role informada possui permissão de reabertura
@@ -111,7 +276,61 @@ export class PayrollClosureService {
   }
 
   /**
-   * 7. Executa o fechamento formal e imutável da folha no Supabase
+   * Consulta os holerites do período no Supabase e valida se existem colaboradores em erro antes de fechar
+   */
+  public async validatePeriodBeforeClosure(periodId: string): Promise<ClosureValidationResult> {
+    const { data, error } = await supabase
+      .from('payslips')
+      .select(`
+        id,
+        contract_id,
+        status,
+        total_earnings,
+        total_deductions,
+        net_salary,
+        payslip_items (
+          type,
+          amount
+        ),
+        employment_contracts (
+          persons (
+            name,
+            cpf
+          )
+        )
+      `)
+      .eq('period_id', periodId);
+
+    if (error) {
+      console.error('Erro ao consultar holerites para validação de fechamento:', error);
+      throw new Error(`Erro ao validar holerites do período: ${error.message}`);
+    }
+
+    const payslipsForValidation: PayslipForValidation[] = (data || []).map((row: any) => {
+      const person = row.employment_contracts?.persons;
+      const items: PayslipItemValidation[] = (row.payslip_items || []).map((item: any) => ({
+        type: item.type,
+        amount: Number(item.amount) || 0,
+      }));
+
+      return {
+        id: row.id,
+        contract_id: row.contract_id,
+        employee_name: person?.name || `Contrato ${String(row.contract_id).substring(0, 8)}`,
+        employee_cpf: person?.cpf,
+        status: row.status,
+        total_earnings: Number(row.total_earnings) || 0,
+        total_deductions: Number(row.total_deductions) || 0,
+        net_salary: Number(row.net_salary) || 0,
+        items,
+      };
+    });
+
+    return this.validatePayslipsForClosure(payslipsForValidation);
+  }
+
+  /**
+   * 7. Executa o fechamento formal e imutável da folha no Supabase com bloqueio por colaboradores em erro
    */
   public async closePeriod(params: ClosureParams): Promise<{
     success: boolean;
@@ -120,6 +339,15 @@ export class PayrollClosureService {
     closed_at: string;
     payslips_closed: number;
   }> {
+    // 1. Validação client-side de integridade antes do fechamento
+    const validation = await this.validatePeriodBeforeClosure(params.period_id);
+    if (!validation.canClose) {
+      const firstError = validation.errorDetails[0];
+      throw new Error(
+        `Fechamento bloqueado: Existem ${validation.blockingErrorsCount} colaborador(es) com pendências ou erros no cálculo da folha. Exemplo: ${firstError.employee_name} (${firstError.reason})`
+      );
+    }
+
     // Tenta executar via RPC close_payroll_period se disponível no banco
     const { data: rpcData, error: rpcError } = await supabase.rpc('close_payroll_period', {
       p_period_id: params.period_id,

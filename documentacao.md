@@ -101,3 +101,16 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   - Desenvolvidos os componentes modais `PayrollClosureModal.tsx` (confirmação com resumo de vidas/líquido e aviso de imutabilidade) e `PayrollReopenModal.tsx` (reabertura com justificativa auditável, verificação de permissão e histórico de reaberturas).
   - Integrada a visualização da versão do holerite (`v1`, `v2...`) na tela de Cálculos (`Calculations.tsx`).
   - Suíte de testes TDD `src/tests/payroll/PayrollClosureAndReopening.test.ts` implementada com 100% de aprovação (9/9 testes). Total do projeto ampliado para 418 testes verdes em 62 arquivos de teste.
+- **14/10/2026 - Fase P7 / Item 4 (Bloqueio de Fechamento com Colaboradores em Erro)**:
+  - Criada a migration `00086_payroll_block_closure_on_errors_p7.sql` atualizando a RPC transacional `close_payroll_period` no banco de dados para travar o fechamento sob três condições impeditivas:
+    1. *Status de Erro*: Holerites com status `'ERROR'`, `'CALCULATION_ERROR'`, `'ERRO_CALCULO'` ou contendo `'ERROR'` (conforme T5).
+    2. *Líquido Negativo (CLT Art. 462)*: Holerites com `net_salary < 0`, impedindo fechamento ilegal com descontos excedendo o rendimento do empregado sem saldo devedor pactuado.
+    3. *Invariante Matemática (T6)*: Holerites com divergência entre o salário líquido e a equação `(Proventos - Descontos) > 0.01`.
+  - Implementados os métodos de verificação e auditoria em `PayrollClosureService` (`src/services/payroll/payrollClosureService.ts`):
+    - `validatePayslipsForClosure(payslips)`: validação pura de integridade, retornando objeto `ClosureValidationResult` com flag `canClose`, contagem de erros bloqueantes e lista detalhada com identificação dos colaboradores.
+    - `assertCanClosePeriod(payslips)`: barreira defensiva que lança exceção com mensagem explicativa se houver impedimentos.
+    - `validatePeriodBeforeClosure(periodId)`: consulta assíncrona ao banco trazendo holerites, itens e contratos para validação preventiva completa.
+    - Proteção integrada dentro do método `closePeriod`, impedindo a chamada de fechamento se houver pendências impeditivas.
+  - Refatorado o componente `PayrollClosureModal.tsx` com carregamento de validação em tempo real, painel de bloqueio em destaque com contagem e lista detalhada expansível dos colaboradores impedidos e desabilitação estrita do botão de aprovação de fechamento enquanto houver erros.
+  - Conectado atalho direto para a Auditoria de Pré-Folha (`onOpenAudit`) na tela de Cálculos (`Calculations.tsx`), permitindo fluxo fluido de correção de críticas.
+  - Suíte de testes TDD `src/tests/payroll/PayrollClosureBlockOnError.test.ts` implementada com 100% de aprovação (7/7 testes). Total do projeto ampliado para **425 testes verdes em 63 arquivos de teste**.
