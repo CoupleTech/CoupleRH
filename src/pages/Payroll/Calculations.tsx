@@ -14,6 +14,7 @@ import {
   AlertCircle,
   X,
   Trash2,
+  ShieldCheck,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useCompany } from "../../contexts/CompanyContext";
@@ -22,6 +23,7 @@ import { ptBR } from "date-fns/locale";
 import { toast } from 'sonner';
 import { confirmDialog } from '../../components/ConfirmDialogProvider';
 import { promptDialog } from '../../components/PromptDialogProvider';
+import { PrePayrollAuditModal } from "../../components/payroll/PrePayrollAuditModal";
 
 interface PayrollPeriod {
   id: string;
@@ -95,6 +97,9 @@ export default function () {
   const [newPeriodMonth, setNewPeriodMonth] = useState(currentMonth);
   const [newPeriodYear, setNewPeriodYear] = useState(currentYear);
   const [newPeriodType, setNewPeriodType] = useState("MONTHLY");
+
+  // Auditoria de Pré-folha
+  const [showAuditModal, setShowAuditModal] = useState(false);
 
 
 
@@ -610,6 +615,19 @@ export default function () {
                       </button>
                     )}
 
+                    {/* Botão de Pré-Folha & Críticas (quando calculada, em conferência, fechada ou reaberta) */}
+                    {activePeriod && (activePeriod.status === 'CALCULATED' || activePeriod.status === 'CONFERENCE' || activePeriod.status === 'CLOSED' || activePeriod.status === 'REOPENED') && (
+                      <button
+                        onClick={() => setShowAuditModal(true)}
+                        disabled={processing}
+                        className="flex items-center gap-2 bg-indigo-50 text-indigo-700 border border-indigo-200 px-5 py-2.5 rounded-lg font-bold shadow-sm hover:bg-indigo-100 transition-colors disabled:opacity-50"
+                        title="Abrir painel de críticas e auditoria da pré-folha"
+                      >
+                        <ShieldCheck size={18} className="text-indigo-600" />
+                        Pré-Folha & Críticas
+                      </button>
+                    )}
+
                     {/* CALCULATED -> Permite enviar para Conferência */}
                     {activePeriod.status === 'CALCULATED' && (
                       <button
@@ -1102,6 +1120,22 @@ export default function () {
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Modal de Auditoria e Críticas de Pré-Folha */}
+      {activePeriod && (
+        <PrePayrollAuditModal
+          isOpen={showAuditModal}
+          onClose={() => setShowAuditModal(false)}
+          periodId={activePeriod.id}
+          periodLabel={`${getMonthName(activePeriod.month)} / ${activePeriod.year}`}
+          onSelectEmployee={(contractId) => {
+            const p = payslips.find(item => item.contract_id === contractId);
+            if (p) {
+              togglePayslip(p.id);
+            }
+          }}
+        />
       )}
     </div>
   );
