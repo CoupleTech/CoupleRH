@@ -8,6 +8,12 @@ import { formatPeriodStartDate, validateAllLegalTables } from "./legal/LegalTabl
 import { shouldSkipFutureAdmission, calculateWorkingDays } from "./engine/ContractAdmissionFilter.ts";
 import { round2, sumMoney, subtractMoney } from "./utils/money.ts";
 import {
+  isVacationCrossingMonth,
+  calculateVacationDaysInMonth,
+  formatDate,
+  getDaysInMonth,
+} from "./engine/VacationOverlapCalculator.ts";
+import {
   validatePeriodStatusForCalculation,
   buildAtomicPayrollPayload,
   type RawCalculatedPayslip,
@@ -194,16 +200,15 @@ serve(async (req) => {
     if (contract_id_filter) {
       queryContracts = queryContracts.eq('id', contract_id_filter);
     } else if (period.type === 'VACATION') {
-      // Se for processamento em lote de férias, pega APENAS os contratos que tem férias neste mês
+      // T15: Se for processamento em lote de férias, pega contratos com férias que cruzam este mês
       const { data: vacPeriods } = await supabase
         .from('vacation_vesting_periods')
-        .select('contract_id, vacation_requests!inner(start_date, status)')
+        .select('contract_id, vacation_requests!inner(start_date, end_date, status)')
         .eq('tenant_id', tenant_id);
       
       const validContractIds = (vacPeriods || [])
         .filter((vp: any) => vp.vacation_requests?.some((req: any) => {
-          const start = new Date(req.start_date);
-          return start.getMonth() + 1 === period.month && start.getFullYear() === period.year;
+          return isVacationCrossingMonth(req.start_date, req.end_date, period.year, period.month);
         }))
         .map((vp: any) => vp.contract_id);
         
@@ -443,20 +448,25 @@ serve(async (req) => {
       }
     }
 
-    // Vamos buscar solicitações de férias onde o mês de start_date coincide com a competência.
-    // (Para um sistema avançado, verificaríamos sobreposições exatas de dias. No MVP: pega férias que iniciam no mês).
-    const startOfMonth = new Date(period.year, period.month - 1, 1).toISOString().split('T')[0];
-    const endOfMonth = new Date(period.year, period.month, 0).toISOString().split('T')[0];
+    // T15: Busca solicitações de férias que cruzam com a competência (start_date <= endOfMonth AND end_date >= startOfMonth)
+    const startOfMonth = formatDate(period.year, period.month, 1);
+    const endOfMonth = formatDate(period.year, period.month, getDaysInMonth(period.year, period.month));
 
-    const { data: vacationRequests } = await supabase
+    let vacQuery = supabase
       .from('vacation_requests')
       .select('*, vacation_vesting_periods!inner(contract_id)')
       .eq('tenant_id', tenant_id)
-      .gte('start_date', startOfMonth)
       .lte('start_date', endOfMonth)
+      .gte('end_date', startOfMonth)
       .in('status', ['APPROVED_DP', 'PAID', 'TAKEN']);
 
-    const vacations = (vacationRequests || []).map(v => ({
+    if (contractIds.length > 0) {
+      vacQuery = vacQuery.in('vacation_vesting_periods.contract_id', contractIds);
+    }
+
+    const { data: vacationRequests } = await vacQuery;
+
+    const vacations = (vacationRequests || []).map((v: any) => ({
       ...v,
       contract_id: v.vacation_vesting_periods.contract_id
     }));
@@ -519,36 +529,64 @@ serve(async (req) => {
           });
         }
       } else if (period.type === 'VACATION') {
-        const contractVacation = vacations.find(v => v.vesting_period_id && v.days_taken > 0); // Simplificado: acha a solicitação dele
-        // Precisa cruzar contract_id, mas a tabela vacation_requests não tem contract_id direto, 
-        // tem vesting_period_id que aponta para contract_id.
-        // Como 'vacations' foi puxada sem join, precisamos ajustar a query lá em cima.
+        const contractVacations = vacations.filter((v: any) => v.contract_id === contract.id);
         
-        // Temporário até ajustar a query lá em cima:
-        // Vamos supor que a query retornou o contract_id no join
-        const req = vacations.find(v => v.contract_id === contract.id);
-        
-        if (req) {
-           applicableRubrics = rubricas.filter(r => ['501', '502', '503', '504', '602', '901', '902', '903'].includes(r.code));
-           
-           const r501 = applicableRubrics.find(r => r.code === '501');
-           if (r501) eventos.push({ rubric_id: r501.id, manual_value: (contract.base_salary / 30) * req.days_taken, quantity: req.days_taken });
-           
-           const r502 = applicableRubrics.find(r => r.code === '502');
-           if (r502) eventos.push({ rubric_id: r502.id, manual_value: ((contract.base_salary / 30) * req.days_taken) / 3, quantity: 1 });
-           
-           if (req.cash_allowance_days > 0) {
-              const r503 = applicableRubrics.find(r => r.code === '503');
-              if (r503) eventos.push({ rubric_id: r503.id, manual_value: (contract.base_salary / 30) * req.cash_allowance_days, quantity: req.cash_allowance_days });
-              
-              const r504 = applicableRubrics.find(r => r.code === '504');
-              if (r504) eventos.push({ rubric_id: r504.id, manual_value: ((contract.base_salary / 30) * req.cash_allowance_days) / 3, quantity: 1 });
-           }
-           
-           if (req.advance_13th_salary) {
-              const r602 = applicableRubrics.find(r => r.code === '602');
-              if (r602) eventos.push({ rubric_id: r602.id, manual_value: contract.base_salary / 2, quantity: 1 });
-           }
+        if (contractVacations.length > 0) {
+          applicableRubrics = rubricas.filter((r: any) => ['501', '502', '503', '504', '602', '901', '902', '903'].includes(r.code));
+
+          // Base de cálculo das férias: salário base + adicionais habituais (CLT art. 142 § 5º)
+          let baseRemuneracao = contract.base_salary;
+          const contractFixedEvents = fixedEventsByContract[contract.id] || [];
+          for (const fe of contractFixedEvents) {
+            const rub = rubricas.find((r: any) => r.id === fe.rubric_id);
+            if (rub && rub.type === 'EARNING') {
+              if (fe.value_type === 'PERCENT') {
+                const baseVal = rub.calculation_base === 'SALARIO_MINIMO' 
+                  ? (general_legal_parameters?.minimum_wage || 1621) 
+                  : contract.base_salary;
+                baseRemuneracao = round2(baseRemuneracao + (baseVal * ((fe.value || 0) / 100)));
+              } else {
+                baseRemuneracao = round2(baseRemuneracao + (fe.value || 0));
+              }
+            }
+          }
+
+          const totalDaysTaken = contractVacations.reduce((acc: number, v: any) => acc + (v.days_taken || 0), 0);
+          const totalCashAllowanceDays = contractVacations.reduce((acc: number, v: any) => acc + (v.cash_allowance_days || 0), 0);
+          const hasAdvance13th = contractVacations.some((v: any) => Boolean(v.advance_13th_salary));
+
+          const r501 = applicableRubrics.find((r: any) => r.code === '501');
+          if (r501 && totalDaysTaken > 0) {
+            const val501 = round2((baseRemuneracao / 30) * totalDaysTaken);
+            eventos.push({ rubric_id: r501.id, manual_value: val501, quantity: totalDaysTaken });
+            
+            const r502 = applicableRubrics.find((r: any) => r.code === '502');
+            if (r502) {
+              const val502 = round2(val501 / 3);
+              eventos.push({ rubric_id: r502.id, manual_value: val502, quantity: 1 });
+            }
+          }
+
+          if (totalCashAllowanceDays > 0) {
+            const r503 = applicableRubrics.find((r: any) => r.code === '503');
+            if (r503) {
+              const val503 = round2((baseRemuneracao / 30) * totalCashAllowanceDays);
+              eventos.push({ rubric_id: r503.id, manual_value: val503, quantity: totalCashAllowanceDays });
+
+              const r504 = applicableRubrics.find((r: any) => r.code === '504');
+              if (r504) {
+                const val504 = round2(val503 / 3);
+                eventos.push({ rubric_id: r504.id, manual_value: val504, quantity: 1 });
+              }
+            }
+          }
+
+          if (hasAdvance13th) {
+            const r602 = applicableRubrics.find((r: any) => r.code === '602');
+            if (r602) {
+              eventos.push({ rubric_id: r602.id, manual_value: round2(contract.base_salary / 2), quantity: 1 });
+            }
+          }
         }
       } else if (period.type === 'THIRTEENTH_1' || period.type === 'THIRTEENTH_2') {
          // Lógica do 13º Salário
@@ -742,25 +780,18 @@ serve(async (req) => {
       // T11: Calcula dias trabalhados proporcionais (Doc §4)
       let diasTrabalhados = calculateWorkingDays(contract.admission_date, period.year, period.month);
 
-      // Subtrai dias de férias no mês (se for MENSAL)
+      // T15: Subtrai dias comerciais de férias no mês (se for MENSAL), somando todas as solicitações que cruzam o mês
       if (period.type === 'MONTHLY') {
-         const req = vacations.find(v => v.contract_id === contract.id);
-         if (req) {
-            // Conta quantos dias caem neste mês
-            const fStart = new Date(req.start_date);
-            const fEnd = new Date(req.end_date);
-            const mStart = new Date(period.year, period.month - 1, 1);
-            const mEnd = new Date(period.year, period.month, 0);
-
-            const calcStart = fStart > mStart ? fStart : mStart;
-            const calcEnd = fEnd < mEnd ? fEnd : mEnd;
-
-            if (calcStart <= calcEnd) {
-               const overlapDays = Math.round((calcEnd.getTime() - calcStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-               diasTrabalhados -= overlapDays;
-               if (diasTrabalhados < 0) diasTrabalhados = 0;
-            }
-         }
+        const contractVacations = vacations.filter((v: any) => v.contract_id === contract.id);
+        if (contractVacations.length > 0) {
+          const vacResult = calculateVacationDaysInMonth(
+            contractVacations,
+            period.year,
+            period.month,
+            diasTrabalhados
+          );
+          diasTrabalhados = vacResult.remainingWorkedDays;
+        }
       }
 
       // Calcula dias úteis e inúteis do mês
