@@ -25,14 +25,19 @@ import { confirmDialog } from '../../components/ConfirmDialogProvider';
 import { promptDialog } from '../../components/PromptDialogProvider';
 import { PrePayrollAuditModal } from "../../components/payroll/PrePayrollAuditModal";
 import { PayrollComparisonModal } from "../../components/payroll/PayrollComparisonModal";
+import { PayrollClosureModal } from "../../components/payroll/PayrollClosureModal";
+import { PayrollReopenModal } from "../../components/payroll/PayrollReopenModal";
 
 interface PayrollPeriod {
   id: string;
+  tenant_id?: string;
   month: number;
   year: number;
   type: string;
   status: string;
   processing_date: string;
+  current_version?: number;
+  closed_at?: string;
 }
 
 interface Payslip {
@@ -40,6 +45,7 @@ interface Payslip {
   contract_id: string;
   company_id: string;
   employee_name: string;
+  version?: number;
   total_earnings: number;
   total_deductions: number;
   net_salary: number;
@@ -104,6 +110,10 @@ export default function () {
 
   // Comparativo Mês a Mês
   const [showComparisonModal, setShowComparisonModal] = useState(false);
+
+  // Fechamento e Reabertura
+  const [showClosureModal, setShowClosureModal] = useState(false);
+  const [showReopenModal, setShowReopenModal] = useState(false);
 
 
 
@@ -269,7 +279,7 @@ export default function () {
       .select(
         `
         id, contract_id, total_earnings, total_deductions, net_salary,
-        base_inss, base_irrf, base_fgts, fgts_month,
+        base_inss, base_irrf, base_fgts, fgts_month, version,
         employment_contracts (
           company_id,
           workers (
@@ -295,6 +305,7 @@ export default function () {
           contract_id: p.contract_id,
           company_id: p.employment_contracts?.company_id,
           employee_name: fullName,
+          version: p.version || 1,
           total_earnings: p.total_earnings,
           total_deductions: p.total_deductions,
           net_salary: p.net_salary,
@@ -658,7 +669,7 @@ export default function () {
                     {activePeriod.status === 'CONFERENCE' && (
                       <>
                         <button
-                          onClick={async () => changePeriodStatus('CLOSED', 'Fechar Folha')}
+                          onClick={() => setShowClosureModal(true)}
                           disabled={processing}
                           className="flex items-center gap-2 bg-emerald-600 text-white px-6 py-2.5 rounded-lg font-bold shadow-md hover:bg-emerald-700 transition-colors disabled:opacity-50"
                         >
@@ -678,7 +689,7 @@ export default function () {
                     {/* CLOSED -> Permite Reabrir */}
                     {activePeriod.status === 'CLOSED' && (
                       <button
-                        onClick={async () => changePeriodStatus('REOPENED', 'Reabrir Folha')}
+                        onClick={() => setShowReopenModal(true)}
                         disabled={processing}
                         className="flex items-center gap-2 bg-rose-100 text-rose-700 border border-rose-200 px-6 py-2.5 rounded-lg font-bold shadow-sm hover:bg-rose-200 transition-colors disabled:opacity-50"
                       >
@@ -779,9 +790,14 @@ export default function () {
                               {p.employee_name.charAt(0)}
                             </div>
                             <div>
-                              <p className="font-bold text-slate-900">
-                                {p.employee_name}
-                              </p>
+                              <div className="flex items-center gap-2">
+                                <p className="font-bold text-slate-900">
+                                  {p.employee_name}
+                                </p>
+                                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                                  v{p.version || 1}
+                                </span>
+                              </div>
                               <p className="text-xs text-slate-500 mt-0.5">
                                 {activePeriod?.type === 'ADVANCE' ? 'Holerite de Adiantamento' : 
                          activePeriod?.type === 'MONTHLY' ? 'Holerite Mensal' :
@@ -1159,6 +1175,38 @@ export default function () {
           isOpen={showComparisonModal}
           onClose={() => setShowComparisonModal(false)}
           periodId={activePeriod.id}
+        />
+      )}
+
+      {/* Modal de Fechamento Imutável */}
+      {activePeriod && (
+        <PayrollClosureModal
+          isOpen={showClosureModal}
+          onClose={() => setShowClosureModal(false)}
+          periodId={activePeriod.id}
+          periodLabel={`${getMonthName(activePeriod.month)} / ${activePeriod.year}`}
+          payslipCount={payslips.length}
+          totalNet={payslips.reduce((acc, p) => acc + (Number(p.net_salary) || 0), 0)}
+          onSuccess={async () => {
+            await fetchPeriods();
+            await fetchPayslips(activePeriod.id);
+          }}
+        />
+      )}
+
+      {/* Modal de Reabertura Controlada */}
+      {activePeriod && (
+        <PayrollReopenModal
+          isOpen={showReopenModal}
+          onClose={() => setShowReopenModal(false)}
+          periodId={activePeriod.id}
+          periodLabel={`${getMonthName(activePeriod.month)} / ${activePeriod.year}`}
+          tenantId={activePeriod.tenant_id || ''}
+          currentVersion={activePeriod.current_version || 1}
+          onSuccess={async () => {
+            await fetchPeriods();
+            await fetchPayslips(activePeriod.id);
+          }}
         />
       )}
     </div>

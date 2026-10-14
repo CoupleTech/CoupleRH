@@ -11383,4 +11383,1126 @@ COMMENT ON COLUMN public.companies.simples_anexo IS
 NOTIFY pgrst, 'reload schema';
 ```
 
+### Migration `00077_time_tracking_pt01.sql` (Fase P5 / PT-01)
+- **Objetivo**: Modelagem e estruturação fundamental do Módulo de Ponto Eletrônico em estrita conformidade com a CLT (arts. 59, 66, 71, 74) e a Portaria MTP 671/2021 (REP-C, REP-P e importação de AFD).
+- **Tabelas Criadas**:
+  - `public.time_devices`: Cadastro de equipamentos e fontes de ponto (`REP_C` físico, `REP_P_MOBILE` celular/PWA, `IMPORT` arquivos AFD), com controle de NSR sequencial, IP/host para coletor local, status e API key hash.
+  - `public.afd_files`: Registro e controle de arquivos AFD (Arquivo-Fonte de Dados) importados com hash SHA256 exclusivo por tenant (`uq_afd_files_tenant_hash`) para idempotência absoluta.
+  - `public.time_punch_records`: Trilha imutável de batidas originais de ponto, com chave única `(device_id, nsr)`, carimbo de horário com fuso, geolocalização, IP, fingerprint, recibo e linha bruta AFD.
+  - `public.time_daily_summary`: Resumo diário de jornada consolidado por contrato e data (`uq_time_daily_summary_contract_date`), apurando minutos trabalhados, extras 50%/100%, adicional noturno, atrasos, faltas, saldo diário do banco de horas e detecção de infrações trabalhistas intrajornada (art. 71 CLT) e interjornada (art. 66 CLT com mínimo de 11h).
+- **Tabelas Estendidas**:
+  - `public.time_entries`: Adicionada coluna `punch_record_id REFERENCES public.time_punch_records(id)` para rastreabilidade direta da batida original que deu origem à marcação.
+  - `public.time_bank_accounts`: Adicionadas colunas de política de banco de horas (`policy_type` com ACORDO_INDIVIDUAL limitado a 6 meses conforme art. 59 §5º da CLT e CCT/ACT até 12 meses conforme art. 59 §2º, `validity_months`, `expiration_rule`, `max_positive_balance_minutes`, `closure_date`).
+- **Garantias de Imutabilidade e Segurança**:
+  - Trigger `trg_immutable_time_punch_records` com a função `prevent_punch_record_mutation()` que lança exceção terminante em qualquer tentativa de `UPDATE` ou `DELETE` na tabela `time_punch_records`.
+  - Habilitação obrigatória de RLS em todas as tabelas novas, com políticas de acesso multitenant para Administradores/DP e política de consulta do próprio histórico pelo colaborador (`Employees can view their own punch records` e `Employees can view their own daily summary`).
+  - Triggers de auditoria (`audit.audit_trigger_func()`) vinculados a todas as tabelas.
+
+```sql
+-- Migration: 00077_time_tracking_pt01.sql
+-- Description: Módulo de Ponto Eletrônico (PT-01) - Portaria MTP 671/2021 e CLT (art. 74)
+
+-- 1. TABELA DE DISPOSITIVOS E FONTES DE PONTO (REP-C, REP-P, IMPORT)
+CREATE TABLE IF NOT EXISTS public.time_devices (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('REP_C', 'REP_P_MOBILE', 'IMPORT')),
+    vendor TEXT,               -- Ex: 'Control iD'
+    model TEXT,                -- Ex: 'iDClass', 'iDFlex'
+    serial_number TEXT,        -- Número de fabricação/registro INMETRO
+    host TEXT,                 -- IP/host local para comunicação com coletor
+    port INTEGER DEFAULT 80,
+    last_nsr BIGINT NOT NULL DEFAULT 0,
+    last_sync_at TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'OFFLINE', 'MAINTENANCE')),
+    api_key_hash TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 2. TABELA DE ARQUIVOS AFD (ARQUIVO-FONTE DE DADOS - PORTARIA 671)
+CREATE TABLE IF NOT EXISTS public.afd_files (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    device_id UUID REFERENCES public.time_devices(id) ON DELETE SET NULL,
+    file_name TEXT NOT NULL,
+    file_hash TEXT NOT NULL,   -- SHA256 do arquivo original para idempotência
+    file_size_bytes BIGINT,
+    storage_path TEXT,
+    period_start DATE,
+    period_end DATE,
+    total_records INTEGER NOT NULL DEFAULT 0,
+    imported_records INTEGER NOT NULL DEFAULT 0,
+    duplicate_records INTEGER NOT NULL DEFAULT 0,
+    rejected_records INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PROCESSING', 'IMPORTED', 'ERROR')),
+    error_message TEXT,
+    uploaded_by UUID REFERENCES auth.users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_afd_files_tenant_hash UNIQUE (tenant_id, file_hash)
+);
+
+-- 3. TRILHA IMUTÁVEL DE REGISTROS DE PONTO (time_punch_records)
+CREATE TABLE IF NOT EXISTS public.time_punch_records (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    device_id UUID REFERENCES public.time_devices(id) ON DELETE SET NULL,
+    nsr BIGINT NOT NULL,       -- Número Sequencial de Registro (estrito por equipamento)
+    record_type INTEGER NOT NULL DEFAULT 3, -- 3 = Registro de Ponto na Portaria 671
+    punched_at TIMESTAMPTZ NOT NULL,        -- Horário com fuso carimbado confiavelmente
+    cpf TEXT,
+    pis TEXT,
+    worker_id UUID REFERENCES public.workers(id) ON DELETE SET NULL,
+    contract_id UUID REFERENCES public.employment_contracts(id) ON DELETE SET NULL,
+    source TEXT NOT NULL CHECK (source IN ('REP', 'MOBILE', 'IMPORT', 'MANUAL')),
+    geo JSONB,                 -- Dados de geolocalização ({lat, lng, accuracy, address})
+    ip INET,
+    device_fingerprint TEXT,
+    receipt_code TEXT,         -- Código de autenticação do comprovante entregue ao trabalhador
+    raw_line TEXT,             -- Linha bruta original lida do arquivo AFD
+    crc_ok BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_time_punch_records_device_nsr UNIQUE (device_id, nsr)
+);
+
+CREATE OR REPLACE FUNCTION public.prevent_punch_record_mutation()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'A trilha de registros originais de ponto (time_punch_records) é estritamente imutável (Portaria MTP 671/2021 e CLT art. 74). Operações de UPDATE ou DELETE são terminantemente proibidas.';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_immutable_time_punch_records ON public.time_punch_records;
+CREATE TRIGGER trg_immutable_time_punch_records
+BEFORE UPDATE OR DELETE ON public.time_punch_records
+FOR EACH ROW
+EXECUTE FUNCTION public.prevent_punch_record_mutation();
+
+-- 4. VINCULAR BATIDA ORIGINAL EM time_entries
+ALTER TABLE public.time_entries 
+    ADD COLUMN IF NOT EXISTS punch_record_id UUID REFERENCES public.time_punch_records(id) ON DELETE RESTRICT;
+
+-- 5. POLÍTICAS DE BANCO DE HORAS EM time_bank_accounts (CLT art. 59 §§ 2º e 5º)
+ALTER TABLE public.time_bank_accounts
+    ADD COLUMN IF NOT EXISTS policy_type TEXT CHECK (policy_type IN ('ACORDO_INDIVIDUAL', 'CCT', 'ACT')) DEFAULT 'ACORDO_INDIVIDUAL',
+    ADD COLUMN IF NOT EXISTS validity_months INTEGER DEFAULT 6,
+    ADD COLUMN IF NOT EXISTS expiration_rule TEXT CHECK (expiration_rule IN ('PAY_AS_OVERTIME', 'FORFEIT', 'EXTEND')) DEFAULT 'PAY_AS_OVERTIME',
+    ADD COLUMN IF NOT EXISTS max_positive_balance_minutes INTEGER,
+    ADD COLUMN IF NOT EXISTS closure_date DATE;
+
+-- 6. TABELA DE RESUMO DIÁRIO DE JORNADA (time_daily_summary)
+CREATE TABLE IF NOT EXISTS public.time_daily_summary (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    contract_id UUID NOT NULL REFERENCES public.employment_contracts(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    expected_work_minutes INTEGER NOT NULL DEFAULT 0,
+    worked_minutes INTEGER NOT NULL DEFAULT 0,
+    overtime_50_minutes INTEGER NOT NULL DEFAULT 0,
+    overtime_100_minutes INTEGER NOT NULL DEFAULT 0,
+    night_shift_minutes INTEGER NOT NULL DEFAULT 0,
+    night_overtime_minutes INTEGER NOT NULL DEFAULT 0,
+    delay_minutes INTEGER NOT NULL DEFAULT 0,
+    absence_minutes INTEGER NOT NULL DEFAULT 0,
+    break_taken_minutes INTEGER NOT NULL DEFAULT 0,
+    break_expected_minutes INTEGER NOT NULL DEFAULT 0,
+    intrajornada_violation_minutes INTEGER NOT NULL DEFAULT 0,
+    interjornada_violation_minutes INTEGER NOT NULL DEFAULT 0,
+    time_bank_credited_minutes INTEGER NOT NULL DEFAULT 0,
+    time_bank_debited_minutes INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'REGULAR' CHECK (status IN ('REGULAR', 'PENDING_APPROVAL', 'JUSTIFIED', 'INCONSISTENT', 'DAY_OFF', 'HOLIDAY', 'LEAVE', 'VACATION')),
+    inconsistencies TEXT[] DEFAULT '{}',
+    approved_by UUID,
+    approved_at TIMESTAMPTZ,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_time_daily_summary_contract_date UNIQUE (contract_id, date)
+);
+
+-- 7. RLS E AUDITORIA
+ALTER TABLE public.time_devices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.afd_files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.time_punch_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.time_daily_summary ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Tenant Admins and DP can manage time_devices" ON public.time_devices;
+CREATE POLICY "Tenant Admins and DP can manage time_devices" 
+    ON public.time_devices FOR ALL 
+    USING (
+        tenant_id = ANY (public.user_tenant_ids()) 
+        AND EXISTS (
+            SELECT 1 FROM public.tenant_users 
+            WHERE user_id = auth.uid() 
+            AND tenant_users.tenant_id = time_devices.tenant_id 
+            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        )
+    );
+
+DROP POLICY IF EXISTS "Tenant Admins and DP can manage afd_files" ON public.afd_files;
+CREATE POLICY "Tenant Admins and DP can manage afd_files" 
+    ON public.afd_files FOR ALL 
+    USING (
+        tenant_id = ANY (public.user_tenant_ids()) 
+        AND EXISTS (
+            SELECT 1 FROM public.tenant_users 
+            WHERE user_id = auth.uid() 
+            AND tenant_users.tenant_id = afd_files.tenant_id 
+            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        )
+    );
+
+DROP POLICY IF EXISTS "Tenant Admins and DP can manage time_punch_records" ON public.time_punch_records;
+CREATE POLICY "Tenant Admins and DP can manage time_punch_records" 
+    ON public.time_punch_records FOR ALL 
+    USING (
+        tenant_id = ANY (public.user_tenant_ids()) 
+        AND EXISTS (
+            SELECT 1 FROM public.tenant_users 
+            WHERE user_id = auth.uid() 
+            AND tenant_users.tenant_id = time_punch_records.tenant_id 
+            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        )
+    );
+
+DROP POLICY IF EXISTS "Employees can view their own punch records" ON public.time_punch_records;
+CREATE POLICY "Employees can view their own punch records"
+    ON public.time_punch_records FOR SELECT
+    USING (
+        tenant_id = ANY (public.user_tenant_ids())
+        AND EXISTS (
+            SELECT 1 FROM public.employment_contracts ec
+            JOIN public.workers w ON w.id = ec.worker_id
+            JOIN public.people p ON p.id = w.person_id
+            WHERE ec.id = time_punch_records.contract_id
+            AND (p.user_id = auth.uid() OR ec.worker_id = auth.uid() OR p.cpf = (SELECT cpf FROM public.people WHERE user_id = auth.uid() LIMIT 1))
+        )
+    );
+
+DROP POLICY IF EXISTS "Tenant Admins and DP can manage time_daily_summary" ON public.time_daily_summary;
+CREATE POLICY "Tenant Admins and DP can manage time_daily_summary" 
+    ON public.time_daily_summary FOR ALL 
+    USING (
+        tenant_id = ANY (public.user_tenant_ids()) 
+        AND EXISTS (
+            SELECT 1 FROM public.tenant_users 
+            WHERE user_id = auth.uid() 
+            AND tenant_users.tenant_id = time_daily_summary.tenant_id 
+            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        )
+    );
+
+DROP POLICY IF EXISTS "Employees can view their own daily summary" ON public.time_daily_summary;
+CREATE POLICY "Employees can view their own daily summary"
+    ON public.time_daily_summary FOR SELECT
+    USING (
+        tenant_id = ANY (public.user_tenant_ids())
+        AND EXISTS (
+            SELECT 1 FROM public.employment_contracts ec
+            JOIN public.workers w ON w.id = ec.worker_id
+            JOIN public.people p ON p.id = w.person_id
+            WHERE ec.id = time_daily_summary.contract_id
+            AND (p.user_id = auth.uid() OR ec.worker_id = auth.uid() OR p.cpf = (SELECT cpf FROM public.people WHERE user_id = auth.uid() LIMIT 1))
+        )
+    );
+
+DROP TRIGGER IF EXISTS audit_time_devices_trigger ON public.time_devices;
+CREATE TRIGGER audit_time_devices_trigger 
+    AFTER INSERT OR UPDATE OR DELETE ON public.time_devices 
+    FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+
+DROP TRIGGER IF EXISTS audit_afd_files_trigger ON public.afd_files;
+CREATE TRIGGER audit_afd_files_trigger 
+    AFTER INSERT OR UPDATE OR DELETE ON public.afd_files 
+    FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+
+DROP TRIGGER IF EXISTS audit_time_punch_records_trigger ON public.time_punch_records;
+CREATE TRIGGER audit_time_punch_records_trigger 
+    AFTER INSERT ON public.time_punch_records 
+    FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+
+DROP TRIGGER IF EXISTS audit_time_daily_summary_trigger ON public.time_daily_summary;
+CREATE TRIGGER audit_time_daily_summary_trigger 
+    AFTER INSERT OR UPDATE OR DELETE ON public.time_daily_summary 
+    FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+
+DROP TRIGGER IF EXISTS audit_time_bank_accounts_trigger ON public.time_bank_accounts;
+CREATE TRIGGER audit_time_bank_accounts_trigger 
+    AFTER INSERT OR UPDATE OR DELETE ON public.time_bank_accounts 
+    FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+```
+
+### Migration `00078_time_punch_geofence_pt05.sql` (Fase P5 / PT-05)
+- **Objetivo**: Suporte a Ponto por Celular/PWA (REP-P - Portaria MTP 671/2021), controle de perímetro geográfico (geofence) para locais de trabalho, parametrização de regime de teletrabalho e função atômica para registro de batida com hora confiável do servidor.
+- **Alterações de Esquema**:
+  - `public.workplaces`: adicionadas as colunas `latitude NUMERIC(10, 7)`, `longitude NUMERIC(10, 7)`, `radius_meters INTEGER DEFAULT 200` e `enforce_geofence BOOLEAN NOT NULL DEFAULT false`.
+  - `public.employment_contracts`: adicionadas as colunas `workplace_id UUID REFERENCES public.workplaces(id) ON DELETE SET NULL` e `is_telework BOOLEAN NOT NULL DEFAULT false`.
+- **Função RPC Transacional**:
+  - `public.register_mobile_punch(...)`: `SECURITY DEFINER` que vincula automaticamente ao dispositivo `REP_P_MOBILE` da empresa, obtém o próximo `last_nsr` de forma sequencial atômica, carimba `v_punched_at = NOW()` (eliminando qualquer dependência do relógio do smartphone) e grava em lote transacional em `public.time_punch_records` e `public.time_entries`.
+
+```sql
+-- Migration: 00078_time_punch_geofence_pt05.sql
+-- Description: Suporte a Ponto por Celular/PWA (REP-P - Portaria 671 MTP)
+
+ALTER TABLE public.workplaces
+    ADD COLUMN IF NOT EXISTS latitude NUMERIC(10, 7),
+    ADD COLUMN IF NOT EXISTS longitude NUMERIC(10, 7),
+    ADD COLUMN IF NOT EXISTS radius_meters INTEGER DEFAULT 200,
+    ADD COLUMN IF NOT EXISTS enforce_geofence BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE public.employment_contracts
+    ADD COLUMN IF NOT EXISTS workplace_id UUID REFERENCES public.workplaces(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS is_telework BOOLEAN NOT NULL DEFAULT false;
+
+CREATE OR REPLACE FUNCTION public.register_mobile_punch(
+    p_contract_id UUID,
+    p_geo JSONB DEFAULT NULL,
+    p_device_fingerprint TEXT DEFAULT NULL,
+    p_ip INET DEFAULT NULL,
+    p_receipt_code TEXT DEFAULT NULL,
+    p_entry_type TEXT DEFAULT 'IN'
+)
+RETURNS TABLE (
+    punch_id UUID,
+    device_id UUID,
+    nsr BIGINT,
+    punched_at TIMESTAMPTZ,
+    receipt_code TEXT
+)
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_tenant_id UUID;
+    v_company_id UUID;
+    v_worker_id UUID;
+    v_cpf TEXT;
+    v_pis TEXT;
+    v_device_id UUID;
+    v_nsr BIGINT;
+    v_punched_at TIMESTAMPTZ := NOW();
+    v_punch_id UUID;
+    v_receipt_code TEXT;
+BEGIN
+    SELECT 
+        ec.tenant_id,
+        ec.company_id,
+        ec.worker_id,
+        REGEXP_REPLACE(p.cpf, '[^0-9]', '', 'g'),
+        REGEXP_REPLACE(p.pis, '[^0-9]', '', 'g')
+    INTO
+        v_tenant_id,
+        v_company_id,
+        v_worker_id,
+        v_cpf,
+        v_pis
+    FROM public.employment_contracts ec
+    JOIN public.workers w ON w.id = ec.worker_id
+    JOIN public.people p ON p.id = w.person_id
+    WHERE ec.id = p_contract_id;
+
+    IF v_tenant_id IS NULL THEN
+        RAISE EXCEPTION 'Contrato de trabalho % não encontrado.', p_contract_id;
+    END IF;
+
+    SELECT id INTO v_device_id
+    FROM public.time_devices
+    WHERE tenant_id = v_tenant_id 
+      AND company_id = v_company_id 
+      AND kind = 'REP_P_MOBILE'
+      AND status = 'ACTIVE'
+    LIMIT 1;
+
+    IF v_device_id IS NULL THEN
+        INSERT INTO public.time_devices (
+            tenant_id,
+            company_id,
+            name,
+            kind,
+            vendor,
+            model,
+            status,
+            last_nsr
+        ) VALUES (
+            v_tenant_id,
+            v_company_id,
+            'App Mobile REP-P',
+            'REP_P_MOBILE',
+            'CoupleRH Mobile',
+            'PWA REP-P Portaria 671',
+            'ACTIVE',
+            0
+        ) RETURNING id INTO v_device_id;
+    END IF;
+
+    UPDATE public.time_devices
+    SET 
+        last_nsr = last_nsr + 1,
+        last_sync_at = v_punched_at
+    WHERE id = v_device_id
+    RETURNING last_nsr INTO v_nsr;
+
+    IF p_receipt_code IS NULL OR p_receipt_code = '' THEN
+        v_receipt_code := encode(digest(v_nsr::text || '|' || v_punched_at::text || '|' || v_cpf, 'sha256'), 'hex');
+    ELSE
+        v_receipt_code := p_receipt_code;
+    END IF;
+
+    INSERT INTO public.time_punch_records (
+        tenant_id,
+        company_id,
+        device_id,
+        nsr,
+        record_type,
+        punched_at,
+        cpf,
+        pis,
+        worker_id,
+        contract_id,
+        source,
+        geo,
+        ip,
+        device_fingerprint,
+        receipt_code,
+        crc_ok
+    ) VALUES (
+        v_tenant_id,
+        v_company_id,
+        v_device_id,
+        v_nsr,
+        3,
+        v_punched_at,
+        v_cpf,
+        v_pis,
+        v_worker_id,
+        p_contract_id,
+        'MOBILE',
+        p_geo,
+        p_ip,
+        p_device_fingerprint,
+        v_receipt_code,
+        true
+    ) RETURNING id INTO v_punch_id;
+
+    INSERT INTO public.time_entries (
+        tenant_id,
+        contract_id,
+        original_timestamp,
+        entry_type,
+        punch_record_id,
+        device_info,
+        status
+    ) VALUES (
+        v_tenant_id,
+        p_contract_id,
+        v_punched_at,
+        p_entry_type,
+        v_punch_id,
+        p_device_fingerprint,
+        'APPROVED'
+    );
+
+    RETURN QUERY SELECT 
+        v_punch_id,
+        v_device_id,
+        v_nsr,
+        v_punched_at,
+        v_receipt_code;
+END;
+$$ LANGUAGE plpgsql;
+
+GRANT EXECUTE ON FUNCTION public.register_mobile_punch TO authenticated, anon;
+```
+
+---
+
+### Script 79: `00079_time_bank_pt07.sql` (Fase P5 — Tarefa PT-07)
+```sql
+-- ==============================================================================
+-- Migration: 00079_time_bank_pt07.sql
+-- Descrição: Fase P5 / Tarefa PT-07 — Banco de Horas (CLT Art. 59 §§ 2º, 3º e 5º)
+--            Atualização de constraints para liquidação/pagamento como HE,
+--            vínculo com períodos de folha e resumo diário, alertas e índices.
+-- ==============================================================================
+
+-- 1. ATUALIZAR CONSTRAINT EM time_bank_transactions (Adicionando PAYOUT e EXPIRATION_PAYOUT)
+ALTER TABLE public.time_bank_transactions
+    DROP CONSTRAINT IF EXISTS time_bank_transactions_transaction_type_check;
+
+ALTER TABLE public.time_bank_transactions
+    ADD CONSTRAINT time_bank_transactions_transaction_type_check
+    CHECK (transaction_type IN (
+        'OVERTIME',
+        'DELAY',
+        'ABSENCE',
+        'COMPENSATION_DAY_OFF',
+        'MANUAL_ADJUSTMENT',
+        'PAYOUT',
+        'EXPIRATION_PAYOUT'
+    ));
+
+-- 2. ADICIONAR COLUNAS DE RASTREABILIDADE EM time_bank_transactions
+ALTER TABLE public.time_bank_transactions
+    ADD COLUMN IF NOT EXISTS payroll_period_id UUID REFERENCES public.payroll_periods(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS daily_summary_id UUID REFERENCES public.time_daily_summary(id) ON DELETE SET NULL;
+
+-- 3. ADICIONAR COLUNAS DE GOVERNANÇA E QUITAÇÃO EM time_bank_accounts
+ALTER TABLE public.time_bank_accounts
+    ADD COLUMN IF NOT EXISTS warning_days_before_expiration INTEGER DEFAULT 30,
+    ADD COLUMN IF NOT EXISTS paid_out_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS paid_out_payroll_period_id UUID REFERENCES public.payroll_periods(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS payout_rubric_code TEXT DEFAULT '152';
+
+-- 4. ÍNDICES DE PERFORMANCE PARA CONSULTAS DE EXTRATO E EXPIRAÇÃO
+CREATE INDEX IF NOT EXISTS idx_time_bank_accounts_contract_status
+    ON public.time_bank_accounts(contract_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_time_bank_accounts_end_date
+    ON public.time_bank_accounts(end_date)
+    WHERE status = 'ACTIVE';
+
+CREATE INDEX IF NOT EXISTS idx_time_bank_transactions_account_date
+    ON public.time_bank_transactions(account_id, date ASC, created_at ASC);
+
+-- 5. RPC TRANSACIONAL ATÔMICA PARA LIQUIDAÇÃO E FECHAMENTO DO BANCO DE HORAS
+CREATE OR REPLACE FUNCTION public.close_and_payout_time_bank_account(
+    p_account_id UUID,
+    p_closure_date DATE,
+    p_reason TEXT, -- 'EXPIRATION' | 'TERMINATION' | 'MANUAL'
+    p_payroll_period_id UUID DEFAULT NULL,
+    p_overtime_factor NUMERIC DEFAULT 1.5,
+    p_rubric_code TEXT DEFAULT '152'
+)
+RETURNS TABLE (
+    account_id UUID,
+    final_balance_minutes INTEGER,
+    status TEXT,
+    closure_date DATE,
+    payout_hours NUMERIC,
+    rubric_code TEXT
+) AS $$
+DECLARE
+    v_account public.time_bank_accounts%ROWTYPE;
+    v_balance INTEGER;
+    v_tx_type TEXT;
+    v_desc TEXT;
+    v_hours NUMERIC;
+BEGIN
+    SELECT * INTO v_account 
+    FROM public.time_bank_accounts 
+    WHERE id = p_account_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Conta de banco de horas não encontrada: %', p_account_id;
+    END IF;
+
+    IF v_account.status != 'ACTIVE' THEN
+        RAISE EXCEPTION 'Apenas contas ATIVAS podem ser liquidadas. Status atual: %', v_account.status;
+    END IF;
+
+    v_balance := v_account.balance_minutes;
+
+    IF v_balance > 0 THEN
+        v_hours := ROUND((v_balance::NUMERIC / 60.0), 2);
+        
+        IF p_reason = 'EXPIRATION' THEN
+            v_tx_type := 'EXPIRATION_PAYOUT';
+            v_desc := 'Liquidação de banco de horas vencido para pagamento em folha (Art. 59 §3º CLT)';
+        ELSE
+            v_tx_type := 'PAYOUT';
+            v_desc := 'Liquidação rescisória de banco de horas para pagamento em folha (Art. 59 §3º CLT)';
+        END IF;
+
+        -- Registra débito de quitação
+        INSERT INTO public.time_bank_transactions (
+            tenant_id,
+            account_id,
+            date,
+            minutes,
+            transaction_type,
+            description,
+            payroll_period_id
+        ) VALUES (
+            v_account.tenant_id,
+            v_account.id,
+            p_closure_date,
+            -v_balance,
+            v_tx_type,
+            v_desc,
+            p_payroll_period_id
+        );
+
+        -- Atualiza conta
+        UPDATE public.time_bank_accounts
+        SET balance_minutes = 0,
+            status = 'PAID_OUT',
+            closure_date = p_closure_date,
+            paid_out_at = NOW(),
+            paid_out_payroll_period_id = p_payroll_period_id,
+            updated_at = NOW()
+        WHERE id = v_account.id;
+
+    ELSE
+        -- Saldo zerado ou negativo
+        v_hours := 0;
+        UPDATE public.time_bank_accounts
+        SET status = 'CLOSED',
+            closure_date = p_closure_date,
+            updated_at = NOW()
+        WHERE id = v_account.id;
+    END IF;
+
+    RETURN QUERY SELECT 
+        v_account.id,
+        0,
+        CASE WHEN v_balance > 0 THEN 'PAID_OUT' ELSE 'CLOSED' END,
+        p_closure_date,
+        v_hours,
+        p_rubric_code;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.close_and_payout_time_bank_account TO authenticated;
+```
+
+---
+
+### Script 80: `00080_timesheet_and_contest_pt08.sql` (Fase P5 — Tarefa PT-08)
+```sql
+-- ==============================================================================
+-- Migration: 00080_timesheet_and_contest_pt08.sql
+-- Descrição: Fase P5 / Tarefa PT-08 — Espelho de Ponto Eletrônico (Portaria MTP 671/2021)
+--            e Fluxo de Contestação com Auditoria e RLS.
+-- ==============================================================================
+
+-- 1. ESTENDER A TABELA timesheets COM TOTALIZADORES LEGAIS E CAMPOS DE CONTESTAÇÃO
+ALTER TABLE public.timesheets
+    ADD COLUMN IF NOT EXISTS total_overtime_50_minutes INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS total_overtime_100_minutes INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS total_delay_minutes INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS total_absence_minutes INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS total_intrajornada_violation_minutes INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS time_bank_balance_minutes INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS document_hash TEXT,
+    ADD COLUMN IF NOT EXISTS rejection_reason TEXT,
+    ADD COLUMN IF NOT EXISTS contested_at TIMESTAMPTZ;
+
+-- 2. ATUALIZAR STATUS DE timesheets PARA INCLUIR CONTESTED
+ALTER TABLE public.timesheets
+    DROP CONSTRAINT IF EXISTS timesheets_status_check;
+
+ALTER TABLE public.timesheets
+    ADD CONSTRAINT timesheets_status_check
+    CHECK (status IN ('DRAFT', 'PENDING_SIGNATURE', 'SIGNED', 'CONTESTED', 'CLOSED'));
+
+-- 3. CRIAR TABELA DE CONTESTAÇÕES DO ESPELHO DE PONTO (timesheet_contests)
+CREATE TABLE IF NOT EXISTS public.timesheet_contests (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    timesheet_id UUID NOT NULL REFERENCES public.timesheets(id) ON DELETE CASCADE,
+    contract_id UUID NOT NULL REFERENCES public.employment_contracts(id) ON DELETE CASCADE,
+    worker_id UUID REFERENCES public.workers(id) ON DELETE SET NULL,
+    
+    reason TEXT NOT NULL,
+    affected_dates DATE[] NOT NULL DEFAULT '{}',
+    attachment_url TEXT,
+    
+    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'UNDER_REVIEW', 'RESOLVED_ACCEPTED', 'REJECTED')),
+    reviewed_by UUID,
+    review_notes TEXT,
+    reviewed_at TIMESTAMPTZ,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 4. ÍNDICES DE PERFORMANCE
+CREATE INDEX IF NOT EXISTS idx_timesheet_contests_timesheet
+    ON public.timesheet_contests(timesheet_id);
+
+CREATE INDEX IF NOT EXISTS idx_timesheet_contests_contract
+    ON public.timesheet_contests(contract_id);
+
+CREATE INDEX IF NOT EXISTS idx_timesheet_contests_status
+    ON public.timesheet_contests(status)
+    WHERE status = 'PENDING';
+
+-- 5. RLS (ROW LEVEL SECURITY)
+ALTER TABLE public.timesheet_contests ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Tenant multitenant access for timesheet_contests" ON public.timesheet_contests;
+CREATE POLICY "Tenant multitenant access for timesheet_contests"
+    ON public.timesheet_contests
+    FOR ALL
+    USING (tenant_id = ANY (public.user_tenant_ids()));
+
+-- Permitir que o próprio colaborador crie e consulte suas contestações
+DROP POLICY IF EXISTS "Workers can read and create their own timesheet contests" ON public.timesheet_contests;
+CREATE POLICY "Workers can read and create their own timesheet contests"
+    ON public.timesheet_contests
+    FOR ALL
+    USING (
+        worker_id IN (
+            SELECT id FROM public.workers WHERE user_id = auth.uid()
+        )
+    );
+
+-- 6. GATILHO DE AUDITORIA (T29)
+DROP TRIGGER IF EXISTS audit_timesheet_contests_trigger ON public.timesheet_contests;
+CREATE TRIGGER audit_timesheet_contests_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON public.timesheet_contests
+    FOR EACH ROW
+    EXECUTE FUNCTION audit.audit_trigger_func();
+```
+
+---
+
+### Script 81: `00081_time_period_closure_pt09.sql` (Fase P5 — Tarefa PT-09)
+```sql
+-- ==============================================================================
+-- Migration: 00081_time_period_closure_pt09.sql
+-- Descrição: Fase P5 / Tarefa PT-09 — Fechamento Automático de Ponto Eletrônico
+--            com Geração de Eventos Variáveis na Folha e Rastreabilidade.
+-- ==============================================================================
+
+-- 1. TABELA DE FECHAMENTO DO PERÍODO DE PONTO (time_period_closures)
+CREATE TABLE IF NOT EXISTS public.time_period_closures (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    payroll_period_id UUID NOT NULL REFERENCES public.payroll_periods(id) ON DELETE CASCADE,
+    
+    period_start DATE NOT NULL,
+    period_end DATE NOT NULL,
+    status TEXT NOT NULL DEFAULT 'CLOSED' CHECK (status IN ('OPEN', 'PROCESSING', 'CLOSED', 'REOPENED')),
+    
+    total_contracts INTEGER NOT NULL DEFAULT 0,
+    total_events_generated INTEGER NOT NULL DEFAULT 0,
+    summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+    
+    closed_by UUID,
+    closed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    reopened_by UUID,
+    reopened_at TIMESTAMPTZ,
+    reopen_reason TEXT,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    UNIQUE(tenant_id, payroll_period_id, company_id)
+);
+
+-- 2. EXTENSÃO DA TABELA payroll_variable_events COM ORIGEM E RASTREIO
+ALTER TABLE public.payroll_variable_events
+    ADD COLUMN IF NOT EXISTS quantity NUMERIC(10, 4) DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'MANUAL' CHECK (origin IN ('MANUAL', 'TIME_TRACKING', 'IMPORT', 'SYSTEM')),
+    ADD COLUMN IF NOT EXISTS time_period_closure_id UUID REFERENCES public.time_period_closures(id) ON DELETE CASCADE;
+
+-- 3. ÍNDICES DE PERFORMANCE
+CREATE INDEX IF NOT EXISTS idx_time_period_closures_period
+    ON public.time_period_closures(payroll_period_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_payroll_variable_events_closure
+    ON public.payroll_variable_events(time_period_closure_id);
+
+CREATE INDEX IF NOT EXISTS idx_payroll_variable_events_origin
+    ON public.payroll_variable_events(period_id, origin);
+
+-- 4. RLS (ROW LEVEL SECURITY)
+ALTER TABLE public.time_period_closures ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Tenant multitenant access for time_period_closures" ON public.time_period_closures;
+CREATE POLICY "Tenant multitenant access for time_period_closures"
+    ON public.time_period_closures
+    FOR ALL
+    USING (tenant_id = ANY (public.user_tenant_ids()));
+
+-- 5. GATILHO DE AUDITORIA (T29)
+DROP TRIGGER IF EXISTS audit_time_period_closures_trigger ON public.time_period_closures;
+CREATE TRIGGER audit_time_period_closures_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON public.time_period_closures
+    FOR EACH ROW
+    EXECUTE FUNCTION audit.audit_trigger_func();
+```
+
+---
+
+### Migration `00082_employee_time_tracking_pt10.sql` (Fase P5 / PT-10)
+
+```sql
+-- ==============================================================================
+-- Migration: 00082_employee_time_tracking_pt10.sql
+-- Descrição: Fase P5 / Tarefa PT-10 — RPCs do Portal do Colaborador para
+--            Ponto Eletrônico (batidas de hoje, extrato de banco de horas,
+--            espelhos de ponto, assinatura e contestação).
+-- ==============================================================================
+
+-- 1. CONSULTAR BATIDAS DE HOJE DO COLABORADOR
+CREATE OR REPLACE FUNCTION public.get_employee_today_punches(p_contract_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_punches JSONB;
+BEGIN
+    SELECT COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'id', te.id,
+                'entry_type', te.entry_type,
+                'original_timestamp', te.original_timestamp,
+                'status', te.status,
+                'punch_record_id', te.punch_record_id,
+                'receipt_code', pr.receipt_code,
+                'nsr', pr.nsr
+            ) ORDER BY te.original_timestamp ASC
+        ),
+        '[]'::jsonb
+    ) INTO v_punches
+    FROM public.time_entries te
+    LEFT JOIN public.time_punch_records pr ON pr.id = te.punch_record_id
+    WHERE te.contract_id = p_contract_id
+      AND DATE(te.original_timestamp AT TIME ZONE 'America/Sao_Paulo') = DATE(NOW() AT TIME ZONE 'America/Sao_Paulo');
+
+    RETURN v_punches;
+END;
+$$;
+
+-- 2. CONSULTAR RESUMO DO BANCO DE HORAS ATIVO DO COLABORADOR
+CREATE OR REPLACE FUNCTION public.get_employee_time_bank(p_contract_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_account RECORD;
+    v_transactions JSONB;
+    v_days_left INT;
+    v_alert TEXT := 'NORMAL';
+BEGIN
+    SELECT * INTO v_account
+    FROM public.time_bank_accounts
+    WHERE contract_id = p_contract_id
+      AND status = 'ACTIVE'
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object(
+            'has_active_account', false,
+            'balance_minutes', 0,
+            'formatted_balance', '+00:00',
+            'transactions', '[]'::jsonb
+        );
+    END IF;
+
+    -- Calcular dias restantes para expiração
+    v_days_left := (v_account.valid_until - CURRENT_DATE);
+
+    IF v_days_left <= 0 THEN
+        v_alert := 'EXPIRED';
+    ELSIF v_days_left <= 30 THEN
+        v_alert := 'EXPIRING_SOON';
+    END IF;
+
+    -- Obter últimas 20 transações
+    SELECT COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'id', t.id,
+                'transaction_type', t.transaction_type,
+                'minutes', t.minutes,
+                'balance_after_minutes', t.balance_after_minutes,
+                'origin_date', t.origin_date,
+                'description', t.description,
+                'created_at', t.created_at
+            ) ORDER BY t.created_at DESC
+        ),
+        '[]'::jsonb
+    ) INTO v_transactions
+    FROM (
+        SELECT * FROM public.time_bank_transactions
+        WHERE account_id = v_account.id
+        ORDER BY created_at DESC
+        LIMIT 20
+    ) t;
+
+    RETURN jsonb_build_object(
+        'has_active_account', true,
+        'account_id', v_account.id,
+        'agreement_type', v_account.agreement_type,
+        'balance_minutes', v_account.balance_minutes,
+        'valid_from', v_account.valid_from,
+        'valid_until', v_account.valid_until,
+        'days_remaining', v_days_left,
+        'alert_status', v_alert,
+        'max_monthly_negative_balance', v_account.max_monthly_negative_balance,
+        'transactions', v_transactions
+    );
+END;
+$$;
+
+-- 3. CONSULTAR ESPELHOS MENSAIS DO COLABORADOR
+CREATE OR REPLACE FUNCTION public.get_employee_timesheets(p_contract_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_sheets JSONB;
+BEGIN
+    SELECT COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'id', ts.id,
+                'period_year', ts.period_year,
+                'period_month', ts.period_month,
+                'status', ts.status,
+                'total_regular_minutes', ts.total_regular_minutes,
+                'total_overtime_50_minutes', ts.total_overtime_50_minutes,
+                'total_overtime_100_minutes', ts.total_overtime_100_minutes,
+                'total_night_shift_minutes', ts.total_night_shift_minutes,
+                'total_delay_minutes', ts.total_delay_minutes,
+                'total_absence_minutes', ts.total_absence_minutes,
+                'time_bank_balance_minutes', ts.time_bank_balance_minutes,
+                'document_hash', ts.document_hash,
+                'contested_at', ts.contested_at,
+                'signed_at', ts.signed_at,
+                'created_at', ts.created_at
+            ) ORDER BY ts.period_year DESC, ts.period_month DESC
+        ),
+        '[]'::jsonb
+    ) INTO v_sheets
+    FROM public.timesheets ts
+    WHERE ts.contract_id = p_contract_id;
+
+    RETURN v_sheets;
+END;
+$$;
+
+-- 4. ASSINATURA DIGITAL / CIÊNCIA DO ESPELHO DE PONTO
+CREATE OR REPLACE FUNCTION public.sign_employee_timesheet(
+    p_contract_id UUID,
+    p_timesheet_id UUID,
+    p_signature_hash TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_ts RECORD;
+BEGIN
+    SELECT * INTO v_ts
+    FROM public.timesheets
+    WHERE id = p_timesheet_id
+      AND contract_id = p_contract_id;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Espelho de ponto não encontrado.');
+    END IF;
+
+    IF v_ts.status = 'SIGNED' THEN
+        RETURN jsonb_build_object('success', true, 'message', 'Espelho já assinado anteriormente.');
+    END IF;
+
+    UPDATE public.timesheets
+    SET status = 'SIGNED',
+        signed_at = NOW(),
+        document_hash = COALESCE(document_hash, p_signature_hash),
+        updated_at = NOW()
+    WHERE id = p_timesheet_id;
+
+    RETURN jsonb_build_object('success', true, 'signed_at', NOW());
+END;
+$$;
+```
+
+---
+
+## 83. Script Consolidado Fase P5 (Ponto Eletrônico Portaria 671 / CLT)
+Arquivo raiz: `MIGRATION_P5_PONTO_ELETRONICO.sql`
+Objetivo: Execução atômica e autocontida no Supabase SQL Editor contemplando todas as dependências prévias de schema da Fase P5:
+1. `time_devices` (REP-C, REP-P Mobile, Importador).
+2. `afd_files` (Registro de arquivos AFD com idempotência por hash SHA-256).
+3. `time_punch_records` (Trilha imutável de batidas protegida por trigger `prevent_punch_record_mutation`).
+4. Extensão de `time_entries` adicionando a FK `punch_record_id`.
+5. Extensão de `time_bank_accounts` e `time_bank_transactions` com políticas CLT Art. 59.
+6. `time_daily_summary` (Resumo diário com tolerâncias e adicionais).
+7. Geofence em `workplaces` e teletrabalho em `employment_contracts`.
+8. Extensão de `timesheets` e tabela `timesheet_contests`.
+9. `time_period_closures` com rastreamento de eventos variáveis.
+10. RPCs do Portal do Colaborador (`register_mobile_punch`, `get_employee_today_punches`, `get_employee_time_bank`, `get_employee_timesheets`, `sign_employee_timesheet`).
+11. Grants de execução para roles `anon`, `authenticated` e `service_role`.
+12. Recarregamento imediato do cache de API: `NOTIFY pgrst, 'reload schema';`.
+
+---
+
+## 84. Assinatura Digital de Documentos (Fase P6 / AS-01 a AS-12)
+Migrations: `00083_document_signatures_as01.sql` e `00084_drop_sign_worker_document_as04.sql`
+Conformidade: Lei Federal nº 14.063/2020 e MP nº 2.200-2/2001.
+
+### 84.1 Estrutura de employee_documents
+```sql
+ALTER TABLE public.employee_documents
+    ADD COLUMN IF NOT EXISTS doc_type TEXT DEFAULT 'OTHER',
+    ADD COLUMN IF NOT EXISTS source_ref UUID,
+    ADD COLUMN IF NOT EXISTS hash_original TEXT, -- H1 (Hash do PDF gerado no servidor)
+    ADD COLUMN IF NOT EXISTS hash_signed TEXT,   -- H2 (Hash do PDF assinado com manifesto)
+    ADD COLUMN IF NOT EXISTS signed_file_url TEXT,
+    ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS version INT NOT NULL DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS verification_code TEXT UNIQUE,
+    ADD COLUMN IF NOT EXISTS signature_level TEXT NOT NULL DEFAULT 'ADVANCED',
+    ADD COLUMN IF NOT EXISTS requires_otp BOOLEAN NOT NULL DEFAULT true,
+    ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS signed_at TIMESTAMPTZ;
+```
+
+### 84.2 Estrutura e Imutabilidade de signatures_log
+```sql
+ALTER TABLE public.signatures_log
+    ADD COLUMN IF NOT EXISTS auth_method TEXT DEFAULT 'SESSION_OTP',
+    ADD COLUMN IF NOT EXISTS geo JSONB,
+    ADD COLUMN IF NOT EXISTS signature_png_url TEXT,
+    ADD COLUMN IF NOT EXISTS signature_strokes JSONB,
+    ADD COLUMN IF NOT EXISTS decision TEXT NOT NULL DEFAULT 'SIGNED',
+    ADD COLUMN IF NOT EXISTS reason TEXT,
+    ADD COLUMN IF NOT EXISTS manifest_metadata JSONB,
+    ADD COLUMN IF NOT EXISTS certificate_info JSONB;
+
+-- Bloqueio estrito de UPDATE e DELETE
+CREATE OR REPLACE FUNCTION public.protect_signatures_log_immutability()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'VIOLAÇÃO DE IMUTABILIDADE FORENSE: Registros de signatures_log não podem ser alterados ou excluídos.';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_protect_signatures_log_immutability
+BEFORE UPDATE OR DELETE ON public.signatures_log
+FOR EACH ROW EXECUTE FUNCTION public.protect_signatures_log_immutability();
+```
+
+### 84.3 Tabela document_events (Ciclo de Vida Documental)
+```sql
+CREATE TABLE public.document_events (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    document_id UUID NOT NULL REFERENCES public.employee_documents(id) ON DELETE CASCADE,
+    event TEXT NOT NULL CHECK (event IN (
+        'CREATED', 'NOTIFIED_EMAIL', 'NOTIFIED_WHATSAPP', 'NOTIFIED_PORTAL',
+        'VIEWED', 'OTP_REQUESTED', 'OTP_VERIFIED', 'SIGNED',
+        'CONTESTED', 'REFUSED', 'DOWNLOADED', 'VERIFIED_PUBLIC'
+    )),
+    at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ip TEXT,
+    user_agent TEXT,
+    actor_user_id UUID,
+    meta JSONB DEFAULT '{}'::jsonb
+);
+```
+
+### 84.4 Storage Privado (private-documents)
+- Bucket `private-documents` com `public = false`.
+- Políticas RLS restritas para leitura autenticada ou via URLs assinadas geradas pelo backend.
+- Remoção definitiva da RPC vulnerável `sign_worker_document(UUID, UUID)`.
+
+---
+
+## 85. Fechamento Imutável, Governança de Reabertura e Versionamento de Holerites (Fase P7)
+Migration: `00085_payroll_closure_immutability_and_versioning_p7.sql`
+Objetivo: Garantir a imutabilidade jurídica dos holerites fechados (CLT), rastreabilidade de reaberturas e histórico versionado (`v1`, `v2`...).
+
+### 85.1 Extensão de payroll_periods e payslips
+```sql
+-- 1. Colunas de fechamento e auditoria em payroll_periods
+ALTER TABLE public.payroll_periods 
+    ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS closed_by UUID REFERENCES auth.users(id),
+    ADD COLUMN IF NOT EXISTS closure_notes TEXT,
+    ADD COLUMN IF NOT EXISTS current_version INTEGER NOT NULL DEFAULT 1;
+
+-- 2. Versionamento e hash de fechamento em payslips
+ALTER TABLE public.payslips 
+    ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS is_latest BOOLEAN NOT NULL DEFAULT true,
+    ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS closure_hash TEXT;
+```
+
+### 85.2 Trilha de Auditoria de Reaberturas (payroll_period_reopenings)
+```sql
+CREATE TABLE IF NOT EXISTS public.payroll_period_reopenings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    period_id UUID NOT NULL REFERENCES public.payroll_periods(id) ON DELETE CASCADE,
+    reopened_by UUID NOT NULL REFERENCES auth.users(id),
+    reopened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    reason TEXT NOT NULL,
+    previous_closed_at TIMESTAMPTZ,
+    previous_closed_by UUID,
+    previous_version INTEGER NOT NULL DEFAULT 1,
+    new_version INTEGER NOT NULL DEFAULT 2,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.payroll_period_reopenings ENABLE ROW LEVEL SECURITY;
+```
+
+### 85.3 Trigger de Imutabilidade Total (CLT)
+Bloqueia `UPDATE` e `DELETE` em `payslips`, `payslip_items`, `payroll_company_taxes` e `payroll_memory_calc` se `payroll_periods.status = 'CLOSED'`.
+
+```sql
+CREATE OR REPLACE FUNCTION public.check_payroll_period_immutability()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_period_id UUID;
+    v_status TEXT;
+BEGIN
+    IF TG_TABLE_NAME = 'payslips' THEN
+        v_period_id := COALESCE(OLD.period_id, NEW.period_id);
+    ELSIF TG_TABLE_NAME = 'payslip_items' THEN
+        SELECT period_id INTO v_period_id FROM public.payslips WHERE id = COALESCE(OLD.payslip_id, NEW.payslip_id);
+    ELSIF TG_TABLE_NAME = 'payroll_company_taxes' THEN
+        v_period_id := COALESCE(OLD.period_id, NEW.period_id);
+    ELSIF TG_TABLE_NAME = 'payroll_memory_calc' THEN
+        v_period_id := COALESCE(OLD.period_id, NEW.period_id);
+    END IF;
+
+    IF v_period_id IS NOT NULL THEN
+        SELECT status INTO v_status FROM public.payroll_periods WHERE id = v_period_id;
+        IF v_status = 'CLOSED' THEN
+            RAISE EXCEPTION 'Operação bloqueada (Imutabilidade Legal CLT): O período de folha % está FECHADO (CLOSED). Nenhum holerite, item ou imposto pode ser alterado ou excluído sem reabertura formal autorizada.', v_period_id;
+        END IF;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+```
+
+### 85.4 RPCs Transacionais
+- `close_payroll_period(p_period_id UUID, p_notes TEXT)`: validação de perfil (`system_admin`, `tenant_admin`, `dp_manager`, `dp_analyst`), trava de status e imutabilidade dos holerites.
+- `reopen_payroll_period(p_period_id UUID, p_reason TEXT)`: validação estrita de justificativa ($\ge 15$ caracteres) e perfis gerenciais (`system_admin`, `tenant_admin`, `dp_manager`), registrando em `payroll_period_reopenings` e incrementando a versão da folha (`current_version + 1`).
+
+
 
