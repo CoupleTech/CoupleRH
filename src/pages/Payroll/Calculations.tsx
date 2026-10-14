@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 import { confirmDialog } from '../../components/ConfirmDialogProvider';
 import { promptDialog } from '../../components/PromptDialogProvider';
 import { PrePayrollAuditModal } from "../../components/payroll/PrePayrollAuditModal";
+import { PayrollComparisonModal } from "../../components/payroll/PayrollComparisonModal";
 
 interface PayrollPeriod {
   id: string;
@@ -100,6 +101,9 @@ export default function () {
 
   // Auditoria de Pré-folha
   const [showAuditModal, setShowAuditModal] = useState(false);
+
+  // Comparativo Mês a Mês
+  const [showComparisonModal, setShowComparisonModal] = useState(false);
 
 
 
@@ -617,15 +621,26 @@ export default function () {
 
                     {/* Botão de Pré-Folha & Críticas (quando calculada, em conferência, fechada ou reaberta) */}
                     {activePeriod && (activePeriod.status === 'CALCULATED' || activePeriod.status === 'CONFERENCE' || activePeriod.status === 'CLOSED' || activePeriod.status === 'REOPENED') && (
-                      <button
-                        onClick={() => setShowAuditModal(true)}
-                        disabled={processing}
-                        className="flex items-center gap-2 bg-indigo-50 text-indigo-700 border border-indigo-200 px-5 py-2.5 rounded-lg font-bold shadow-sm hover:bg-indigo-100 transition-colors disabled:opacity-50"
-                        title="Abrir painel de críticas e auditoria da pré-folha"
-                      >
-                        <ShieldCheck size={18} className="text-indigo-600" />
-                        Pré-Folha & Críticas
-                      </button>
+                      <>
+                        <button
+                          onClick={() => setShowAuditModal(true)}
+                          disabled={processing}
+                          className="flex items-center gap-2 bg-indigo-50 text-indigo-700 border border-indigo-200 px-5 py-2.5 rounded-lg font-bold shadow-sm hover:bg-indigo-100 transition-colors disabled:opacity-50"
+                          title="Abrir painel de críticas e auditoria da pré-folha"
+                        >
+                          <ShieldCheck size={18} className="text-indigo-600" />
+                          Pré-Folha & Críticas
+                        </button>
+                        <button
+                          onClick={() => setShowComparisonModal(true)}
+                          disabled={processing}
+                          className="flex items-center gap-2 bg-slate-100 text-slate-800 border border-slate-300 px-5 py-2.5 rounded-lg font-bold shadow-sm hover:bg-slate-200 transition-colors disabled:opacity-50"
+                          title="Comparativo mês a mês por colaborador e centro de custo"
+                        >
+                          <TrendingUp size={18} className="text-slate-700" />
+                          Comparativo Mês a Mês
+                        </button>
+                      </>
                     )}
 
                     {/* CALCULATED -> Permite enviar para Conferência */}
@@ -1135,6 +1150,15 @@ export default function () {
               togglePayslip(p.id);
             }
           }}
+        />
+      )}
+
+      {/* Modal de Comparativo Mês a Mês */}
+      {activePeriod && (
+        <PayrollComparisonModal
+          isOpen={showComparisonModal}
+          onClose={() => setShowComparisonModal(false)}
+          periodId={activePeriod.id}
         />
       )}
     </div>

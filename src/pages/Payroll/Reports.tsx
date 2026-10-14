@@ -14,6 +14,7 @@ import {
 import { supabase } from "../../lib/supabase";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { PayrollComparisonModal } from "../../components/payroll/PayrollComparisonModal";
 
 export default function PayrollReports() {
   const [loading, setLoading] = useState(true);
@@ -21,6 +22,7 @@ export default function PayrollReports() {
   const [selectedPeriod, setSelectedPeriod] = useState<string>("");
   const [reportData, setReportData] = useState<any>(null);
   const [detailedPayslips, setDetailedPayslips] = useState<any[]>([]);
+  const [showComparisonModal, setShowComparisonModal] = useState(false);
 
   useEffect(() => {
     fetchPeriods();
@@ -617,6 +619,15 @@ export default function PayrollReports() {
           >
             <FileText size={18} /> Contábil (PDF)
           </button>
+
+          <button 
+            onClick={() => setShowComparisonModal(true)}
+            disabled={!selectedPeriod}
+            className="btn-primary py-2.5 flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            title="Comparativo Mês a Mês por Colaborador e Centro de Custo"
+          >
+            <TrendingUp size={18} /> Comparativo Mês a Mês
+          </button>
         </div>
       </div>
 
@@ -756,6 +767,15 @@ export default function PayrollReports() {
               Não há dados de folha consolidada (status FECHADA) para o período selecionado.
            </p>
         </div>
+      )}
+
+      {/* Modal de Comparativo Mês a Mês */}
+      {selectedPeriod && (
+        <PayrollComparisonModal
+          isOpen={showComparisonModal}
+          onClose={() => setShowComparisonModal(false)}
+          periodId={selectedPeriod}
+        />
       )}
     </div>
   );
