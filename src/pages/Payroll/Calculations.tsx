@@ -28,6 +28,7 @@ import { PrePayrollAuditModal } from "../../components/payroll/PrePayrollAuditMo
 import { PayrollComparisonModal } from "../../components/payroll/PayrollComparisonModal";
 import { PayrollClosureModal } from "../../components/payroll/PayrollClosureModal";
 import { PayrollReopenModal } from "../../components/payroll/PayrollReopenModal";
+import { PayrollObligationsModal } from "../../components/payroll/PayrollObligationsModal";
 
 interface PayrollPeriod {
   id: string;
@@ -115,6 +116,9 @@ export default function () {
   // Fechamento e Reabertura
   const [showClosureModal, setShowClosureModal] = useState(false);
   const [showReopenModal, setShowReopenModal] = useState(false);
+
+  // Guias, Provisões, Contabilidade e CNAB
+  const [showObligationsModal, setShowObligationsModal] = useState(false);
 
 
 
@@ -651,6 +655,15 @@ export default function () {
                         >
                           <TrendingUp size={18} className="text-slate-700" />
                           Comparativo Mês a Mês
+                        </button>
+                        <button
+                          onClick={() => setShowObligationsModal(true)}
+                          disabled={processing}
+                          className="flex items-center gap-2 bg-indigo-50 text-indigo-800 border border-indigo-200 px-5 py-2.5 rounded-lg font-bold shadow-sm hover:bg-indigo-100 transition-colors disabled:opacity-50"
+                          title="Guias tributárias (INSS/FGTS/IRRF), provisões trabalhistas, resumo contábil e remessa CNAB 240"
+                        >
+                          <FileText size={18} className="text-indigo-600" />
+                          Guias & Obrigações
                         </button>
                       </>
                     )}
@@ -1209,6 +1222,16 @@ export default function () {
             await fetchPeriods();
             await fetchPayslips(activePeriod.id);
           }}
+        />
+      )}
+
+      {/* Modal de Guias, Provisões, Contabilidade e CNAB */}
+      {activePeriod && (
+        <PayrollObligationsModal
+          isOpen={showObligationsModal}
+          onClose={() => setShowObligationsModal(false)}
+          periodId={activePeriod.id}
+          periodLabel={`${getMonthName(activePeriod.month)} / ${activePeriod.year}`}
         />
       )}
     </div>

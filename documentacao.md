@@ -114,3 +114,24 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   - Refatorado o componente `PayrollClosureModal.tsx` com carregamento de validação em tempo real, painel de bloqueio em destaque com contagem e lista detalhada expansível dos colaboradores impedidos e desabilitação estrita do botão de aprovação de fechamento enquanto houver erros.
   - Conectado atalho direto para a Auditoria de Pré-Folha (`onOpenAudit`) na tela de Cálculos (`Calculations.tsx`), permitindo fluxo fluido de correção de críticas.
   - Suíte de testes TDD `src/tests/payroll/PayrollClosureBlockOnError.test.ts` implementada com 100% de aprovação (7/7 testes). Total do projeto ampliado para **425 testes verdes em 63 arquivos de teste**.
+- **14/10/2026 - Fase P7 / Item 5 (Guias Fiscais, Provisões, Resumo Contábil, CNAB 240 e Informe de Rendimentos) — [FASE P7 CONCLUÍDA & GATE VALIDADO]**:
+  - Implementado o serviço integral `PayrollObligationsService` em `src/services/payroll/payrollObligationsService.ts`:
+    1. *Guias e Obrigações Fiscais*:
+       - **DCTFWeb / INSS**: Apuração discriminada de INSS Segurados, Quota Patronal (20% sobre base de INSS com isenção parametrizada para optantes do Simples Nacional), RAT ajustado pelo FAP e Outras Entidades/Terceiros (Sistema S: 5.8%), com data de vencimento unificada para o dia 20 do mês subsequente.
+       - **FGTS Digital**: Apuração da base de cálculo e valor total devido de FGTS Mensal (8% padrão e 2% jovem aprendiz).
+       - **DARF IRRF (0561)**: Retenção na fonte dos rendimentos do trabalho assalariado apurados e informados na DCTFWeb.
+    2. *Provisões Trabalhistas Mensais*:
+       - Cálculo de 1/12 avos mensais de Férias e 1/3 Constitucional sobre a remuneração base e médias.
+       - Cálculo de 1/12 avos mensais de 13º Salário.
+       - Apuração dos respectivos encargos sociais patronais sobre férias e 13º (35,8% - INSS Patronal, RAT, Terceiros e FGTS), totalizando o passivo trabalhista mensal consolidado da empresa.
+    3. *Resumo Contábil da Folha*:
+       - Geração de lançamentos contábeis analíticos em partidas dobradas com contas de Débito (Despesas de Salários e Encargos) e Crédito (Salários a Pagar, INSS, IRRF e FGTS a Recolher).
+       - Validação da invariante contábil de partidas dobradas (`Total Débitos === Total Créditos`).
+    4. *Remessa Bancária CNAB 240*:
+       - Gerador de arquivo texto compatível com o padrão FEBRABAN CNAB 240 para crédito de salários (Header de Arquivo, Header de Lote Serviço 30, Segmentos A para cada favorecido, Trailer de Lote e Trailer de Arquivo) com garantia de 240 caracteres exatos por linha e exportação de arquivo `.rem`.
+    5. *Informe de Rendimentos Anual (IRPF)*:
+       - Consolidação de rendimentos anuais nos Quadros 3 (Tributáveis e Previdência Oficial), 4 (Rendimentos Isentos) e 5 (Tributação Exclusiva do 13º Salário) no modelo normatizado pela Receita Federal.
+  - Criado o componente de interface `PayrollObligationsModal.tsx` em `src/components/payroll/PayrollObligationsModal.tsx` com 4 abas interativas, atalhos de cópia rápida, pré-visualização de arquivos e download direto de remessa bancária.
+  - Integrado botão de acesso direto "Guias & Obrigações" nas telas de Cálculos (`Calculations.tsx`) e Relatórios (`Reports.tsx`).
+  - Suíte de testes TDD `src/tests/payroll/PayrollObligationsAndProvisions.test.ts` implementada com 100% de aprovação (6/6 testes).
+  - **Fase P7 homologada**: Período fechado com imutabilidade estrita CLT, versionamento, auditoria e totalizadores fiscais/contábeis 100% aderentes aos holerites. Total global do projeto ampliado para **431 testes verdes em 64 arquivos de teste**.

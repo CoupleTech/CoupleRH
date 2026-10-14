@@ -9,12 +9,14 @@ import {
   Filter,
   PieChart,
   FileText,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Receipt
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { PayrollComparisonModal } from "../../components/payroll/PayrollComparisonModal";
+import { PayrollObligationsModal } from "../../components/payroll/PayrollObligationsModal";
 
 export default function PayrollReports() {
   const [loading, setLoading] = useState(true);
@@ -23,6 +25,7 @@ export default function PayrollReports() {
   const [reportData, setReportData] = useState<any>(null);
   const [detailedPayslips, setDetailedPayslips] = useState<any[]>([]);
   const [showComparisonModal, setShowComparisonModal] = useState(false);
+  const [showObligationsModal, setShowObligationsModal] = useState(false);
 
   useEffect(() => {
     fetchPeriods();
@@ -628,6 +631,15 @@ export default function PayrollReports() {
           >
             <TrendingUp size={18} /> Comparativo Mês a Mês
           </button>
+
+          <button 
+            onClick={() => setShowObligationsModal(true)}
+            disabled={!selectedPeriod}
+            className="btn-primary py-2.5 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            title="Guias de recolhimento (INSS/FGTS/IRRF), provisões trabalhistas, resumo contábil e remessa CNAB"
+          >
+            <Receipt size={18} /> Guias & Obrigações
+          </button>
         </div>
       </div>
 
@@ -775,6 +787,16 @@ export default function PayrollReports() {
           isOpen={showComparisonModal}
           onClose={() => setShowComparisonModal(false)}
           periodId={selectedPeriod}
+        />
+      )}
+
+      {/* Modal de Guias Tributárias, Provisões, Contabilidade e CNAB */}
+      {selectedPeriod && (
+        <PayrollObligationsModal
+          isOpen={showObligationsModal}
+          onClose={() => setShowObligationsModal(false)}
+          periodId={selectedPeriod}
+          periodLabel={getPeriodLabel()}
         />
       )}
     </div>
