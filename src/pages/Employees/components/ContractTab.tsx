@@ -31,7 +31,8 @@ export default function ContractTab({ workerId, contracts, onSaved }: any) {
     admission_date: "",
     base_salary: "",
     status: "ACTIVE",
-    receives_advance: true
+    receives_advance: true,
+    allow_cumulative_hazard_allowances: false
   });
 
   useEffect(() => {
@@ -52,7 +53,8 @@ export default function ContractTab({ workerId, contracts, onSaved }: any) {
         admission_date: contract.admission_date || "",
         base_salary: contract.base_salary ? String(contract.base_salary) : "",
         status: contract.status || "ACTIVE",
-        receives_advance: contract.receives_advance ?? true
+        receives_advance: contract.receives_advance ?? true,
+        allow_cumulative_hazard_allowances: Boolean(contract.allow_cumulative_hazard_allowances)
       });
     }
   }, [contract]);
@@ -113,7 +115,8 @@ export default function ContractTab({ workerId, contracts, onSaved }: any) {
         admission_date: formData.admission_date,
         base_salary: Number(formData.base_salary),
         status: formData.status,
-        receives_advance: formData.receives_advance
+        receives_advance: formData.receives_advance,
+        allow_cumulative_hazard_allowances: formData.allow_cumulative_hazard_allowances
       };
 
       if (contract) {
@@ -324,6 +327,25 @@ export default function ContractTab({ workerId, contracts, onSaved }: any) {
             </label>
             <p className="text-sm text-slate-500">
               Se marcado, este colaborador terá um adiantamento de 40% gerado automaticamente na folha de adiantamento.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 mb-2 pb-6 border-b border-slate-100 flex items-start gap-3 bg-slate-50 p-4 rounded-lg border">
+          <input
+            type="checkbox"
+            id="allowCumulativeHazard"
+            name="allowCumulativeHazard"
+            checked={formData.allow_cumulative_hazard_allowances}
+            onChange={(e) => setFormData({ ...formData, allow_cumulative_hazard_allowances: e.target.checked })}
+            className="w-5 h-5 text-primary-600 rounded border-slate-300 focus:ring-primary-500 mt-0.5"
+          />
+          <div>
+            <label htmlFor="allowCumulativeHazard" className="font-medium text-slate-900 cursor-pointer block">
+              Permitir Cumulatividade de Insalubridade e Periculosidade (CCT / Acordo Coletivo)
+            </label>
+            <p className="text-sm text-slate-500">
+              Por regra geral da CLT (art. 193, § 2º), o trabalhador que labora em condições perigosas e insalubres recebe apenas o adicional mais vantajoso. Habilite esta opção somente se a Convenção Coletiva de Trabalho (CCT) autorizar expressamente o pagamento cumulativo de ambos.
             </p>
           </div>
         </div>

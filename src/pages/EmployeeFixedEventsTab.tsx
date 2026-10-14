@@ -26,6 +26,7 @@ interface FixedEvent {
   contract_id: string;
   rubric_id: string;
   value: number | null;
+  value_type?: 'AMOUNT' | 'PERCENT';
   quantity: number | null;
   start_date: string;
   end_date: string | null;
@@ -47,6 +48,7 @@ export default function ({
   const [saving, setSaving] = useState(false);
 
   // Form State
+  const [valueType, setValueType] = useState<'AMOUNT' | 'PERCENT'>('AMOUNT');
   const [value, setValue] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [startDate, setStartDate] = useState("");
@@ -111,12 +113,23 @@ export default function ({
 
   const openModal = async () => {
     setValue("");
+    setValueType("AMOUNT");
     setQuantity("1");
     setStartDate(new Date().toISOString().split("T")[0]);
     setEndDate("");
     setNotes("");
     setSelectedRubric("");
     setIsModalOpen(true);
+  };
+
+  const handleRubricChange = (rubricId: string) => {
+    setSelectedRubric(rubricId);
+    const rub = rubrics.find(r => r.id === rubricId);
+    if (rub && (rub.calculation_form === 'PERCENTUAL' || rub.calculation_form === 'PERCENTAGE_OF_BASE')) {
+      setValueType('PERCENT');
+    } else {
+      setValueType('AMOUNT');
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -135,6 +148,7 @@ export default function ({
         contract_id: contractId,
         rubric_id: selectedRubric,
         value: value ? Number(value) : null,
+        value_type: valueType,
         quantity: quantity ? Number(quantity) : 1,
         start_date: startDate,
         end_date: endDate || null,
@@ -243,9 +257,11 @@ export default function ({
 
                   {ev.value !== null && (
                     <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-500 font-medium">Valor Mensal:</span>
+                      <span className="text-slate-500 font-medium">
+                        {ev.value_type === 'PERCENT' ? 'Percentual Aplicado:' : 'Valor Mensal:'}
+                      </span>
                       <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">
-                        R$ {ev.value.toFixed(2)}
+                        {ev.value_type === 'PERCENT' ? `${ev.value}%` : `R$ ${ev.value.toFixed(2)}`}
                       </span>
                     </div>
                   )}
@@ -294,7 +310,7 @@ export default function ({
                   <select
                     required
                     value={selectedRubric}
-                    onChange={(e) => setSelectedRubric(e.target.value)}
+                    onChange={(e) => handleRubricChange(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
                   >
                     <option value="">-- Escolha um Adicional --</option>
@@ -306,39 +322,71 @@ export default function ({
                   </select>
                 </div>
 
-                {selectedRubricObj?.calculation_form === 'MANUAL' && (
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                      Valor Fixo Mensal (R$)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={value}
-                      onChange={(e) => setValue(e.target.value)}
-                      placeholder="Ex: 500.00"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
-                    />
-                  </div>
-                )}
+                {selectedRubric && (
+                  <div className="space-y-3 p-3 bg-slate-50/70 rounded-lg border border-slate-200">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                        Forma de Aplicação do Adicional
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setValueType('AMOUNT')}
+                          className={`px-3 py-2 text-xs font-semibold rounded-lg border transition-all ${
+                            valueType === 'AMOUNT'
+                              ? 'bg-primary-50 border-primary-500 text-primary-700 font-bold shadow-xs'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          Valor Fixo em Reais (R$)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setValueType('PERCENT')}
+                          className={`px-3 py-2 text-xs font-semibold rounded-lg border transition-all ${
+                            valueType === 'PERCENT'
+                              ? 'bg-primary-50 border-primary-500 text-primary-700 font-bold shadow-xs'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          Percentual sobre a Base (%)
+                        </button>
+                      </div>
+                    </div>
 
-                {(selectedRubricObj?.calculation_form === 'PERCENTUAL' || selectedRubricObj?.calculation_form === 'PERCENTAGE_OF_BASE') && (
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                      Quantidade Base (Referência)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      Para Insalubridade/Periculosidade, normalmente é 1. O motor calculará o percentual da base automaticamente.
-                    </p>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                        {valueType === 'PERCENT' ? 'Percentual (%)' : 'Valor Fixo (R$)'}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={value}
+                        onChange={(e) => setValue(e.target.value)}
+                        placeholder={valueType === 'PERCENT' ? 'Ex: 20 (para 20% sobre a base)' : 'Ex: 500.00'}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        {valueType === 'PERCENT'
+                          ? 'O percentual incidirá sobre a base de cálculo configurada na rubrica (ex: Salário Mínimo ou Salário Base).'
+                          : 'O valor em reais será pago mensalmente de forma fixa.'}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                        Quantidade / Multiplicador
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={quantity}
+                        onChange={(e) => setQuantity(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      />
+                    </div>
                   </div>
                 )}
 

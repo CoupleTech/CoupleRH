@@ -11291,5 +11291,30 @@ NOTIFY pgrst, 'reload schema';
   - Adicionada coluna `rubric_version_id UUID REFERENCES public.payroll_rubrics(id)` na tabela `public.payslip_items`.
   - Notificação de reload do schema PostgREST (`NOTIFY pgrst, 'reload schema'`).
 
+### Migration `00074_fixed_events_value_type_and_hazard_concurrency_t14.sql` (Fase P4 / T14)
+- **Objetivo**: Suporte ao tipo de valor (`value_type` em `AMOUNT` ou `PERCENT`) para eventos e adicionais fixos dos colaboradores (`employee_fixed_events`), permitindo que adicionais sejam lançados tanto em valor fixo quanto em percentual sobre a base legal, e configuração de cumulatividade de adicionais de insalubridade e periculosidade (`allow_cumulative_hazard_allowances`) em contratos (`employment_contracts`), em atendimento ao Art. 193 §2º da CLT.
+- **Alterações**:
+  - `ALTER TABLE public.employee_fixed_events ADD COLUMN IF NOT EXISTS value_type TEXT NOT NULL DEFAULT 'AMOUNT' CHECK (value_type IN ('AMOUNT', 'PERCENT'));`
+  - `ALTER TABLE public.employment_contracts ADD COLUMN IF NOT EXISTS allow_cumulative_hazard_allowances BOOLEAN NOT NULL DEFAULT false;`
+  - Comentários explicativos adicionados no dicionário de dados do PostgreSQL.
+  - Notificação de reload do schema PostgREST (`NOTIFY pgrst, 'reload schema'`).
 
+```sql
+-- Migration: 00074_fixed_events_value_type_and_hazard_concurrency_t14
+-- Tarefa T14: Adiciona value_type em employee_fixed_events e allow_cumulative_hazard_allowances em employment_contracts
 
+ALTER TABLE public.employee_fixed_events 
+ADD COLUMN IF NOT EXISTS value_type TEXT NOT NULL DEFAULT 'AMOUNT' 
+CHECK (value_type IN ('AMOUNT', 'PERCENT'));
+
+COMMENT ON COLUMN public.employee_fixed_events.value_type IS 
+'Tipo de valor do adicional/evento fixo: AMOUNT (valor fixo em R$) ou PERCENT (percentual aplicado sobre a base de cálculo da rubrica).';
+
+ALTER TABLE public.employment_contracts 
+ADD COLUMN IF NOT EXISTS allow_cumulative_hazard_allowances BOOLEAN NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN public.employment_contracts.allow_cumulative_hazard_allowances IS 
+'Permite cumulatividade excepcional de adicional de insalubridade e periculosidade prevista em CCT (CLT art. 193 §2º padrão: não cumulativo).';
+
+NOTIFY pgrst, 'reload schema';
+```

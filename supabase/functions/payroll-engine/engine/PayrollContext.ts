@@ -57,12 +57,14 @@ export interface Rubric {
 }
 
 export interface PayrollEvent {
-  id: string;
+  id?: string;
   rubric_id: string;
   quantity?: number;
   reference?: string;
   manual_value?: number;
-  origin: string;
+  percentage?: number;
+  value_type?: 'AMOUNT' | 'PERCENT';
+  origin?: string;
 }
 
 export interface CalculationMemory {
@@ -158,6 +160,7 @@ export class PayrollContext {
   inss_parameters?: InssBracket[];
   irrf_parameters?: IrrfBracket[];
   general_legal_parameters?: GeneralLegalParameters;
+  allow_cumulative_hazard_allowances: boolean = false;
   
   // Variables tracking
   variables: Record<string, number>;
@@ -189,6 +192,7 @@ export class PayrollContext {
     this.salario_minimo = Number(sm);
     this.rubricas = new Map((data.rubricas || []).map((r: Rubric) => [r.id, structuredClone(r)]));
     this.eventos = data.eventos || [];
+    this.allow_cumulative_hazard_allowances = Boolean(data.allow_cumulative_hazard_allowances);
     this.contract_incidences = data.contract_incidences || null;
     this.inss_parameters = data.inss_parameters || [];
     this.irrf_parameters = data.irrf_parameters || [];

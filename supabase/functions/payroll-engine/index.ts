@@ -186,7 +186,7 @@ serve(async (req) => {
 
     let queryContracts = supabase
       .from('employment_contracts')
-      .select('id, worker_id, company_id, base_salary, status, admission_date, receives_advance, work_schedules(weekly_hours, divisor), contract_types(has_inss, has_fgts), workers(id, person_id)')
+      .select('id, worker_id, company_id, base_salary, status, admission_date, receives_advance, allow_cumulative_hazard_allowances, work_schedules(weekly_hours, divisor), contract_types(has_inss, has_fgts), workers(id, person_id)')
       .eq('tenant_id', tenant_id)
       .eq('company_id', company_id)
       .eq('status', 'ACTIVE');
@@ -677,6 +677,8 @@ serve(async (req) => {
         eventos.push({
           rubric_id: fe.rubric_id,
           manual_value: fe.value,
+          percentage: fe.value_type === 'PERCENT' ? fe.value : undefined,
+          value_type: fe.value_type || 'AMOUNT',
           quantity: fe.quantity || 1
         });
       }
@@ -810,6 +812,7 @@ serve(async (req) => {
         num_dependentes: numDependentesIRRF,
         rubricas: applicableRubrics.map((r: any) => structuredClone(r)),
         eventos: eventos,
+        allow_cumulative_hazard_allowances: Boolean(contract.allow_cumulative_hazard_allowances),
         contract_incidences: contract.contract_types,
         inss_parameters: inss_parameters,
         irrf_parameters: irrf_parameters,

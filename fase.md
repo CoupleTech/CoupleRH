@@ -43,7 +43,7 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 8. Migrations novas numeradas a partir de `00066_`. Toda tabela nova: **RLS habilitada + política por tenant + gatilho de auditoria** (T29).
 
 ## Estado da produção
-**Status Atual:** `[Em Progresso]` · **Fase corrente:** P3 · **Go-live folha:** bloqueado até Gate de P9 · **Go-live ponto/assinatura:** bloqueado até Gate de P5/P6.
+**Status Atual:** `[Em Progresso]` · **Fase corrente:** P4 · **Go-live folha:** bloqueado até Gate de P9 · **Go-live ponto/assinatura:** bloqueado até Gate de P5/P6.
 
 ## Quadro de reabertura (fases históricas que NÃO devem ser consideradas concluídas)
 | Fase histórica | Motivo | Tratada em |
@@ -109,8 +109,8 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 **Gate:** rubrica nova de tipo conhecido criada, simulada e ativada **sem alterar código**; nenhuma regra por nome/código no motor. — **VALIDADO (TODOS OS CRITÉRIOS APROVADOS)**
 
 ## ⚖️ FASE P4: Regras trabalhistas
-**Status:** `[Pendente]` · **Ref.:** 📘 Doc §4 (T14–T20)
-- [ ] **T14** `value_type` em eventos fixos; insalubridade/periculosidade não acumulam
+**Status:** `[Em Progresso]` · **Ref.:** 📘 Doc §4 (T14–T20)
+- [x] **T14** `value_type` em eventos fixos; insalubridade/periculosidade não acumulam — *Concluído em 13/10/2026: criada migration 00074 adicionando value_type (AMOUNT/PERCENT) em employee_fixed_events e allow_cumulative_hazard_allowances em employment_contracts; PayrollEngine refatorado com suporte a percentuais sobre a base e não cumulatividade (CLT art. 193 §2º) elegendo o adicional de maior valor financeiro com justificativa na memória de cálculo; telas EmployeeFixedEventsTab.tsx e ContractTab.tsx atualizadas; suíte de testes TDD FixedEventsAndHazardT14.test.ts implementada com 100% de aprovação (5/5 testes).*
 - [ ] **T15** Férias que atravessam o mês (dias comerciais, múltiplas solicitações, média de variáveis)
 - [ ] **T16** INSS consolidado por competência entre folhas
 - [ ] **T17** Descontos fixos por tipo de folha (`apply_on_types`); regra de pensão alimentícia

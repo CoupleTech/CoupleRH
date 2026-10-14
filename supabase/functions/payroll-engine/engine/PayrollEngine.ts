@@ -18,6 +18,55 @@ export class PayrollEngine {
       // 1. Validar e ordenar rubricas (DAG)
       const sortedRubrics = DAGResolver.resolve(this.context.rubricas);
 
+      // T14: Resolução de Não Cumulatividade entre Insalubridade e Periculosidade (CLT art. 193 §2º)
+      let electedHazardKind: 'INSALUBRIDADE' | 'PERICULOSIDADE' | null = null;
+      let nonElectedReason = '';
+
+      if (!this.context.allow_cumulative_hazard_allowances) {
+        const insalubridadeRubric = sortedRubrics.find(r => 
+          (r.rubric_kind === 'INSALUBRIDADE' || r.code === '302' || (r.name || '').toUpperCase().includes('INSALUBRIDADE')) && r.type === 'EARNING'
+        );
+        const periculosidadeRubric = sortedRubrics.find(r => 
+          (r.rubric_kind === 'PERICULOSIDADE' || r.code === '303' || (r.name || '').toUpperCase().includes('PERICULOSIDADE')) && r.type === 'EARNING'
+        );
+
+        if (insalubridadeRubric && periculosidadeRubric) {
+          const evIns = this.context.eventos.find(e => e.rubric_id === insalubridadeRubric.id);
+          const evPer = this.context.eventos.find(e => e.rubric_id === periculosidadeRubric.id);
+
+          // A regra de não cumulatividade (CLT art. 193 §2º) só se aplica se o colaborador possuir ambos os adicionais no mês
+          if (evIns && evPer) {
+            // Insalubridade estimada
+            let percIns = insalubridadeRubric.percentage || 20;
+            if (evIns.value_type === 'PERCENT' || evIns.percentage !== undefined) {
+              percIns = evIns.percentage ?? evIns.manual_value ?? percIns;
+            } else if (evIns.manual_value !== undefined && evIns.manual_value <= 100) {
+              percIns = evIns.manual_value;
+            }
+            const baseIns = this.context.salario_minimo || 1621.0;
+            const valorIns = evIns.value_type === 'AMOUNT' ? (evIns.manual_value || 0) : round2(baseIns * (percIns / 100));
+
+            // Periculosidade estimada
+            let percPer = periculosidadeRubric.percentage || 30;
+            if (evPer.value_type === 'PERCENT' || evPer.percentage !== undefined) {
+              percPer = evPer.percentage ?? evPer.manual_value ?? percPer;
+            } else if (evPer.manual_value !== undefined && evPer.manual_value <= 100) {
+              percPer = evPer.manual_value;
+            }
+            const basePer = this.context.salario_base || 0;
+            const valorPer = evPer.value_type === 'AMOUNT' ? (evPer.manual_value || 0) : round2(basePer * (percPer / 100));
+
+            if (valorPer >= valorIns) {
+              electedHazardKind = 'PERICULOSIDADE';
+              nonElectedReason = `Insalubridade não cumulativa com Periculosidade (CLT art. 193 §2º). Aplicado o adicional mais vantajoso (Periculosidade: R$ ${valorPer.toFixed(2)} vs Insalubridade: R$ ${valorIns.toFixed(2)}).`;
+            } else {
+              electedHazardKind = 'INSALUBRIDADE';
+              nonElectedReason = `Periculosidade não cumulativa com Insalubridade (CLT art. 193 §2º). Aplicado o adicional mais vantajoso (Insalubridade: R$ ${valorIns.toFixed(2)} vs Periculosidade: R$ ${valorPer.toFixed(2)}).`;
+            }
+          }
+        }
+      }
+
       // 2 & 3. Processar eventos manuais, automáticos e fórmulas em ordem DAG
       for (const rubric of sortedRubrics) {
         try {
@@ -28,18 +77,11 @@ export class PayrollEngine {
         let quantidade = rubric.quantity || 0;
         let formulaUsada = rubric.formula || '';
         let calcForm = rubric.calculation_form;
-
-        // Se tiver evento variável lançado para esta rubrica, pega a quantidade ou valor manual
+        let calcBaseName = rubric.calculation_base;
+        let factor = rubric.factor;
+        let percentage = rubric.percentage;
+        let divisor = rubric.divisor;
         let hasManualValue = false;
-        if (eventos.length > 0) {
-            quantidade = eventos.reduce((acc, ev) => acc + (ev.quantity || 0), 0) || quantidade;
-            const manualEvents = eventos.filter(ev => ev.manual_value !== undefined && ev.manual_value !== null);
-            if (manualEvents.length > 0) {
-                hasManualValue = true;
-                valorCalculado = manualEvents.reduce((acc, ev) => acc + (ev.manual_value || 0), 0);
-                formulaUsada = valorCalculado === 0 ? 'MANUAL_VALUE_ZERO' : 'MANUAL_VALUE';
-            }
-        } 
 
         const kind = rubric.rubric_kind;
 
@@ -83,11 +125,60 @@ export class PayrollEngine {
           isCommission = (rubric.category === 'COMMISSION' || (rubric.name || '').toUpperCase().includes('COMISSAO') || (rubric.name || '').toUpperCase().includes('COMISSÃO')) && rubric.type === 'EARNING';
         }
 
-        // T2: Variáveis locais para eliminar qualquer mutação no objeto rubric
-        let calcBaseName = rubric.calculation_base;
-        let factor = rubric.factor;
-        let percentage = rubric.percentage;
-        let divisor = rubric.divisor;
+        let isNonElectedHazard = false;
+        // T14: Se houver não cumulatividade ativa para insalubridade ou periculosidade (CLT art. 193 §2º)
+        if (isInsalubridade && electedHazardKind === 'PERICULOSIDADE') {
+          valorCalculado = 0;
+          formulaUsada = nonElectedReason;
+          hasManualValue = true;
+          isNonElectedHazard = true;
+        } else if (isPericulosidade && electedHazardKind === 'INSALUBRIDADE') {
+          valorCalculado = 0;
+          formulaUsada = nonElectedReason;
+          hasManualValue = true;
+          isNonElectedHazard = true;
+        }
+
+        // Se tiver evento lançado para esta rubrica, pega a quantidade ou valor manual
+        if (!isNonElectedHazard && eventos.length > 0) {
+            quantidade = eventos.reduce((acc, ev) => acc + (ev.quantity || 0), 0) || quantidade;
+
+            // T14: Se houver evento com valor percentual (value_type === 'PERCENT' ou percentage informado)
+            const percentEvents = eventos.filter(ev => 
+                ev.value_type === 'PERCENT' || 
+                (ev.percentage !== undefined && ev.percentage !== null)
+            );
+            if (percentEvents.length > 0) {
+                percentage = percentEvents[0].percentage ?? percentEvents[0].manual_value ?? percentage;
+            }
+
+            // Eventos com valor monetário em R$
+            const amountEvents = eventos.filter(ev => {
+                if (ev.value_type === 'PERCENT') return false;
+                if (ev.value_type === 'AMOUNT') {
+                    if (isSalaryBase && (!ev.manual_value || ev.manual_value === 0)) return false;
+                    return ev.manual_value !== undefined && ev.manual_value !== null;
+                }
+                // Sem value_type definido: se rubric for percentual, não trata como AMOUNT se <= 100
+                if (!ev.value_type && (calcForm === 'PERCENTUAL' || isInsalubridade || isPericulosidade)) {
+                    if (ev.manual_value !== undefined && ev.manual_value !== null && ev.manual_value > 0 && ev.manual_value <= 100) {
+                        percentage = ev.manual_value;
+                        return false;
+                    }
+                }
+                // Para salário base com manual_value 0 (inicialização de dias), não considerar override manual
+                if (isSalaryBase && (!ev.manual_value || ev.manual_value === 0)) {
+                    return false;
+                }
+                return ev.manual_value !== undefined && ev.manual_value !== null;
+            });
+
+            if (amountEvents.length > 0) {
+                hasManualValue = true;
+                valorCalculado = amountEvents.reduce((acc, ev) => acc + (ev.manual_value || 0), 0);
+                formulaUsada = valorCalculado === 0 ? 'MANUAL_VALUE_ZERO' : 'MANUAL_VALUE';
+            }
+        }
 
         // Configuração inteligente de base/fatores para rubricas com cálculo automatizado
         if (isOvertime) {
