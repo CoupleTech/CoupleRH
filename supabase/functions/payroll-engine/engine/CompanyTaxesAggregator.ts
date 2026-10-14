@@ -21,6 +21,9 @@ export interface CalculatedPayslipForTax {
 export interface CompanyInfo {
   id: string;
   labor_config?: LaborConfig;
+  tax_regime?: string;
+  simples_anexo?: string;
+  is_cprb_exempted?: boolean;
 }
 
 /**
@@ -88,7 +91,14 @@ export function calculateConsolidatedEmployerTaxes(params: {
   for (const companyId of Object.keys(companyTotals)) {
     const totals = companyTotals[companyId];
     const comp = companies.find((c) => c.id === companyId);
-    const laborConfig = comp?.labor_config;
+    
+    // Mescla dados das colunas com eventual labor_config em JSON
+    const laborConfig: LaborConfig = {
+      ...comp?.labor_config,
+      tax_regime: comp?.tax_regime ?? comp?.labor_config?.tax_regime,
+      simples_anexo: comp?.simples_anexo ?? comp?.labor_config?.simples_anexo,
+      is_cprb_exempted: comp?.is_cprb_exempted ?? comp?.labor_config?.is_cprb_exempted,
+    };
 
     const taxes = EmployerTaxesCalculator.calculate(
       totals.base_inss,

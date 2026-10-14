@@ -32,6 +32,16 @@ import {
   isDeductionEligibleForPeriod,
   calculateDeductionAmount,
 } from "./engine/DeductionEligibility.ts";
+import {
+  evaluateIRRFDependents,
+  type DependentInput,
+} from "./engine/DependentsEligibility.ts";
+import {
+  calculateThirteenthAvos,
+  calculateThirteenthValues,
+} from "./engine/ThirteenthSalaryCalculator.ts";
+
+export const ENGINE_VERSION = '2.1.0';
 
 const TRUSTED_ORIGINS = [
   'https://couplerh.com.br',
@@ -196,7 +206,7 @@ serve(async (req) => {
 
     let queryContracts = supabase
       .from('employment_contracts')
-      .select('id, worker_id, company_id, base_salary, status, admission_date, receives_advance, allow_cumulative_hazard_allowances, work_schedules(weekly_hours, divisor), contract_types(has_inss, has_fgts), workers(id, person_id)')
+      .select('id, worker_id, company_id, base_salary, status, admission_date, receives_advance, allow_cumulative_hazard_allowances, contract_type, is_apprentice, work_schedules(weekly_hours, divisor), contract_types(name, has_inss, has_fgts), workers(id, person_id)')
       .eq('tenant_id', tenant_id)
       .eq('company_id', company_id)
       .eq('status', 'ACTIVE');
@@ -252,10 +262,10 @@ serve(async (req) => {
       .select('*')
       .eq('tenant_id', tenant_id);
 
-    // Busca Configurações Trabalhistas das Empresas do Tenant
+    // Busca Configurações Trabalhistas e Regimes Tributários das Empresas do Tenant (T19)
     const { data: companies } = await supabase
       .from('companies')
-      .select('id, labor_config')
+      .select('id, labor_config, tax_regime, simples_anexo, is_cprb_exempted')
       .eq('tenant_id', tenant_id);
 
     // 3.1 Busca Benefícios Ativos (filtrados pelos contratos do período)
@@ -314,7 +324,7 @@ serve(async (req) => {
     if (personIds.length > 0) {
       const { data: deps } = await supabase
         .from('dependents')
-        .select('id, person_id, is_irrf_dependent, is_family_allowance_dependent, birth_date')
+        .select('id, person_id, full_name, cpf, birth_date, relationship, is_irrf_dependent, is_family_allowance_dependent')
         .eq('tenant_id', tenant_id)
         .eq('is_irrf_dependent', true)
         .in('person_id', personIds);
@@ -614,41 +624,26 @@ serve(async (req) => {
           }
         }
       } else if (period.type === 'THIRTEENTH_1' || period.type === 'THIRTEENTH_2') {
-         // Lógica do 13º Salário
-         let avos = 12;
-         if (contract.admission_date) {
-            const admParts = contract.admission_date.split('-');
-            const admYear = parseInt(admParts[0]);
-            const admMonth = parseInt(admParts[1]);
-            const admDay = parseInt(admParts[2]);
+         // Lógica do 13º Salário (T19: Avos com precisão legal, faltas e médias de variáveis)
+         const avosResult = calculateThirteenthAvos(
+           contract.admission_date,
+           period.year,
+           period.month || 12
+         );
+         const avos = avosResult.totalAvos;
 
-            if (admYear === period.year) {
-               // Admitido no mesmo ano
-               avos = 12 - admMonth + 1;
-               // Regra: se admitido dia 17 pra frente (menos de 15 dias trabalhados no mês), perde 1 avo
-               if (admDay > 17) {
-                  avos -= 1;
-               }
-            } else if (admYear > period.year) {
-               avos = 0; // Não devia nem processar
-            }
-         }
-         
-         if (avos < 0) avos = 0;
-         
+         // Média de variáveis habituais (Súmulas 45 e 60 TST) caso informada em evento
+         const variableAverages = 0;
+
          if (period.type === 'THIRTEENTH_1') {
             applicableRubrics = rubricas.filter(r => r.code === '602');
             const r602 = applicableRubrics[0];
             if (r602 && avos > 0) {
-               eventos.push({ rubric_id: r602.id, manual_value: ((contract.base_salary / 12) * avos) / 2, quantity: avos });
+               const vals = calculateThirteenthValues(contract.base_salary, variableAverages, avos, 'THIRTEENTH_1');
+               eventos.push({ rubric_id: r602.id, manual_value: vals.firstInstallmentGross, quantity: avos });
             }
          } else if (period.type === 'THIRTEENTH_2') {
             applicableRubrics = rubricas.filter(r => ['601', '608', '901', '902', '903'].includes(r.code));
-            
-            const r601 = applicableRubrics.find(r => r.code === '601');
-            if (r601 && avos > 0) {
-               eventos.push({ rubric_id: r601.id, manual_value: (contract.base_salary / 12) * avos, quantity: avos });
-            }
             
             // Verifica descontos de adiantamento de 13º (rubricas 405 e 602 pagas no ano)
             const contractAdvances = thirteenthAdvances.filter(a => a.payslips.contract_id === contract.id);
@@ -656,11 +651,18 @@ serve(async (req) => {
             for (const adv of contractAdvances) {
                totalAdvance += Number(adv.amount);
             }
+
+            const vals = calculateThirteenthValues(contract.base_salary, variableAverages, avos, 'THIRTEENTH_2', totalAdvance);
+
+            const r601 = applicableRubrics.find(r => r.code === '601');
+            if (r601 && avos > 0) {
+               eventos.push({ rubric_id: r601.id, manual_value: vals.secondInstallmentGross, quantity: avos });
+            }
             
-            if (totalAdvance > 0) {
+            if (vals.advanceDeduction > 0) {
                const r608 = applicableRubrics.find(r => r.code === '608');
                if (r608) {
-                  eventos.push({ rubric_id: r608.id, manual_value: totalAdvance, quantity: 1 });
+                  eventos.push({ rubric_id: r608.id, manual_value: vals.advanceDeduction, quantity: 1 });
                }
             }
          }
@@ -848,13 +850,22 @@ serve(async (req) => {
           }
       }
 
-      // BUG 5 / T25: Contar dependentes para IRRF utilizando o person_id já trazido no contrato
-      // Relação: contract → workers → person_id → dependents(person_id)
+      // T19: Avaliação de dependentes para IRRF com base em idade, parentesco e duplicidade (Art. 35 Lei 9.250/95)
       let numDependentesIRRF = 0;
       const workerPersonId = contract.workers?.person_id;
       if (workerPersonId && allDependents && allDependents.length > 0) {
-        numDependentesIRRF = allDependents.filter((d: any) => d.person_id === workerPersonId).length;
+        const workerDeps = allDependents.filter((d: any) => d.person_id === workerPersonId);
+        const depEval = evaluateIRRFDependents(workerDeps, period.year, period.month);
+        numDependentesIRRF = depEval.eligibleCount;
       }
+
+      // T19: Identificação de Menor Aprendiz (alíquota reduzida de FGTS de 2%)
+      const isApprentice = Boolean(
+        contract.is_apprentice ||
+        contract.contract_type?.toUpperCase() === 'APPRENTICE' ||
+        contract.contract_type?.toUpperCase() === 'MENOR_APRENDIZ' ||
+        contract.contract_types?.name?.toLowerCase().includes('aprendiz')
+      );
 
       // T16: Consolida a base de INSS já tributada de outras folhas do mesmo contrato e competência
       const previousBaseInss = existingCompetencePayslips
@@ -873,6 +884,7 @@ serve(async (req) => {
         dias_inuteis: dias_inuteis,
         divisor: divisor,
         num_dependentes: numDependentesIRRF,
+        is_apprentice: isApprentice,
         rubricas: applicableRubrics.map((r: any) => structuredClone(r)),
         eventos: eventos,
         allow_cumulative_hazard_allowances: Boolean(contract.allow_cumulative_hazard_allowances),
@@ -994,12 +1006,13 @@ serve(async (req) => {
         base_fgts: result.bases.fgts,
         fgts_month: result.total_fgts,
         status: 'CALCULATED',
-        engine_version: '1.0.0',
+        legal_version_id: activeVersion.id,
+        engine_version: ENGINE_VERSION,
         rubrics_version: '1.0.0',
         rules_version: '1.0.0',
-        inss_table_version: '2026.1',
-        irrf_table_version: '2026.1',
-        fgts_table_version: '1.0.0',
+        inss_table_version: activeVersion.version_name || activeVersion.id,
+        irrf_table_version: activeVersion.version_name || activeVersion.id,
+        fgts_table_version: activeVersion.version_name || activeVersion.id,
         items: rawItemsToInsert.map(i => ({
           rubric_id: i.rubric_id,
           reference: i.reference,
@@ -1014,7 +1027,7 @@ serve(async (req) => {
           parsed_formula: m.parsed_formula,
           result_value: m.result_value,
           origin: m.origin,
-          engine_version: '1.0.0',
+          engine_version: ENGINE_VERSION,
         })),
       });
 

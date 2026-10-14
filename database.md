@@ -11336,3 +11336,51 @@ COMMENT ON COLUMN public.employee_deductions.apply_on_types IS
 'Tipos de folha aos quais a dedução fixa se aplica (ex: MONTHLY, ADVANCE, VACATION, THIRTEENTH_1, THIRTEENTH_2, COMPLEMENTARY). Se nulo ou vazio, adota o padrão: MONTHLY ou ADVANCE de acordo com deduct_on_advance, sem vazar para Férias ou 13º.';
 ```
 
+### Migration `00076_legal_versions_and_rules_t19.sql` (Fase P4 / T19)
+- **Objetivo**: Adicionar a coluna `legal_version_id` na tabela `public.payslips` para auditoria rigorosa da versão legal vigente utilizada em cada holerite; adicionar `is_apprentice` em `employment_contracts` para identificação de menor aprendiz com alíquota reduzida de FGTS (2%); e adicionar colunas de regime tributário, anexo do Simples e desoneração da folha (CPRB) na tabela `public.companies`.
+- **Alterações**:
+  - `ALTER TABLE public.payslips ADD COLUMN IF NOT EXISTS legal_version_id UUID REFERENCES public.legal_versions(id);`
+  - `ALTER TABLE public.employment_contracts ADD COLUMN IF NOT EXISTS is_apprentice BOOLEAN NOT NULL DEFAULT false;`
+  - `ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS tax_regime TEXT DEFAULT 'LUCRO_PRESUMIDO';`
+  - `ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS is_cprb_exempted BOOLEAN NOT NULL DEFAULT false;`
+  - `ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS simples_anexo TEXT DEFAULT NULL;`
+  - Notificação de reload de schema do PostgREST.
+
+```sql
+-- Migration: 00076_legal_versions_and_rules_t19
+-- Fase P4 / Tarefa T19: Dependentes, 13º, FGTS aprendiz, patronais por regime e versões reais gravadas
+
+ALTER TABLE public.payslips 
+ADD COLUMN IF NOT EXISTS legal_version_id UUID REFERENCES public.legal_versions(id);
+
+COMMENT ON COLUMN public.payslips.legal_version_id IS 
+'ID da versão de tabelas e parâmetros legais (legal_versions) efetivamente vigente e utilizada no cálculo do holerite.';
+
+ALTER TABLE public.employment_contracts 
+ADD COLUMN IF NOT EXISTS is_apprentice BOOLEAN NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN public.employment_contracts.is_apprentice IS 
+'Indica se o contrato é de Menor Aprendiz (CLT art. 428 / Lei 8.036/90 art. 15), aplicando alíquota reduzida de FGTS de 2%.';
+
+ALTER TABLE public.companies 
+ADD COLUMN IF NOT EXISTS tax_regime TEXT DEFAULT 'LUCRO_PRESUMIDO';
+
+ALTER TABLE public.companies 
+ADD COLUMN IF NOT EXISTS is_cprb_exempted BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE public.companies 
+ADD COLUMN IF NOT EXISTS simples_anexo TEXT DEFAULT NULL;
+
+COMMENT ON COLUMN public.companies.tax_regime IS 
+'Regime de tributação da empresa: SIMPLES, SIMPLES_NACIONAL, LUCRO_PRESUMIDO ou LUCRO_REAL.';
+
+COMMENT ON COLUMN public.companies.is_cprb_exempted IS 
+'Indica se a empresa é optante pela Desoneração da Folha de Pagamento (CPRB - Lei 12.546/2011), isentando a cota patronal previdenciária de 20%.';
+
+COMMENT ON COLUMN public.companies.simples_anexo IS 
+'Anexo do Simples Nacional (ex: I, II, III, IV, V). Anexos I, II, III e V são isentos de patronal/RAT/terceiros; Anexo IV recolhe patronal e RAT.';
+
+NOTIFY pgrst, 'reload schema';
+```
+
+

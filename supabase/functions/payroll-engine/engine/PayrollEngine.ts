@@ -84,7 +84,7 @@ export class PayrollEngine {
         let divisor = rubric.divisor;
         let hasManualValue = false;
 
-        const kind = rubric.rubric_kind;
+        const kind = rubric.rubric_kind ?? (rubric as any).kind;
 
         let isSalaryBase: boolean;
         let isOvertime: boolean;
@@ -514,8 +514,13 @@ export class PayrollEngine {
            });
         }
 
-        // FGTS
-        fgtsResult = FGTSCalculator.calculate(this.context.base_fgts);
+        // FGTS (T19: Suporte a Menor Aprendiz 2% e parâmetros legais)
+        fgtsResult = FGTSCalculator.calculate(
+          this.context.base_fgts,
+          this.context.is_apprentice,
+          this.context.general_legal_parameters?.fgts_standard_aliquot,
+          this.context.general_legal_parameters?.fgts_apprentice_aliquot
+        );
         if (fgtsResult.value > 0) {
             // T6: Busca rubrica FGTS exclusivamente por código '903' (Doc §4)
             const rubricFgts = Array.from(this.context.rubricas.values()).find(r => r.code === '903');
@@ -528,8 +533,8 @@ export class PayrollEngine {
               step_name: 'FGTS',
               base_value: this.context.base_fgts,
               quantity_used: 1,
-              percentage_used: 8,
-              parsed_formula: `${this.context.base_fgts} * 0.08`,
+              percentage_used: fgtsResult.rate,
+              parsed_formula: `${this.context.base_fgts} * ${(fgtsResult.rate / 100).toFixed(2)}${this.context.is_apprentice ? ' [MENOR APRENDIZ]' : ''}`,
               result_value: fgtsResult.value,
               origin: 'AUTOMATICA'
            });

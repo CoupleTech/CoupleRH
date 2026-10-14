@@ -135,6 +135,7 @@ export interface PayrollContextData {
   dias_inuteis: number;
   divisor: number;
   num_dependentes?: number;
+  is_apprentice?: boolean;
   rubricas: Rubric[];
   eventos: PayrollEvent[];
   contract_incidences?: any;
@@ -161,6 +162,7 @@ export class PayrollContext {
   irrf_parameters?: IrrfBracket[];
   general_legal_parameters?: GeneralLegalParameters;
   allow_cumulative_hazard_allowances: boolean = false;
+  is_apprentice: boolean = false;
   // T16: Base de INSS já tributada em outras folhas da mesma competência (férias, complementar, etc.)
   base_inss_already_taxed: number = 0;
   // T17: Total de pensão alimentícia judicial apurada (dedutível da base de IRRF)
@@ -197,6 +199,7 @@ export class PayrollContext {
     this.rubricas = new Map((data.rubricas || []).map((r: Rubric) => [r.id, structuredClone(r)]));
     this.eventos = data.eventos || [];
     this.allow_cumulative_hazard_allowances = Boolean(data.allow_cumulative_hazard_allowances);
+    this.is_apprentice = Boolean(data.is_apprentice);
     this.base_inss_already_taxed = Number(data.base_inss_already_taxed || 0);
     this.total_alimony = Number(data.total_alimony || 0);
     this.contract_incidences = data.contract_incidences || null;

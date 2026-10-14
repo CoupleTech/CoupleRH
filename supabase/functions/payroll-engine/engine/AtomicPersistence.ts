@@ -26,6 +26,7 @@ export interface RawCalculatedPayslip {
   base_fgts: number;
   fgts_month: number;
   status?: string;
+  legal_version_id?: string;
   engine_version?: string;
   rubrics_version?: string;
   rules_version?: string;
@@ -161,6 +162,7 @@ export function buildAtomicPayrollPayload(params: {
       base_fgts: p.base_fgts,
       fgts_month: p.fgts_month,
       status: p.status || 'CALCULATED',
+      legal_version_id: p.legal_version_id || null,
       engine_version: p.engine_version || '1.0.0',
       rubrics_version: p.rubrics_version || '1.0.0',
       rules_version: p.rules_version || '1.0.0',
