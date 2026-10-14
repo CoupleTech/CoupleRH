@@ -13,7 +13,8 @@ vi.mock('../../lib/supabase', () => {
           data: { user: { id: 'user-admin-123' } }
         })
       },
-      from: vi.fn()
+      from: vi.fn(),
+      rpc: vi.fn().mockResolvedValue({ data: null, error: null })
     }
   };
 });
@@ -137,13 +138,18 @@ describe('AfdImportService.importAfdFile - Testes de Integração e Persistênci
     expect(res.imported).toBe(3);
     expect(res.duplicates).toBe(0);
     expect(res.rejected).toBe(0);
-    expect(insertedPunches).toHaveLength(3);
+    expect(supabase.rpc).toHaveBeenCalledWith('import_afd_punch_records', expect.objectContaining({
+      p_tenant_id: 'tenant-123',
+      p_company_id: 'company-casemiro'
+    }));
 
-    // Primeira batida vinculada à Fernanda
-    expect(insertedPunches[0].worker_id).toBe('worker-fernanda');
-    expect(insertedPunches[0].contract_id).toBe('contract-fernanda');
-    expect(insertedPunches[0].nsr).toBe(14);
-    expect(insertedPunches[0].source).toBe('IMPORT');
+    const rpcCall = (supabase.rpc as any).mock.calls[0];
+    const punchesSent = rpcCall[1].p_punches;
+    expect(punchesSent).toHaveLength(3);
+    expect(punchesSent[0].worker_id).toBe('worker-fernanda');
+    expect(punchesSent[0].contract_id).toBe('contract-fernanda');
+    expect(punchesSent[0].nsr).toBe(14);
+    expect(punchesSent[0].source).toBe('IMPORT');
 
     // Registro em afd_files efetuado
     expect(insertedAfdFiles).toHaveLength(1);

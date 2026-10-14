@@ -395,9 +395,12 @@ export class AfdImportService {
         };
       }
 
-      // 8. Persistência em lotes (Batch Insert) em time_punch_records (500 por lote)
+      // 8. Persistência em lotes (Batch Insert):
+      // Tenta primeiro via RPC import_afd_punch_records (atômica e ultra rápida com SECURITY DEFINER)
+      // Caso a RPC não esteja instalada no banco, executa fallback transparente para insert direto
       const BATCH_SIZE = 500;
       let maxNsr = 0;
+      let rpcAvailable = true;
 
       for (let i = 0; i < importResult.recordsToInsert.length; i += BATCH_SIZE) {
         const batch = importResult.recordsToInsert.slice(i, i + BATCH_SIZE).map((r) => {
@@ -418,6 +421,22 @@ export class AfdImportService {
             crc_ok: r.crc_ok ?? true
           };
         });
+
+        if (rpcAvailable && typeof supabase.rpc === 'function') {
+          const { error: rpcErr } = await supabase.rpc('import_afd_punch_records', {
+            p_tenant_id: tenant_id,
+            p_company_id: company_id || null,
+            p_device_id: deviceId || null,
+            p_punches: batch
+          });
+
+          if (!rpcErr) {
+            continue;
+          }
+
+          // Fallback se a RPC ainda não foi criada no banco
+          rpcAvailable = false;
+        }
 
         const { error: insertErr } = await supabase
           .from('time_punch_records')
