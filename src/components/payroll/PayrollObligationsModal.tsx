@@ -21,9 +21,9 @@ import {
 } from 'lucide-react';
 import {
   payrollObligationsService,
-  TaxGuidesReport,
-  PayrollProvisionsReport,
-  AccountingSummaryReport
+  type TaxGuidesReport,
+  type PayrollProvisionsReport,
+  type AccountingSummaryReport
 } from '../../services/payroll/payrollObligationsService';
 import { toast } from 'sonner';
 
