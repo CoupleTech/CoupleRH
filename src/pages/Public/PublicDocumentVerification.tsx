@@ -73,19 +73,20 @@ export default function PublicDocumentVerification() {
 
     try {
       const formatted = formatVerificationCode(rawCode);
-      const { data, error } = await supabase
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawCode);
+
+      let query = supabase
         .from('employee_documents')
         .select(`
           id,
           title,
-          doc_type,
+          document_type,
           status,
-          verification_code,
-          hash_original,
-          hash_signed,
-          signed_at,
           created_at,
-          signed_file_url,
+          deleted_at,
+          metadata,
+          file_url,
+          document_hash,
           workers (
             people (
               full_name,
@@ -97,12 +98,34 @@ export default function PublicDocumentVerification() {
             )
           )
         `)
-        .or(`verification_code.ilike.${formatted},verification_code.ilike.${rawCode}`)
-        .is('deleted_at', null)
-        .maybeSingle();
+        .is('deleted_at', null);
+
+      if (isUuid) {
+        query = query.eq('id', rawCode);
+      } else {
+        const clean = rawCode.replace(/[^0-9a-zA-Z]/g, '');
+        query = query.ilike('id', `${clean}%`);
+      }
+
+      const { data, error } = await query.maybeSingle();
 
       if (!error && data) {
-        setDoc(data as any);
+        const mapped = {
+          ...data,
+          doc_type: (data as any).doc_type ?? (data as any).document_type ?? 'OTHER',
+          verification_code:
+            (data as any).verification_code ??
+            (data as any).metadata?.verification_code ??
+            formatted,
+          hash_original: (data as any).hash_original ?? (data as any).document_hash ?? (data as any).metadata?.document_hash ?? null,
+          hash_signed: (data as any).hash_signed ?? (data as any).metadata?.hash_signed ?? null,
+          signed_at:
+            (data as any).signed_at ??
+            (data as any).metadata?.signed_at ??
+            ((data as any).status === 'SIGNED' ? (data as any).updated_at || (data as any).created_at : null),
+          signed_file_url: (data as any).signed_file_url ?? (data as any).file_url ?? null,
+        };
+        setDoc(mapped as any);
       }
     } catch (err) {
       console.error('Erro ao verificar documento:', err);

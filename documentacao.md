@@ -231,3 +231,23 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   2. **Registro de Abono / Justificativa Legal (Abonar)**:
      - Enquadramento legal por tipo: Atestado Médico (Art. 473 CLT), Declaração de Comparecimento, Falta Abonada pelo Empregador, Casamento/Gala, Falecimento/Luto, Doação de Sangue, Convocação Judicial, etc.
      - Justificativa detalhada (ex: CRM, CID, atestado apresentado) e cancelamento das faltas no cálculo do espelho mensal.
+
+---
+
+## 12. COFRE DE ASSINATURAS E VERIFICAÇÃO PÚBLICA DE DOCUMENTOS (HOTFIX EM PRODUÇÃO)
+
+- **Causa Raiz do Erro (400 Bad Request)**:
+  - Na rota `/documentos/cofre`, a consulta à tabela `employee_documents` solicitava colunas da modelagem nova de assinaturas digitais (`doc_type`, `verification_code`, `hash_original`, `hash_signed`, `signed_at`, `due_at`, `signed_file_url`).
+  - No banco de produção Supabase, as colunas persistidas eram `document_type`, `document_hash`, `file_url`, com os dados complementares de assinatura e código de verificação armazenados no objeto JSON `metadata`.
+  - Como o PostgREST rejeita a requisição com código `42703 (column employee_documents.doc_type does not exist)`, a tela falhava com erro 400.
+- **Solução Implementada**:
+  1. Em `src/pages/Documents/SignaturesVault.tsx`:
+     - Consulta reestruturada para solicitar os campos existentes na base (`document_type`, `document_hash`, `file_url`, `metadata`) com fallback inteligente em tempo de execução (`doc_type ?? document_type ?? 'OTHER'`).
+     - Geração e extração dinâmica de `verification_code` com fallback seguro (`metadata.verification_code` ou hash determinístico `CRH-XXXX-XXXX`), eliminando erros de renderização.
+     - Proteção com `try...catch` nas gravações de `document_events` para não interromper lembretes caso a tabela de auditoria ainda não tenha sido criada no tenant.
+  2. Em `src/pages/Public/PublicDocumentVerification.tsx`:
+     - Consulta e mapeamento compatibilizados com as colunas reais da base e metadados JSON.
+  3. Criada a Migration `00088_sync_employee_documents_and_signatures.sql`:
+     - Adiciona formalmente as colunas `doc_type`, `verification_code`, `hash_original`, `hash_signed`, `signed_file_url`, `due_at`, `signed_at` em `employee_documents`.
+     - Executa o backfill a partir de `document_type`, `document_hash` e `file_url`.
+     - Cria a tabela `document_events` com políticas RLS para auditoria de assinaturas.

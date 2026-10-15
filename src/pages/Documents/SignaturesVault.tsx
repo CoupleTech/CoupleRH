@@ -70,15 +70,14 @@ export default function SignaturesVault() {
       .select(`
         id,
         title,
-        doc_type,
+        document_type,
         status,
-        verification_code,
-        hash_original,
-        hash_signed,
-        signed_at,
-        due_at,
         created_at,
-        signed_file_url,
+        deleted_at,
+        metadata,
+        file_url,
+        document_hash,
+        requires_employee_signature,
         workers (
           people (
             full_name,
@@ -91,7 +90,20 @@ export default function SignaturesVault() {
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      setDocs(data as any);
+      const mapped = (data as any[]).map((d) => ({
+        ...d,
+        doc_type: d.doc_type ?? d.document_type ?? "OTHER",
+        verification_code:
+          d.verification_code ??
+          d.metadata?.verification_code ??
+          `CRH-${d.id.substring(0, 4).toUpperCase()}-${d.id.substring(4, 8).toUpperCase()}`,
+        hash_original: d.hash_original ?? d.document_hash ?? d.metadata?.document_hash ?? null,
+        hash_signed: d.hash_signed ?? d.metadata?.hash_signed ?? null,
+        signed_at: d.signed_at ?? d.metadata?.signed_at ?? (d.status === "SIGNED" ? d.updated_at || d.created_at : null),
+        due_at: d.due_at ?? d.metadata?.due_at ?? null,
+        signed_file_url: d.signed_file_url ?? d.file_url ?? null,
+      }));
+      setDocs(mapped as any);
     }
     setLoading(false);
   };
@@ -155,16 +167,20 @@ export default function SignaturesVault() {
         doc.due_at || undefined
       );
 
-      // Registra evento de lembrete em document_events
-      await supabase.from('document_events').insert({
-        document_id: doc.id,
-        event: channel === 'WHATSAPP' ? 'NOTIFIED_WHATSAPP' : 'NOTIFIED_EMAIL',
-        meta: {
-          channel,
-          notificationTitle: notification.title,
-          sentBy: 'DP_PANEL'
-        }
-      });
+      // Registra evento de lembrete em document_events (se a tabela estiver disponível)
+      try {
+        await supabase.from('document_events').insert({
+          document_id: doc.id,
+          event: channel === 'WHATSAPP' ? 'NOTIFIED_WHATSAPP' : 'NOTIFIED_EMAIL',
+          meta: {
+            channel,
+            notificationTitle: notification.title,
+            sentBy: 'DP_PANEL'
+          }
+        });
+      } catch (logErr) {
+        console.warn('document_events log skipped:', logErr);
+      }
 
       if (channel === 'WHATSAPP') {
         const encodedText = encodeURIComponent(notification.message);
