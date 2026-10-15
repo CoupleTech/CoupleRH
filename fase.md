@@ -157,6 +157,17 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
   - Painel de Alertas de Vencimento de Banco de Horas (vigência CLT de 6 meses no acordo individual ou 12 meses na CCT) com indicação de dias restantes para programar folgas compensatórias antes da liquidação rescisória/expirada.
   - Emissão e envio automático do Termo de Acordo Individual de Banco de Horas para assinatura digital pelo trabalhador no celular (integrado ao módulo de Assinaturas P6 / Art. 59 § 5º da CLT).
   - Regra de teto mensal de acúmulo no banco (ex: limite de até 20h extras/mês no banco, transbordando o excedente para pagamento imediato em dinheiro na folha).
+- [ ] **TB-05** Geolocalização e Geofencing no Ponto Digital Mobile (Vercel / Celular):
+  - Configuração de coordenadas (`latitude`, `longitude`), raio de tolerância em metros (`radius_meters`, ex: 10m a 50m) e flag `enforce_geofence` no cadastro de Locais de Trabalho (`workplaces` / `/lotacoes`).
+  - No modal de marcação mobile (`TimePunchModal.tsx`), cálculo em tempo real da distância métrica (Haversine) entre o GPS do colaborador e a sede da empresa.
+  - Feedback visual dinâmico de proximidade (ex: "📍 Você está a 8m da empresa — Permitido" vs "⛔ Fora do perímetro autorizado: 45m de distância — Bloqueado").
+  - Validação server-side contra manipulação de coordenadas.
+- [ ] **TB-06** Recibo de Férias Completo com Vencimentos, Períodos e Prazos CLT no Portal:
+  - Exibição formal do Período Aquisitivo e Limite do Período Concessivo (CLT art. 134 — controle de dobra).
+  - Data Limite Legal de Pagamento (CLT art. 145 — até 2 dias antes do início do gozo) para comprovação fiscal e proteção jurídica.
+  - Demonstrativo contábil discriminando: Férias Normais (cód 501), 1/3 Constitucional (cód 502), Abono Pecuniário (cód 503), 1/3 Abono (cód 504), médias de variáveis habituais (HE, Noturno, Comissões, Insalubridade/Periculosidade — CLT art. 142 § 5º), descontos de INSS/IRRF/Pensão e Líquido por extenso.
+  - Geração de PDF oficial timbrado com QR Code e chancela de Assinatura Eletrônica Avançada pelo colaborador no celular.
+
 
 
 ## ✍️ FASE P6: Assinatura digital de documentos

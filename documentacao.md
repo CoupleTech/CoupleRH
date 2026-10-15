@@ -393,3 +393,10 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
      - Na transição de softwares anteriores para o coupleRH, colaboradores trazem saldos positivos ou negativos pré-existentes.
      - A solução prevê um modal de **Ajuste Manual / Saldo Inicial** permitindo informar Colaborador, Data de Corte, Saldo (+/- HH:MM) e Justificativa ("Carga de implantação do sistema legado"), gerando registro com tipo `INITIAL_BALANCE` / `MANUAL_ADJUSTMENT`.
      - Suporte futuro a importação em lote por planilha CSV/Excel para agilizar a implantação de empresas com grande quadro funcional.
+  4. **Geolocalização e Geofencing no Ponto Digital Mobile (Vercel / Celular)**:
+     - No Vercel (onde a aplicação roda sob HTTPS seguro obrigatório), o navegador/smartphone acessa a API nativa de geolocalização com alta precisão GPS (`enableHighAccuracy: true`).
+     - No cadastro de Locais de Trabalho (`workplaces`), a empresa define latitude, longitude, raio de tolerância em metros (`radius_meters`) e se a cerca geográfica é obrigatória (`enforce_geofence`).
+     - O sistema calcula a distância geodésica em tempo real (Fórmula de Haversine), exibindo ao trabalhador a distância atual em relação à empresa e habilitando a marcação de ponto somente dentro do perímetro autorizado.
+  5. **Recibo e Demonstrativo Contábil Completo de Férias (Art. 145 da CLT)**:
+     - Reformulação do Recibo de Férias para apresentar todas as datas e garantias legais da CLT: Período Aquisitivo, Limite do Período Concessivo (Art. 134 para controle de dobra), Período de Gozo e Data Limite de Pagamento (Art. 145: até 2 dias antes do início do gozo).
+     - Demonstrativo analítico de proventos/vencimentos: Férias Normais (rubrica 501), 1/3 Constitucional (rubrica 502), Abono Pecuniário (rubrica 503), 1/3 Abono (rubrica 504), incorporação de médias de variáveis habituais (Art. 142 § 5º da CLT), descontos de INSS/IRRF/Pensão e Líquido por extenso em PDF com assinatura eletrônica.
