@@ -23,6 +23,7 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
 - **04/09/2026**: Inicialização do projeto, criação dos artefatos básicos de gestão (fase.md, documentacao.md, database.md), e definição da stack tecnológica (React + Supabase + Vercel).
 
 ## Histórico de Alterações
+- **15/10/2026 - Ponto Eletrônico / Jornada Noturna Sob Demanda**: Implementada funcionalidade para o operador de DP alocar batidas da madrugada (ex: 00:02, 00:15) na jornada de encerramento do dia anterior. Mantida a imutabilidade estrita da trilha legal (`time_punch_records`), utilizando a tabela de auditoria `time_entry_adjustments` com o identificador `[SHIFT_PREVIOUS_DAY]`. A ordenação diária soma +1440 minutos para batidas deslocadas da madrugada, posicionando-as como 4ª batida (fechando o par de saída noturna) e recalculando horas trabalhadas e adicional noturno com exatidão.
 - Hotfix: Adicionada a coluna receives_advance na tabela employment_contracts para resolver erro em produção (schema cache).
 - Hotfix: Adicionada a coluna workplace_id na tabela employment_contracts para resolver erro em produção.
 - Hotfix/Sincronização: Executada auditoria completa da base (script 07_missing_columns_sync.sql) para corrigir colunas ausentes reportadas pelo sistema (employment_contracts, payroll_rubrics, work_schedules, payroll_periods, employment_contract_history, payroll_memory_calc).
@@ -306,3 +307,32 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   3. Atualizada a query de busca mensal para usar o intervalo com offset `-03:00` (`startDateIso` e `endDateIso`).
   4. Padronizadas a inclusão manual de batidas (`addManualPunch`), a exibição do comprovante (`TimePunchModal.tsx`) e do portal do colaborador (`EmployeePortal.tsx`) com `timeZone: 'America/Sao_Paulo'`.
   5. Criada a suíte de testes unitários `TimePunchTimezone.test.ts` cobrindo conversão de UTC, offset `-03:00` e batidas noturnas com virada de dia civil.
+
+---
+
+## 16. ALOCAÇÃO MANUAL DE BATIDAS DE PONTO NA JORNADA DO DIA ANTERIOR (VIRADA DE MEIA-NOITE / FECHAMENTO DE TURNO NOTURNO)
+
+- **Contexto Operacional e Exigência Legal**:
+  - Em turnos noturnos que ultrapassam a meia-noite (ex: entrada às `16:12`, intervalos e saída às `00:02` ou `00:15`), o relógio de ponto físico ou mobile registra a batida no dia civil seguinte (ex: 03/10 ou 04/10).
+  - Pela Portaria MTP 671/2021 e CLT art. 74, essa marcação pertence civilmente ao dia em que foi efetuada, mas compõe a jornada iniciada no dia anterior.
+  - Como em determinados dias uma batida às 00h pode legitimamente ser a *primeira marcação do dia* (início de turno da madrugada), a alocação **NÃO deve ser automática**, cabendo exclusivamente ao operador de Departamento Pessoal acionar o ajuste sob demanda.
+  - A trilha original em `time_punch_records` é juridicamente imutável (gatilho de banco impede `UPDATE` ou `DELETE`).
+
+- **Arquitetura da Solução**:
+  1. **Trilha Auditada em `time_entry_adjustments`**:
+     - O operador de DP clica sobre a batida no Cartão de Ponto Mensal e aciona a opção *"Alocar na Jornada Anterior (D-1)"*.
+     - O sistema registra um ajuste na tabela `time_entry_adjustments` com `status = 'APPROVED'` e motivo padronizado:
+       `[SHIFT_PREVIOUS_DAY] punch_id:{id}|source_date:{YYYY-MM-DD}|target_date:{YYYY-MM-DD}|time:{HH:MM}`.
+     - Nenhum dado em `time_punch_records` é alterado, garantindo 100% de conformidade com a CLT e fiscalização do trabalho.
+  2. **Remapeamento em Memória na Consulta Mensal (`fetchMonthlyTimesheet`)**:
+     - Durante a montagem do espelho mensal, o serviço busca os ajustes aprovados com a tag `[SHIFT_PREVIOUS_DAY]`.
+     - A batida é removida do dia civil atual e alocada no array de batidas do dia anterior com `is_shifted = true`, `original_date` e `adjustment_id`.
+  3. **Ordenação Cronológica de Jornada Noturna (+1440 min)**:
+     - Batidas deslocadas da madrugada (`is_shifted = true` e `hora < 12`) recebem acréscimo de +1440 minutos (`24 * 60`) em seu índice de ordenação.
+     - Desta forma, uma batida das `00:02` (que em minutos normais equivaleria a 2 min e ficaria antes de `16:12`) é ponderada como `1442 min`, posicionando-se exatamente como a **4ª batida de encerramento do turno** (`16:12 | 19:49 | 20:53 | 00:02`).
+     - Os pares de entrada/saída fecham com perfeição, eliminando a inconsistência de "Batida Ímpar" no dia anterior e recalculando horas trabalhadas e adicional noturno com exatidão.
+  4. **Interface Visual e Reversibilidade**:
+     - No Cartão de Ponto Mensal (`TimeManagement.tsx`), batidas deslocadas são destacadas visualmente com badge azul índigo e crachá `D-1 ☾`.
+     - Ao passar o mouse, é exibido o ícone de ação rápida para reverter a qualquer momento caso o operador decida desfazer (`undoShiftPunch`).
+  5. **Garantia de Qualidade**:
+     - Criada a suíte de testes automatizados `src/tests/time/TimePunchShiftDay.test.ts` validando a ordenação de +1440 min, a matemática de horas de virada de turno, o registro do ajuste auditado e o cancelamento/reversão.

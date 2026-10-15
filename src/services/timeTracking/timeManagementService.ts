@@ -732,6 +732,21 @@ export class TimeManagementService {
       .gte('requested_timestamp', startDateIso)
       .lte('requested_timestamp', endDateIso);
 
+    // 4.1 Identificar ajustes de deslocamento de jornada para o dia anterior (turnos noturnos)
+    const shiftedPunchesMap: Record<string, { target_date: string; adjustment_id: string }> = {};
+    (adjustmentsRaw || []).forEach((adj: any) => {
+      if (adj.status === 'APPROVED' && adj.adjustment_reason?.includes('[SHIFT_PREVIOUS_DAY]')) {
+        const punchIdMatch = adj.adjustment_reason.match(/punch_id:([a-zA-Z0-9_-]+)/);
+        const targetDateMatch = adj.adjustment_reason.match(/target_date:([0-9]{4}-[0-9]{2}-[0-9]{2})/);
+        if (punchIdMatch && targetDateMatch) {
+          shiftedPunchesMap[punchIdMatch[1]] = {
+            target_date: targetDateMatch[1],
+            adjustment_id: adj.id
+          };
+        }
+      }
+    });
+
     // 5. Saldo do Banco de Horas
     let bankBalance = 0;
     if (contractId) {
@@ -750,13 +765,20 @@ export class TimeManagementService {
     const punchesByDay: Record<string, MonthlyPunchItem[]> = {};
     (punchesRaw || []).forEach((p: any) => {
       const sp = formatPunchToSaoPaulo(p.punched_at);
-      if (!punchesByDay[sp.date]) punchesByDay[sp.date] = [];
-      punchesByDay[sp.date].push({
+      const shiftInfo = shiftedPunchesMap[p.id];
+      const effectiveDate = shiftInfo ? shiftInfo.target_date : sp.date;
+      const isShifted = !!shiftInfo;
+
+      if (!punchesByDay[effectiveDate]) punchesByDay[effectiveDate] = [];
+      punchesByDay[effectiveDate].push({
         id: p.id,
         nsr: p.nsr,
         time: sp.time,
         source: p.source,
-        punched_at: p.punched_at
+        punched_at: p.punched_at,
+        is_shifted: isShifted,
+        original_date: sp.date,
+        adjustment_id: shiftInfo?.adjustment_id
       });
     });
 
@@ -791,17 +813,27 @@ export class TimeManagementService {
       const dayPunches = punchesByDay[dateStr] || [];
       const dayAdjustments = adjustmentsByDay[dateStr] || [];
 
+      // Ordenar batidas do dia:
+      // Se a batida foi deslocada para o dia anterior (is_shifted) e seu horário é na madrugada (h < 12),
+      // somamos 1440 minutos para que ela fique no fim da jornada iniciada na noite do dia anterior!
+      dayPunches.sort((a, b) => {
+        const [ha, ma] = a.time.split(':').map(Number);
+        const [hb, mb] = b.time.split(':').map(Number);
+        const minA = a.is_shifted && ha < 12 ? (ha + 24) * 60 + ma : ha * 60 + ma;
+        const minB = b.is_shifted && hb < 12 ? (hb + 24) * 60 + mb : hb * 60 + mb;
+        return minA - minB;
+      });
+
       // Calcular pares de batidas do dia
       let workedMin = 0;
       let breakMin = 0;
       let hasMissingPunch = false;
 
       if (dayPunches.length >= 2) {
-        // Ordenar minutos desde meia-noite
         const punchMinutes = dayPunches.map((p) => {
           const [h, m] = p.time.split(':').map(Number);
-          return h * 60 + m;
-        }).sort((a, b) => a - b);
+          return p.is_shifted && h < 12 ? (h + 24) * 60 + m : h * 60 + m;
+        });
 
         for (let i = 0; i < punchMinutes.length - 1; i += 2) {
           workedMin += Math.max(0, punchMinutes[i + 1] - punchMinutes[i]);
@@ -1022,6 +1054,74 @@ export class TimeManagementService {
 
     if (error) throw error;
   }
+
+  /**
+   * Aloca uma batida na jornada do dia anterior (para turnos noturnos que viram a meia-noite)
+   */
+  static async shiftPunchToPreviousDay(params: {
+    tenantId: string;
+    contractId: string;
+    punchId: string;
+    punchTime: string;
+    punchedAt: string;
+    currentDate: string;
+    previousDate: string;
+    userName?: string;
+  }): Promise<void> {
+    const { tenantId, contractId, punchId, punchTime, punchedAt, currentDate, previousDate, userName } = params;
+
+    const reason = `[SHIFT_PREVIOUS_DAY] punch_id:${punchId}|source_date:${currentDate}|target_date:${previousDate}|time:${punchTime}`;
+
+    // 1. Remover qualquer ajuste anterior dessa batida para evitar duplicidade
+    await supabase
+      .from('time_entry_adjustments')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('contract_id', contractId)
+      .ilike('adjustment_reason', `%punch_id:${punchId}%`);
+
+    // 2. Inserir novo ajuste aprovado pelo DP
+    const { error } = await supabase.from('time_entry_adjustments').insert({
+      tenant_id: tenantId,
+      contract_id: contractId,
+      requested_timestamp: punchedAt,
+      entry_type: 'OUT',
+      adjustment_reason: reason,
+      status: 'APPROVED',
+      requested_by: userName || 'DP',
+      approved_by: userName || 'DP',
+      review_notes: `Batida das ${punchTime} alocada na jornada de encerramento do dia anterior (${previousDate}) por solicitação do DP.`
+    });
+
+    if (error) throw error;
+  }
+
+  /**
+   * Desfaz a alocação da batida no dia anterior, retornando-a para o dia civil original
+   */
+  static async undoShiftPunch(params: {
+    tenantId: string;
+    contractId: string;
+    punchId: string;
+    adjustmentId?: string;
+  }): Promise<void> {
+    const { tenantId, contractId, punchId, adjustmentId } = params;
+
+    let query = supabase
+      .from('time_entry_adjustments')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('contract_id', contractId);
+
+    if (adjustmentId) {
+      query = query.eq('id', adjustmentId);
+    } else {
+      query = query.ilike('adjustment_reason', `%punch_id:${punchId}%`);
+    }
+
+    const { error } = await query;
+    if (error) throw error;
+  }
 }
 
 export interface WorkerOption {
@@ -1039,6 +1139,9 @@ export interface MonthlyPunchItem {
   time: string;
   source: string;
   punched_at: string;
+  is_shifted?: boolean;
+  original_date?: string;
+  adjustment_id?: string;
 }
 
 export interface MonthlyDayTimesheet {

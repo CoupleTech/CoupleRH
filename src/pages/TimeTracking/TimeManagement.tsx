@@ -27,7 +27,10 @@ import {
   ChevronLeft,
   ChevronRight,
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  Moon,
+  CornerUpLeft,
+  Undo2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCompany } from '../../contexts/CompanyContext';
@@ -39,7 +42,8 @@ import {
   type PendingApprovalsGroup,
   type WorkerOption,
   type MonthlyTimesheetSummary,
-  type MonthlyDayTimesheet
+  type MonthlyDayTimesheet,
+  type MonthlyPunchItem
 } from '../../services/timeTracking/timeManagementService';
 import type {
   TimeDevice,
@@ -96,6 +100,15 @@ export default function TimeManagement() {
   const [abonoType, setAbonoType] = useState('Atestado Médico (Art. 473 CLT)');
   const [abonoReason, setAbonoReason] = useState('');
   const [savingAbono, setSavingAbono] = useState(false);
+
+  // Estados para Deslocamento de Jornada Noturna (Virada de Meia-Noite / Fechamento de Turno)
+  const [shiftPunchModalOpen, setShiftPunchModalOpen] = useState(false);
+  const [selectedPunchToShift, setSelectedPunchToShift] = useState<{
+    punch: MonthlyPunchItem;
+    currentDate: string;
+    previousDate: string;
+  } | null>(null);
+  const [savingShiftPunch, setSavingShiftPunch] = useState(false);
 
   // Estados do Tratamento Legado / Fallback
   const [dailySummaries, setDailySummaries] = useState<(TimeDailySummary & { worker_name?: string; position_name?: string })[]>([]);
@@ -289,6 +302,67 @@ export default function TimeManagement() {
       toast.error('Erro ao registrar abono: ' + err.message);
     } finally {
       setSavingAbono(false);
+    }
+  };
+
+  const getPreviousDateStr = (dateStr: string): string => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() - 1);
+    const prevY = dt.getFullYear();
+    const prevM = String(dt.getMonth() + 1).padStart(2, '0');
+    const prevD = String(dt.getDate()).padStart(2, '0');
+    return `${prevY}-${prevM}-${prevD}`;
+  };
+
+  const handleOpenShiftModal = (punch: MonthlyPunchItem, currentDate: string) => {
+    const prevDate = getPreviousDateStr(currentDate);
+    setSelectedPunchToShift({
+      punch,
+      currentDate,
+      previousDate: prevDate
+    });
+    setShiftPunchModalOpen(true);
+  };
+
+  const handleConfirmShiftPunch = async () => {
+    if (!selectedPunchToShift || !currentTenantId || !selectedWorkerId) return;
+    setSavingShiftPunch(true);
+    try {
+      const activeWorker = workersList.find((w) => w.worker_id === selectedWorkerId);
+      const contractId = activeWorker?.contract_id || '';
+
+      if (selectedPunchToShift.punch.is_shifted) {
+        // Desfazer deslocamento e retornar ao dia original
+        await TimeManagementService.undoShiftPunch({
+          tenantId: currentTenantId,
+          contractId,
+          punchId: selectedPunchToShift.punch.id,
+          adjustmentId: selectedPunchToShift.punch.adjustment_id
+        });
+        toast.success(`Batida das ${selectedPunchToShift.punch.time} retornada ao dia civil original.`);
+      } else {
+        // Mover para a jornada do dia anterior
+        await TimeManagementService.shiftPunchToPreviousDay({
+          tenantId: currentTenantId,
+          contractId,
+          punchId: selectedPunchToShift.punch.id,
+          punchTime: selectedPunchToShift.punch.time,
+          punchedAt: selectedPunchToShift.punch.punched_at,
+          currentDate: selectedPunchToShift.currentDate,
+          previousDate: selectedPunchToShift.previousDate,
+          userName: 'Operador DP'
+        });
+        toast.success(`Batida das ${selectedPunchToShift.punch.time} alocada com sucesso no fechamento de turno do dia anterior (${selectedPunchToShift.previousDate}).`);
+      }
+
+      setShiftPunchModalOpen(false);
+      setSelectedPunchToShift(null);
+      await loadWorkerTimesheet();
+    } catch (err: any) {
+      toast.error('Erro ao processar ajuste de jornada: ' + (err.message || 'Tente novamente.'));
+    } finally {
+      setSavingShiftPunch(false);
     }
   };
 
@@ -1642,22 +1716,40 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
                             ) : (
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {day.punches.map((p, idx) => (
-                                  <span
+                                  <button
                                     key={p.id || idx}
-                                    className={`px-2.5 py-1 text-xs font-mono font-bold rounded-lg shadow-xs flex items-center gap-1 border ${
+                                    type="button"
+                                    onClick={() => handleOpenShiftModal(p, day.date)}
+                                    className={`group px-2.5 py-1 text-xs font-mono font-bold rounded-lg shadow-xs flex items-center gap-1.5 border transition-all cursor-pointer select-none text-left ${
                                       p.source === 'MANUAL'
-                                        ? 'bg-amber-50 text-amber-900 border-amber-300'
-                                        : 'bg-slate-900 text-slate-100 border-slate-800'
+                                        ? 'bg-amber-50 text-amber-900 border-amber-300 hover:border-amber-400'
+                                        : p.is_shifted
+                                        ? 'bg-indigo-950 text-indigo-100 border-indigo-600 hover:border-indigo-400 shadow-sm'
+                                        : 'bg-slate-900 text-slate-100 border-slate-800 hover:border-slate-600 hover:bg-slate-800'
                                     }`}
-                                    title={`NSR: ${p.nsr || '—'} · Origem: ${p.source} · ${p.punched_at}`}
+                                    title={
+                                      p.is_shifted
+                                        ? `Batida alocada na jornada de ${day.date} (original: ${p.original_date} às ${p.time}) · Clique para desfazer`
+                                        : `NSR: ${p.nsr || '—'} · Origem: ${p.source} · Clique para alocar no encerramento da jornada do dia anterior`
+                                    }
                                   >
-                                    {p.time}
+                                    <span>{p.time}</span>
+                                    {p.is_shifted && (
+                                      <span className="text-[9px] bg-indigo-500 text-white px-1 py-0.2 rounded font-sans font-bold flex items-center gap-0.5" title="Alocada no dia anterior">
+                                        D-1 ☾
+                                      </span>
+                                    )}
                                     {p.source === 'MANUAL' && (
                                       <span className="text-[9px] bg-amber-400 text-slate-900 px-1 rounded font-sans font-black">
                                         M
                                       </span>
                                     )}
-                                  </span>
+                                    {!p.is_shifted && (
+                                      <span className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-indigo-400">
+                                        <CornerUpLeft size={11} />
+                                      </span>
+                                    )}
+                                  </button>
                                 ))}
                               </div>
                             )}
@@ -2521,6 +2613,125 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* MODAL: AJUSTE DE JORNADA NOTURNA (VIRADA DE MEIA-NOITE) */}
+      {/* ================================================================== */}
+      {shiftPunchModalOpen && selectedPunchToShift && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <span className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <Moon className="w-5 h-5" />
+                </span>
+                <div>
+                  <h3 className="font-bold text-slate-900">Ajuste de Jornada Noturna</h3>
+                  <p className="text-xs text-slate-500">
+                    Alocação de batida após a meia-noite
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShiftPunchModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 mt-4">
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-medium">Horário da Marcação:</span>
+                  <span className="font-mono font-bold text-base text-slate-900 bg-white px-2.5 py-0.5 rounded-lg border border-slate-200">
+                    {selectedPunchToShift.punch.time}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-medium">Dia Civil Registrado:</span>
+                  <span className="font-semibold text-slate-700">
+                    {selectedPunchToShift.currentDate.split('-').reverse().join('/')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-medium">Origem do Ponto:</span>
+                  <span className="font-semibold text-slate-700">
+                    {selectedPunchToShift.punch.source}
+                  </span>
+                </div>
+                {selectedPunchToShift.punch.is_shifted && (
+                  <div className="flex justify-between items-center text-xs pt-1 border-t border-slate-200">
+                    <span className="text-indigo-600 font-bold">Situação Atual:</span>
+                    <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-bold">
+                      Alocada na jornada de {selectedPunchToShift.currentDate.split('-').reverse().join('/')}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {!selectedPunchToShift.punch.is_shifted ? (
+                <div className="space-y-2.5">
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Esta marcação foi registrada após a meia-noite (<strong className="text-slate-900">{selectedPunchToShift.punch.time}</strong>). Se o colaborador ultrapassou o horário para encerrar a jornada iniciada no dia anterior, você pode alocá-la como a saída do turno do dia <strong className="text-indigo-600">{selectedPunchToShift.previousDate.split('-').reverse().join('/')}</strong>.
+                  </p>
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <span>
+                      O registro original na trilha <em>time_punch_records</em> permanece 100% imutável. A alocação é registrada e auditada como ajuste do DP.
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Esta batida está atualmente alocada na jornada do dia anterior. Deseja desfazer o ajuste e devolvê-la para o dia civil original (<strong className="text-slate-900">{selectedPunchToShift.punch.original_date ? selectedPunchToShift.punch.original_date.split('-').reverse().join('/') : selectedPunchToShift.currentDate}</strong>)?
+                  </p>
+                </div>
+              )}
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShiftPunchModalOpen(false)}
+                  disabled={savingShiftPunch}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={savingShiftPunch}
+                  onClick={handleConfirmShiftPunch}
+                  className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white rounded-xl shadow-xs transition disabled:opacity-50 ${
+                    selectedPunchToShift.punch.is_shifted
+                      ? 'bg-rose-600 hover:bg-rose-700'
+                      : 'bg-indigo-600 hover:bg-indigo-700'
+                  }`}
+                >
+                  {savingShiftPunch ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Processando...
+                    </>
+                  ) : selectedPunchToShift.punch.is_shifted ? (
+                    <>
+                      <Undo2 className="w-4 h-4" />
+                      Desfazer Alocação
+                    </>
+                  ) : (
+                    <>
+                      <CornerUpLeft className="w-4 h-4" />
+                      Alocar no Dia Anterior ({selectedPunchToShift.previousDate.split('-').reverse().slice(0, 2).join('/')})
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
