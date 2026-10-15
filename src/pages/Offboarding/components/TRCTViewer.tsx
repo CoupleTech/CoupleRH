@@ -1,4 +1,5 @@
 import { X, Printer, Calculator, DollarSign, Percent, FileText } from "lucide-react";
+import { formatDate } from "../../../lib/dateUtils";
 
 interface TRCTViewerProps {
   termination: any; // O registro da tabela terminations que contém o calculated_trct

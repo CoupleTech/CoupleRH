@@ -13,6 +13,7 @@ import {
   Receipt
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { formatDate } from "../../lib/dateUtils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { PayrollComparisonModal } from "../../components/payroll/PayrollComparisonModal";

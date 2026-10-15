@@ -10,6 +10,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { leaveService } from "../../services/leaveService";
+import { formatDate } from "../../lib/dateUtils";
 import { toast } from 'sonner';
 
 interface LeaveWizardProps {

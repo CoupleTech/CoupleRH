@@ -134,7 +134,13 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   - Criado o componente de interface `PayrollObligationsModal.tsx` em `src/components/payroll/PayrollObligationsModal.tsx` com 4 abas interativas, atalhos de cópia rápida, pré-visualização de arquivos e download direto de remessa bancária.
   - Integrado botão de acesso direto "Guias & Obrigações" nas telas de Cálculos (`Calculations.tsx`) e Relatórios (`Reports.tsx`).
   - Suíte de testes TDD `src/tests/payroll/PayrollObligationsAndProvisions.test.ts` implementada com 100% de aprovação (6/6 testes).
-  - **Fase P7 homologada**: Período fechado com imutabilidade estrita CLT, versionamento, auditoria e totalizadores fiscais/contábeis 100% aderentes aos holerites. Total global do projeto ampliado para **431 testes verdes em 64 arquivos de teste**.
+- **15/10/2026 - Hotfix Produção (Referência de formatDate no Wizard de Férias e Demais Componentes)**:
+  - **Causa Raiz**: O componente `src/pages/Vacations/Wizard.tsx` invocava `formatDate(startDate)` e `formatDate(date)` sem importar a função de `src/lib/dateUtils.ts`, gerando a exceção de runtime `ReferenceError: formatDate is not defined` ao agendar férias.
+  - **Correções Aplicadas**:
+    1. Importado `formatDate` de `../../lib/dateUtils` em `Vacations/Wizard.tsx`.
+    2. Padronizado o cálculo de datas de início, retorno e término de férias para UTC (`Date.UTC`), evitando distorções decorrentes do fuso horário brasileiro (GMT-3).
+    3. Importação de `formatDate` estendida preventivamente aos componentes que a referenciavam sem import (`Leaves/Wizard.tsx`, `Leaves/List.tsx`, `SST/Dashboard.tsx`, `Payroll/Reports.tsx`, `Offboarding/List.tsx`, `TRCTViewer.tsx`, `DependentsTab.tsx`, `DocumentsTab.tsx`, `LeavesTab.tsx` e `ScaleTab.tsx`).
+  - **Validação**: Build de produção Vite finalizado com sucesso (`dist/assets/index-D3T48Yc0.js`) e 435 testes automatizados aprovados no Vitest.
 
 ---
 

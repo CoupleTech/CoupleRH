@@ -3,6 +3,7 @@ import { Plus, Users, Loader2, AlertCircle, Pencil, Trash2, Calendar, FileText }
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
 import { format, parseISO } from "date-fns";
+import { formatDate } from "../../../lib/dateUtils";
 import { toast } from 'sonner';
 import { confirmDialog } from '../../../components/ConfirmDialogProvider';
 

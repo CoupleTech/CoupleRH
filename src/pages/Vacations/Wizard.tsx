@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { vacationService } from "../../services/vacationService";
 import { useCompany } from "../../contexts/CompanyContext";
+import { formatDate } from "../../lib/dateUtils";
 import { toast } from 'sonner';
 
 interface VacationWizardProps {
@@ -89,10 +90,8 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
 
   const calculateReturnDate = () => {
     if (!startDate) return "";
-    const date = new Date(startDate);
-    const actualDays = vacationDays;
-    date.setDate(date.getDate() + actualDays); // The return date is the day AFTER the vacation ends
-    // Using string manipulation or locale string that doesn't shift by timezone
+    const [year, month, day] = startDate.split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day + vacationDays));
     return formatDate(date);
   };
 
@@ -111,9 +110,9 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
       const actualDaysTaken = vacationDays;
       const abono = sellDays ? 10 : 0;
 
-      const dateEnd = new Date(startDate);
+      const [y, m, d] = startDate.split('-').map(Number);
       // Data fim = startDate + dias gozados - 1
-      dateEnd.setDate(dateEnd.getDate() + actualDaysTaken - 1);
+      const dateEnd = new Date(Date.UTC(y, m - 1, d + actualDaysTaken - 1));
 
       const { error: requestError } = await supabase
         .from("vacation_requests")
@@ -148,9 +147,8 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
 
       // Gerar Recibo de Férias
       if (generateReceipt) {
-        const fStart = new Date(startDate);
-        const fMonth = fStart.getMonth() + 1;
-        const fYear = fStart.getFullYear();
+        const fMonth = m;
+        const fYear = y;
 
         // 1. Busca ou cria o período VACATION do mês
         let { data: vPeriod } = await supabase
@@ -164,6 +162,7 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
           .single();
 
         if (!vPeriod) {
+          const payDate = new Date(Date.UTC(y, m - 1, d - 2));
           const { data: newVPeriod, error: pError } = await supabase
             .from('payroll_periods')
             .insert({
@@ -172,7 +171,7 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
               month: fMonth,
               year: fYear,
               type: 'VACATION',
-              payment_date: new Date(fStart.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 2 dias antes
+              payment_date: payDate.toISOString().split('T')[0], // 2 dias antes
               status: 'OPEN'
             })
             .select('id')
@@ -358,9 +357,7 @@ export default function VacationWizard({ inline = false, preselectedPeriodId, on
                       <p className="font-bold text-slate-900">{name}</p>
                       <p className="text-sm text-slate-500 mt-0.5">
                         Aquisitivo:{" "}
-                        {new Date(period.start_date).toLocaleDateString(
-                          "pt-BR",
-                        )}{" "}
+                        {formatDate(period.start_date)}{" "}
                         a{" "}
                         {formatDate(period.end_date)}
                       </p>

@@ -3,6 +3,7 @@ import { Plus, Save, Loader2, AlertCircle, Clock, CalendarDays, X } from "lucide
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useCompany } from "../../../contexts/CompanyContext";
+import { formatDate } from "../../../lib/dateUtils";
 
 export default function ScaleTab({ contractId, scales = [], onSaved }: any) {
   const { user } = useAuth();

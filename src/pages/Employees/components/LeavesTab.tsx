@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Plus, Stethoscope, CalendarDays, AlertTriangle, XCircle } from "lucide-react";
 import { leaveService } from "../../../services/leaveService";
+import { formatDate } from "../../../lib/dateUtils";
 import LeaveWizard from "../../Leaves/Wizard";
 
 interface LeavesTabProps {

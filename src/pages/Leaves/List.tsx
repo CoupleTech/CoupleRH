@@ -19,6 +19,7 @@ import { useNavigate } from "react-router-dom";
 import { leaveService } from "../../services/leaveService";
 import { useCompany } from "../../contexts/CompanyContext";
 import { supabase } from "../../lib/supabase";
+import { formatDate } from "../../lib/dateUtils";
 import { Pagination } from "../../components/Pagination";
 import { toast } from 'sonner';
 import { confirmDialog } from '../../components/ConfirmDialogProvider';
