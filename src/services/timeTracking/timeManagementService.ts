@@ -79,6 +79,45 @@ export interface PendingApprovalsGroup {
   totalCount: number;
 }
 
+/**
+ * Converte qualquer timestamp (UTC ou com offset) para a data (YYYY-MM-DD) e hora (HH:mm) oficial de Brasília (America/Sao_Paulo - UTC-3)
+ */
+export function formatPunchToSaoPaulo(dateInput: string | Date): { date: string; time: string; hours: number; minutes: number } {
+  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (isNaN(d.getTime())) {
+    return { date: '', time: '00:00', hours: 0, minutes: 0 };
+  }
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+
+  const parts = formatter.formatToParts(d);
+  const partMap: Record<string, string> = {};
+  for (const part of parts) {
+    partMap[part.type] = part.value;
+  }
+
+  const date = `${partMap.year}-${partMap.month}-${partMap.day}`;
+  let hourStr = partMap.hour || '00';
+  if (hourStr === '24') hourStr = '00';
+  const minStr = partMap.minute || '00';
+  const time = `${hourStr.padStart(2, '0')}:${minStr.padStart(2, '0')}`;
+
+  return {
+    date,
+    time,
+    hours: parseInt(hourStr, 10),
+    minutes: parseInt(minStr, 10)
+  };
+}
+
 export class TimeManagementService {
   /**
    * Valida a integridade da configuração de um dispositivo de ponto
@@ -668,10 +707,10 @@ export class TimeManagementService {
     const contractId = contract?.id || '';
     const positionTitle = contract?.positions?.title || 'Geral';
 
-    // 2. Intervalo do mês
+    // 2. Intervalo do mês em horário de Brasília (UTC-3)
     const lastDay = new Date(year, month, 0).getDate();
-    const startDateIso = `${year}-${String(month).padStart(2, '0')}-01T00:00:00Z`;
-    const endDateIso = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}T23:59:59Z`;
+    const startDateIso = `${year}-${String(month).padStart(2, '0')}-01T00:00:00-03:00`;
+    const endDateIso = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}T23:59:59-03:00`;
     const monthLabel = new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 
     // 3. Batidas brutas do relógio em time_punch_records
@@ -707,30 +746,26 @@ export class TimeManagementService {
       }
     }
 
-    // Mapear batidas por dia local (YYYY-MM-DD)
+    // Mapear batidas por dia local de Brasília (America/Sao_Paulo - UTC-3)
     const punchesByDay: Record<string, MonthlyPunchItem[]> = {};
     (punchesRaw || []).forEach((p: any) => {
-      const d = new Date(p.punched_at);
-      const dayKey = d.toISOString().split('T')[0];
-      const hours = String(d.getUTCHours()).padStart(2, '0');
-      const mins = String(d.getUTCMinutes()).padStart(2, '0');
-      if (!punchesByDay[dayKey]) punchesByDay[dayKey] = [];
-      punchesByDay[dayKey].push({
+      const sp = formatPunchToSaoPaulo(p.punched_at);
+      if (!punchesByDay[sp.date]) punchesByDay[sp.date] = [];
+      punchesByDay[sp.date].push({
         id: p.id,
         nsr: p.nsr,
-        time: `${hours}:${mins}`,
+        time: sp.time,
         source: p.source,
         punched_at: p.punched_at
       });
     });
 
-    // Mapear ajustes e abonos por dia
+    // Mapear ajustes e abonos por dia local de Brasília
     const adjustmentsByDay: Record<string, any[]> = {};
     (adjustmentsRaw || []).forEach((adj: any) => {
-      const d = new Date(adj.requested_timestamp);
-      const dayKey = d.toISOString().split('T')[0];
-      if (!adjustmentsByDay[dayKey]) adjustmentsByDay[dayKey] = [];
-      adjustmentsByDay[dayKey].push(adj);
+      const sp = formatPunchToSaoPaulo(adj.requested_timestamp);
+      if (!adjustmentsByDay[sp.date]) adjustmentsByDay[sp.date] = [];
+      adjustmentsByDay[sp.date].push(adj);
     });
 
     const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -908,7 +943,7 @@ export class TimeManagementService {
   }): Promise<void> {
     const { tenantId, companyId, workerId, contractId, date, time, entryType, reason, userName } = params;
 
-    const punchIso = `${date}T${time}:00Z`;
+    const punchIso = `${date}T${time}:00-03:00`;
 
     // 1. Obter próximo NSR sequencial
     const { data: maxNsrData } = await supabase

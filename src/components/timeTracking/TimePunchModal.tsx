@@ -331,7 +331,7 @@ export const TimePunchModal: React.FC<TimePunchModalProps> = ({
                   </p>
                   <p>
                     <span className="text-slate-500">DATA/HORA:</span>{' '}
-                    {new Date(receipt.punched_at).toLocaleString('pt-BR')}
+                    {new Date(receipt.punched_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
                   </p>
                   <p>
                     <span className="text-slate-500">NSR:</span>{' '}

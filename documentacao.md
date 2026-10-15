@@ -288,3 +288,21 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
      - Definido `SET search_path = public, extensions;` para garantir localização da função `digest` (pgcrypto).
      - Removida a exigência de `status` no espelho de `time_entries`.
      - Concedidas permissões `GRANT EXECUTE ON FUNCTION public.register_mobile_punch TO authenticated, anon;`.
+
+---
+
+## 15. PONTO ELETRÔNICO: CORREÇÃO DE FUSO HORÁRIO (AMERICA/SAO_PAULO - UTC-3)
+
+- **Causa Raiz do Erro (Batida de 15:04 aparecendo como 18:04 na tela de Tratamento)**:
+  - O banco de dados PostgreSQL grava marcações em UTC (`punched_at = '2026-10-15T18:04:00.000Z'`).
+  - No frontend, a função `TimeManagementService.fetchMonthlyTimesheet` fazia:
+    `const hours = String(d.getUTCHours()).padStart(2, '0');`
+    `const mins = String(d.getUTCMinutes()).padStart(2, '0');`
+    `const dayKey = d.toISOString().split('T')[0];`
+  - Como utilizava `getUTCHours()` e `toISOString()`, exibia a hora no meridiano de Greenwich (UTC) com +3 horas à frente do horário oficial de Brasília (UTC-3), e alocava incorretamente marcações noturnas no dia civil seguinte.
+- **Solução Implementada**:
+  1. Criada a função pura `formatPunchToSaoPaulo` em `src/services/timeTracking/timeManagementService.ts`, utilizando `Intl.DateTimeFormat` com fuso horário obrigatório `timeZone: 'America/Sao_Paulo'`.
+  2. Ajustada a extração de `p.time` e o agrupamento diário `punchesByDay` para usar o dia e a hora oficiais do Brasil, convertendo `18:04 UTC` com exatidão para `15:04`.
+  3. Atualizada a query de busca mensal para usar o intervalo com offset `-03:00` (`startDateIso` e `endDateIso`).
+  4. Padronizadas a inclusão manual de batidas (`addManualPunch`), a exibição do comprovante (`TimePunchModal.tsx`) e do portal do colaborador (`EmployeePortal.tsx`) com `timeZone: 'America/Sao_Paulo'`.
+  5. Criada a suíte de testes unitários `TimePunchTimezone.test.ts` cobrindo conversão de UTC, offset `-03:00` e batidas noturnas com virada de dia civil.
