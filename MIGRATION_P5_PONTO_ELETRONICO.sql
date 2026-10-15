@@ -570,125 +570,38 @@ ALTER TABLE public.time_punch_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.time_daily_summary ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Tenant Admins and DP can manage time_devices" ON public.time_devices;
-CREATE POLICY "Tenant Admins and DP can manage time_devices" 
+DROP POLICY IF EXISTS "Tenant users can manage time_devices" ON public.time_devices;
+CREATE POLICY "Tenant users can manage time_devices" 
     ON public.time_devices FOR ALL 
     TO authenticated
-    USING (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = time_devices.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    )
-    WITH CHECK (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = time_devices.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    );
+    USING (tenant_id = ANY (public.user_tenant_ids()))
+    WITH CHECK (tenant_id = ANY (public.user_tenant_ids()));
 
 DROP POLICY IF EXISTS "Tenant Admins and DP can manage afd_files" ON public.afd_files;
-CREATE POLICY "Tenant Admins and DP can manage afd_files" 
+DROP POLICY IF EXISTS "Tenant users can manage afd_files" ON public.afd_files;
+CREATE POLICY "Tenant users can manage afd_files" 
     ON public.afd_files FOR ALL 
     TO authenticated
-    USING (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = afd_files.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    )
-    WITH CHECK (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = afd_files.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    );
+    USING (tenant_id = ANY (public.user_tenant_ids()))
+    WITH CHECK (tenant_id = ANY (public.user_tenant_ids()));
 
 DROP POLICY IF EXISTS "Tenant Admins and DP can manage time_punch_records" ON public.time_punch_records;
-CREATE POLICY "Tenant Admins and DP can manage time_punch_records" 
+DROP POLICY IF EXISTS "Employees can view their own punch records" ON public.time_punch_records;
+DROP POLICY IF EXISTS "Tenant users can manage time_punch_records" ON public.time_punch_records;
+CREATE POLICY "Tenant users can manage time_punch_records" 
     ON public.time_punch_records FOR ALL 
     TO authenticated
-    USING (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = time_punch_records.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    )
-    WITH CHECK (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = time_punch_records.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    );
-
-DROP POLICY IF EXISTS "Employees can view their own punch records" ON public.time_punch_records;
-CREATE POLICY "Employees can view their own punch records"
-    ON public.time_punch_records FOR SELECT
-    TO authenticated
-    USING (
-        tenant_id = ANY (public.user_tenant_ids())
-        AND (
-            worker_id IN (SELECT id FROM public.workers WHERE user_id = auth.uid())
-            OR contract_id IN (
-                SELECT ec.id FROM public.employment_contracts ec
-                JOIN public.workers w ON w.id = ec.worker_id
-                WHERE w.user_id = auth.uid()
-            )
-        )
-    );
+    USING (tenant_id = ANY (public.user_tenant_ids()))
+    WITH CHECK (tenant_id = ANY (public.user_tenant_ids()));
 
 DROP POLICY IF EXISTS "Tenant Admins and DP can manage time_daily_summary" ON public.time_daily_summary;
-CREATE POLICY "Tenant Admins and DP can manage time_daily_summary" 
+DROP POLICY IF EXISTS "Employees can view their own daily summary" ON public.time_daily_summary;
+DROP POLICY IF EXISTS "Tenant users can manage time_daily_summary" ON public.time_daily_summary;
+CREATE POLICY "Tenant users can manage time_daily_summary" 
     ON public.time_daily_summary FOR ALL 
     TO authenticated
-    USING (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = time_daily_summary.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    )
-    WITH CHECK (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = time_daily_summary.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    );
-
-DROP POLICY IF EXISTS "Employees can view their own daily summary" ON public.time_daily_summary;
-CREATE POLICY "Employees can view their own daily summary"
-    ON public.time_daily_summary FOR SELECT
-    TO authenticated
-    USING (
-        tenant_id = ANY (public.user_tenant_ids())
-        AND contract_id IN (
-            SELECT ec.id FROM public.employment_contracts ec
-            JOIN public.workers w ON w.id = ec.worker_id
-            WHERE w.user_id = auth.uid()
-        )
-    );
+    USING (tenant_id = ANY (public.user_tenant_ids()))
+    WITH CHECK (tenant_id = ANY (public.user_tenant_ids()));
 
 -- 18. RPC ATÔMICA DE ALTA PERFORMANCE PARA INSERÇÃO EM LOTE DE BATIDAS AFD (SECURITY DEFINER)
 CREATE OR REPLACE FUNCTION public.import_afd_punch_records(

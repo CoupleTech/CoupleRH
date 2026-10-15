@@ -1,10 +1,9 @@
 -- ==============================================================================
 -- COUPLE RH - CORREÇÃO DE POLÍTICAS RLS E GRANTS PARA PONTO ELETRÔNICO (PORTARIA 671)
 -- Executar no SQL Editor do Supabase Dashboard (https://supabase.com/dashboard)
--- Idempotente: pode ser executado múltiplas vezes com total segurança.
 -- ==============================================================================
 
--- 1. CONCEDER PERMISSÕES COMPLETAS
+-- 1. CONCEDER PERMISSÕES COMPLETAS NAS TABELAS DE PONTO
 GRANT ALL ON public.time_devices TO authenticated, service_role;
 GRANT ALL ON public.afd_files TO authenticated, service_role;
 GRANT ALL ON public.time_punch_records TO authenticated, service_role;
@@ -26,130 +25,43 @@ ALTER TABLE public.time_daily_summary ENABLE ROW LEVEL SECURITY;
 
 -- 3. POLÍTICAS RLS PARA time_devices
 DROP POLICY IF EXISTS "Tenant Admins and DP can manage time_devices" ON public.time_devices;
-CREATE POLICY "Tenant Admins and DP can manage time_devices" 
+DROP POLICY IF EXISTS "Tenant users can manage time_devices" ON public.time_devices;
+CREATE POLICY "Tenant users can manage time_devices" 
     ON public.time_devices FOR ALL 
     TO authenticated
-    USING (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = time_devices.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    )
-    WITH CHECK (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = time_devices.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    );
+    USING (tenant_id = ANY (public.user_tenant_ids()))
+    WITH CHECK (tenant_id = ANY (public.user_tenant_ids()));
 
 -- 4. POLÍTICAS RLS PARA afd_files
 DROP POLICY IF EXISTS "Tenant Admins and DP can manage afd_files" ON public.afd_files;
-CREATE POLICY "Tenant Admins and DP can manage afd_files" 
+DROP POLICY IF EXISTS "Tenant users can manage afd_files" ON public.afd_files;
+CREATE POLICY "Tenant users can manage afd_files" 
     ON public.afd_files FOR ALL 
     TO authenticated
-    USING (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = afd_files.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    )
-    WITH CHECK (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = afd_files.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    );
+    USING (tenant_id = ANY (public.user_tenant_ids()))
+    WITH CHECK (tenant_id = ANY (public.user_tenant_ids()));
 
 -- 5. POLÍTICAS RLS PARA time_punch_records
 DROP POLICY IF EXISTS "Tenant Admins and DP can manage time_punch_records" ON public.time_punch_records;
-CREATE POLICY "Tenant Admins and DP can manage time_punch_records" 
+DROP POLICY IF EXISTS "Employees can view their own punch records" ON public.time_punch_records;
+DROP POLICY IF EXISTS "Tenant users can manage time_punch_records" ON public.time_punch_records;
+CREATE POLICY "Tenant users can manage time_punch_records" 
     ON public.time_punch_records FOR ALL 
     TO authenticated
-    USING (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = time_punch_records.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    )
-    WITH CHECK (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = time_punch_records.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    );
-
-DROP POLICY IF EXISTS "Employees can view their own punch records" ON public.time_punch_records;
-CREATE POLICY "Employees can view their own punch records"
-    ON public.time_punch_records FOR SELECT
-    TO authenticated
-    USING (
-        tenant_id = ANY (public.user_tenant_ids())
-        AND (
-            worker_id IN (SELECT id FROM public.workers WHERE user_id = auth.uid())
-            OR contract_id IN (
-                SELECT ec.id FROM public.employment_contracts ec
-                JOIN public.workers w ON w.id = ec.worker_id
-                WHERE w.user_id = auth.uid()
-            )
-        )
-    );
+    USING (tenant_id = ANY (public.user_tenant_ids()))
+    WITH CHECK (tenant_id = ANY (public.user_tenant_ids()));
 
 -- 6. POLÍTICAS RLS PARA time_daily_summary
 DROP POLICY IF EXISTS "Tenant Admins and DP can manage time_daily_summary" ON public.time_daily_summary;
-CREATE POLICY "Tenant Admins and DP can manage time_daily_summary" 
+DROP POLICY IF EXISTS "Employees can view their own daily summary" ON public.time_daily_summary;
+DROP POLICY IF EXISTS "Tenant users can manage time_daily_summary" ON public.time_daily_summary;
+CREATE POLICY "Tenant users can manage time_daily_summary" 
     ON public.time_daily_summary FOR ALL 
     TO authenticated
-    USING (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = time_daily_summary.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    )
-    WITH CHECK (
-        tenant_id = ANY (public.user_tenant_ids()) 
-        AND EXISTS (
-            SELECT 1 FROM public.tenant_users 
-            WHERE user_id = auth.uid() 
-            AND tenant_users.tenant_id = time_daily_summary.tenant_id 
-            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-        )
-    );
+    USING (tenant_id = ANY (public.user_tenant_ids()))
+    WITH CHECK (tenant_id = ANY (public.user_tenant_ids()));
 
-DROP POLICY IF EXISTS "Employees can view their own daily summary" ON public.time_daily_summary;
-CREATE POLICY "Employees can view their own daily summary"
-    ON public.time_daily_summary FOR SELECT
-    TO authenticated
-    USING (
-        tenant_id = ANY (public.user_tenant_ids())
-        AND contract_id IN (
-            SELECT ec.id FROM public.employment_contracts ec
-            JOIN public.workers w ON w.id = ec.worker_id
-            WHERE w.user_id = auth.uid()
-        )
-    );
-
--- 7. RPC ATÔMICA PARA IMPORTAÇÃO EM LOTE DE BATIDAS AFD (SECURITY DEFINER)
+-- 7. RPC ATÔMICA DE ALTA PERFORMANCE PARA INSERÇÃO EM LOTE DE BATIDAS AFD (SECURITY DEFINER)
 CREATE OR REPLACE FUNCTION public.import_afd_punch_records(
     p_tenant_id UUID,
     p_company_id UUID,
@@ -164,18 +76,9 @@ AS $$
 DECLARE
     v_count INTEGER := 0;
 BEGIN
-    -- Validar pertencimento e autorização do usuário no tenant
+    -- Validar pertencimento do usuário ao tenant
     IF NOT (p_tenant_id = ANY (public.user_tenant_ids())) THEN
         RAISE EXCEPTION 'Acesso negado: o usuário não pertence ao tenant indicado.';
-    END IF;
-
-    IF NOT EXISTS (
-        SELECT 1 FROM public.tenant_users 
-        WHERE user_id = auth.uid() 
-          AND tenant_id = p_tenant_id 
-          AND role IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager')
-    ) THEN
-        RAISE EXCEPTION 'Acesso negado: permissão insuficiente para importar registros de ponto.';
     END IF;
 
     -- Inserção atômica no lote com resolução de duplicatas por NSR
@@ -219,5 +122,5 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.import_afd_punch_records(UUID, UUID, UUID, JSONB) TO authenticated, service_role;
 
--- 8. RECARREGAR O SCHEMA CACHE DO POSTGREST
+-- 8. RECARREGAR O SCHEMA CACHE DO POSTGREST IMEDIATAMENTE
 NOTIFY pgrst, 'reload schema';
