@@ -30,7 +30,9 @@ import {
   AlertCircle,
   Moon,
   CornerUpLeft,
-  Undo2
+  Undo2,
+  Zap,
+  DollarSign
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCompany } from '../../contexts/CompanyContext';
@@ -43,7 +45,8 @@ import {
   type WorkerOption,
   type MonthlyTimesheetSummary,
   type MonthlyDayTimesheet,
-  type MonthlyPunchItem
+  type MonthlyPunchItem,
+  type IntegrateTimesheetResult
 } from '../../services/timeTracking/timeManagementService';
 import type {
   TimeDevice,
@@ -89,11 +92,18 @@ export default function TimeManagement() {
 
   // Modais de Inclusão Manual e Abono
   const [manualPunchModalOpen, setManualPunchModalOpen] = useState(false);
+  const [manualPunchWorkerId, setManualPunchWorkerId] = useState<string>('');
   const [manualPunchDate, setManualPunchDate] = useState('');
   const [manualPunchTime, setManualPunchTime] = useState('08:00');
   const [manualPunchType, setManualPunchType] = useState<'IN' | 'OUT' | 'BREAK_START' | 'BREAK_END'>('IN');
   const [manualPunchReason, setManualPunchReason] = useState('');
   const [savingManualPunch, setSavingManualPunch] = useState(false);
+
+  // Estados de Integração com Folha e Banco de Horas
+  const [integrateModalOpen, setIntegrateModalOpen] = useState(false);
+  const [integrateDestiny, setIntegrateDestiny] = useState<'HYBRID' | 'PAYROLL_ONLY' | 'BANK_ONLY'>('HYBRID');
+  const [integrating, setIntegrating] = useState(false);
+  const [integrateResult, setIntegrateResult] = useState<IntegrateTimesheetResult | null>(null);
 
   const [abonoModalOpen, setAbonoModalOpen] = useState(false);
   const [abonoDate, setAbonoDate] = useState('');
@@ -228,8 +238,11 @@ export default function TimeManagement() {
     }
   };
 
-  const handleOpenManualPunchModal = (dateStr: string) => {
-    setManualPunchDate(dateStr);
+  const handleOpenManualPunchModal = (dateStr?: string, workerId?: string) => {
+    const today = new Date().toISOString().split('T')[0];
+    const initialDate = dateStr || (selectedYearMonth ? `${selectedYearMonth}-01` : today);
+    setManualPunchDate(initialDate);
+    setManualPunchWorkerId(workerId || selectedWorkerId || (workersList[0]?.worker_id || ''));
     setManualPunchTime('12:00');
     setManualPunchType('IN');
     setManualPunchReason('');
@@ -238,7 +251,11 @@ export default function TimeManagement() {
 
   const handleSaveManualPunch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentTenantId || !selectedWorkerId || !manualPunchDate || !manualPunchTime) return;
+    const targetWorkerId = manualPunchWorkerId || selectedWorkerId;
+    if (!currentTenantId || !targetWorkerId || !manualPunchDate || !manualPunchTime) {
+      toast.error('Preencha os campos obrigatórios da marcação.');
+      return;
+    }
     if (!manualPunchReason.trim()) {
       toast.error('Informe a justificativa legal da marcação manual.');
       return;
@@ -246,24 +263,63 @@ export default function TimeManagement() {
 
     setSavingManualPunch(true);
     try {
-      const activeWorker = workersList.find((w) => w.worker_id === selectedWorkerId);
+      const activeWorker = workersList.find((w) => w.worker_id === targetWorkerId);
       await TimeManagementService.addManualPunch({
         tenantId: currentTenantId,
         companyId: selectedCompanyId || undefined,
-        workerId: selectedWorkerId,
+        workerId: targetWorkerId,
         contractId: activeWorker?.contract_id,
         date: manualPunchDate,
         time: manualPunchTime,
         entryType: manualPunchType,
-        reason: manualPunchReason.trim()
+        reason: manualPunchReason.trim(),
+        userName: 'Operador DP'
       });
-      toast.success('Marcação de ponto incluída com sucesso!');
+      toast.success(`Marcação de ponto incluída com sucesso para ${activeWorker?.full_name || 'o colaborador'}!`);
       setManualPunchModalOpen(false);
-      await loadWorkerTimesheet();
+
+      if (targetWorkerId === selectedWorkerId) {
+        await loadWorkerTimesheet();
+      } else {
+        setSelectedWorkerId(targetWorkerId);
+      }
     } catch (err: any) {
       toast.error('Erro ao incluir marcação: ' + err.message);
     } finally {
       setSavingManualPunch(false);
+    }
+  };
+
+  const handleOpenIntegrateModal = () => {
+    setIntegrateResult(null);
+    setIntegrateModalOpen(true);
+  };
+
+  const handleConfirmIntegrate = async () => {
+    if (!currentTenantId || !selectedYearMonth) return;
+    setIntegrating(true);
+    try {
+      const [yearStr, monthStr] = selectedYearMonth.split('-');
+      const year = Number(yearStr);
+      const month = Number(monthStr);
+
+      const res = await TimeManagementService.integrateTimesheetToPayrollAndBank({
+        tenantId: currentTenantId,
+        companyId: selectedCompanyId || undefined,
+        year,
+        month,
+        destiny: integrateDestiny,
+        userName: 'Operador DP'
+      });
+
+      setIntegrateResult(res);
+      toast.success(`Integração concluída! ${res.total_events_created} eventos na folha e ${Math.floor(res.total_bank_credits_minutes / 60)}h no banco.`);
+      await loadWorkerTimesheet();
+    } catch (err: any) {
+      console.error('Erro na integração com folha/banco:', err);
+      toast.error('Erro ao integrar ponto com folha: ' + err.message);
+    } finally {
+      setIntegrating(false);
     }
   };
 
@@ -1458,42 +1514,66 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
                 </p>
               </div>
 
-              {/* Seletor de Competência (Mês / Ano) */}
-              <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const [y, m] = selectedYearMonth.split('-').map(Number);
-                    const prevDate = new Date(y, m - 2, 1);
-                    setSelectedYearMonth(`${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`);
-                  }}
-                  className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-white rounded-lg transition shadow-xs"
-                  title="Mês Anterior"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Seletor de Competência (Mês / Ano) */}
+                <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const [y, m] = selectedYearMonth.split('-').map(Number);
+                      const prevDate = new Date(y, m - 2, 1);
+                      setSelectedYearMonth(`${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`);
+                    }}
+                    className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-white rounded-lg transition shadow-xs cursor-pointer"
+                    title="Mês Anterior"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
 
-                <div className="flex items-center gap-2 px-2">
-                  <Calendar className="w-4 h-4 text-primary-600" />
-                  <input
-                    type="month"
-                    value={selectedYearMonth}
-                    onChange={(e) => setSelectedYearMonth(e.target.value)}
-                    className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none cursor-pointer"
-                  />
+                  <div className="flex items-center gap-2 px-2">
+                    <Calendar className="w-4 h-4 text-primary-600" />
+                    <input
+                      type="month"
+                      value={selectedYearMonth}
+                      onChange={(e) => setSelectedYearMonth(e.target.value)}
+                      className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none cursor-pointer"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const [y, m] = selectedYearMonth.split('-').map(Number);
+                      const nextDate = new Date(y, m, 1);
+                      setSelectedYearMonth(`${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`);
+                    }}
+                    className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-white rounded-lg transition shadow-xs cursor-pointer"
+                    title="Próximo Mês"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
 
+                {/* Botão de Incluir Batida Manual */}
                 <button
                   type="button"
-                  onClick={() => {
-                    const [y, m] = selectedYearMonth.split('-').map(Number);
-                    const nextDate = new Date(y, m, 1);
-                    setSelectedYearMonth(`${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`);
-                  }}
-                  className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-white rounded-lg transition shadow-xs"
-                  title="Próximo Mês"
+                  onClick={() => handleOpenManualPunchModal()}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition shadow-xs cursor-pointer shrink-0"
+                  title="Incluir Batida Manual Esquecida ou por Falha no Relógio"
                 >
-                  <ChevronRight className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5 text-primary-600" />
+                  Incluir Marcação Manual
+                </button>
+
+                {/* Botão de Integrar com Folha e Banco de Horas */}
+                <button
+                  type="button"
+                  onClick={handleOpenIntegrateModal}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-xs transition cursor-pointer shrink-0"
+                  title="Fechar Período e Alimentar Folha de Pagamento e Banco de Horas"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  Integrar com Folha & Banco
                 </button>
               </div>
             </div>
@@ -2405,6 +2485,26 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
             </div>
 
             <form onSubmit={handleSaveManualPunch} className="space-y-4 mt-4">
+              <div>
+                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-1">
+                  Colaborador *
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+                  <select
+                    value={manualPunchWorkerId}
+                    onChange={(e) => setManualPunchWorkerId(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 font-semibold text-slate-800"
+                  >
+                    {workersList.map((w) => (
+                      <option key={w.worker_id} value={w.worker_id}>
+                        {w.full_name} · {w.position_title} {w.pis_pasep ? `(PIS: ${w.pis_pasep})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-1">
@@ -2450,13 +2550,49 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-1">
-                  Justificativa Legal / Motivo *
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                    Justificativa Legal / Motivo *
+                  </label>
+                  <span className="text-[11px] text-slate-400">Clique para preenchimento rápido</span>
+                </div>
+
+                {/* Atalhos de Motivos Frequentes (Falta de energia, esquecimento, etc) */}
+                <div className="flex flex-wrap gap-1.5 mb-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setManualPunchReason('Queda de energia no estabelecimento / Relógio parou de funcionar')}
+                    className="px-2.5 py-1 text-xs bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg font-medium transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                  >
+                    ⚡ Queda de energia / Relógio parou
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManualPunchReason('Esquecimento do registro de ponto pelo colaborador')}
+                    className="px-2.5 py-1 text-xs bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg font-medium transition cursor-pointer shadow-2xs"
+                  >
+                    ⏰ Esquecimento do colaborador
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManualPunchReason('Inconsistência técnica no coletor / Biometria não reconhecida')}
+                    className="px-2.5 py-1 text-xs bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg font-medium transition cursor-pointer shadow-2xs"
+                  >
+                    📟 Falha técnica no coletor REP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManualPunchReason('Serviço externo autorizado / Trabalho fora da sede')}
+                    className="px-2.5 py-1 text-xs bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg font-medium transition cursor-pointer shadow-2xs"
+                  >
+                    🚗 Serviço externo autorizado
+                  </button>
+                </div>
+
                 <textarea
                   required
-                  rows={3}
-                  placeholder="Ex: Esquecimento do registro ao retornar do almoço; Trabalho externo autorizado; Inconsistência técnica no coletor."
+                  rows={2}
+                  placeholder="Descreva a justificativa (ex: Falta de energia elétrica das 11h às 13h no estabelecimento)..."
                   value={manualPunchReason}
                   onChange={(e) => setManualPunchReason(e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:outline-none resize-none text-slate-800"
@@ -2482,7 +2618,7 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
                 <button
                   type="submit"
                   disabled={savingManualPunch}
-                  className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-sm transition disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer"
                 >
                   {savingManualPunch ? (
                     <>
@@ -2498,6 +2634,145 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* MODAL: INTEGRAR PONTO À FOLHA DE PAGAMENTO E BANCO DE HORAS */}
+      {/* ================================================================== */}
+      {integrateModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <span className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
+                  <Zap className="w-5 h-5" />
+                </span>
+                <div>
+                  <h3 className="font-bold text-slate-900">Integrar Ponto à Folha e Banco de Horas</h3>
+                  <p className="text-xs text-slate-500">
+                    Competência: <strong className="text-slate-800">{monthlyTimesheet?.month_label || selectedYearMonth}</strong> · {workersList.length} colaboradores
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIntegrateModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 mt-4">
+              {/* Card de Regras e Destino */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-2">
+                <p className="font-semibold text-slate-800 text-sm flex items-center gap-1.5">
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                  Como o sistema processa as horas apuradas:
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-slate-600 pl-1">
+                  <li><strong>Adicional Noturno (cód 301):</strong> SEMPRE lançado na Folha de Pagamento conforme CLT Art. 73 e Súmula 60 TST.</li>
+                  <li><strong>Atrasos e Faltas (cód 801/802):</strong> Lançados na Folha para desconto ou debitados do Banco de Horas.</li>
+                  <li><strong>Horas Extras 50% e 100%:</strong> Destinadas conforme a opção abaixo.</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2">
+                  Destino das Horas Extras Apuradas:
+                </label>
+                <div className="grid grid-cols-1 gap-2.5">
+                  <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition ${integrateDestiny === 'HYBRID' ? 'bg-primary-50/60 border-primary-500 ring-1 ring-primary-500' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                    <input
+                      type="radio"
+                      name="integrateDestiny"
+                      value="HYBRID"
+                      checked={integrateDestiny === 'HYBRID'}
+                      onChange={() => setIntegrateDestiny('HYBRID')}
+                      className="mt-1 text-primary-600"
+                    />
+                    <div>
+                      <strong className="text-sm text-slate-900 block font-bold">Regime Híbrido Automático (Recomendado)</strong>
+                      <span className="text-xs text-slate-500">Colaboradores com Banco de Horas ativo acumulam créditos; colaboradores com contrato padrão recebem o pagamento das extras em folha (rubricas 150 e 160).</span>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition ${integrateDestiny === 'BANK_ONLY' ? 'bg-primary-50/60 border-primary-500 ring-1 ring-primary-500' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                    <input
+                      type="radio"
+                      name="integrateDestiny"
+                      value="BANK_ONLY"
+                      checked={integrateDestiny === 'BANK_ONLY'}
+                      onChange={() => setIntegrateDestiny('BANK_ONLY')}
+                      className="mt-1 text-primary-600"
+                    />
+                    <div>
+                      <strong className="text-sm text-slate-900 block font-bold">Creditar Tudo no Banco de Horas (Compensação)</strong>
+                      <span className="text-xs text-slate-500">Todas as horas extras são creditadas nas contas de banco de horas (CLT Art. 59 §5º). Abre a conta automaticamente se o colaborador ainda não possuir.</span>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition ${integrateDestiny === 'PAYROLL_ONLY' ? 'bg-primary-50/60 border-primary-500 ring-1 ring-primary-500' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                    <input
+                      type="radio"
+                      name="integrateDestiny"
+                      value="PAYROLL_ONLY"
+                      checked={integrateDestiny === 'PAYROLL_ONLY'}
+                      onChange={() => setIntegrateDestiny('PAYROLL_ONLY')}
+                      className="mt-1 text-primary-600"
+                    />
+                    <div>
+                      <strong className="text-sm text-slate-900 block font-bold">Pagar Todas as Horas Extras na Folha (Dinheiro)</strong>
+                      <span className="text-xs text-slate-500">Gera lançamentos variáveis imediatos das rubricas 150 (HE 50%) e 160 (HE 100%) para cálculo no holerite do mês.</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {integrateResult && (
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 space-y-1">
+                  <p className="font-bold text-emerald-950 flex items-center gap-1.5 text-sm">
+                    <CheckCircle className="w-4 h-4 text-emerald-600" />
+                    Integração concluída com sucesso!
+                  </p>
+                  <p>• {integrateResult.total_contracts_processed} contratos processados.</p>
+                  <p>• {integrateResult.total_events_created} eventos gerados na Folha de Pagamento.</p>
+                  <p>• {Math.floor(integrateResult.total_bank_credits_minutes / 60)}h {integrateResult.total_bank_credits_minutes % 60}m creditados no Banco de Horas.</p>
+                  <p>• {integrateResult.total_payroll_he_hours}h extras e {integrateResult.total_night_shift_hours}h noturnas enviadas à folha.</p>
+                </div>
+              )}
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIntegrateModalOpen(false)}
+                  disabled={integrating}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                >
+                  {integrateResult ? 'Fechar' : 'Cancelar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmIntegrate}
+                  disabled={integrating}
+                  className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer"
+                >
+                  {integrating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Processando Apuração e Folha...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4" />
+                      {integrateResult ? 'Re-executar Integração' : 'Confirmar e Integrar com a Folha'}
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

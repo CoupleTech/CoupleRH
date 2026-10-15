@@ -23,6 +23,7 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
 - **04/09/2026**: Inicialização do projeto, criação dos artefatos básicos de gestão (fase.md, documentacao.md, database.md), e definição da stack tecnológica (React + Supabase + Vercel).
 
 ## Histórico de Alterações
+- **15/10/2026 - Ponto Eletrônico / Integração com Folha, Banco de Horas e Inclusão Manual**: Implementado o fluxo completo de transformação das batidas de ponto e arquivos AFD em eventos da Folha de Pagamento (`payroll_variable_events` para HE 50% cód 150, HE 100% cód 160, Noturno cód 301, Faltas cód 801, Atrasos cód 802) e alimentação do Banco de Horas (`time_bank_accounts` e `time_bank_transactions`), com garantia legal de que Adicional Noturno é sempre pago financeiramente em folha (CLT Art. 73 / Súmula 60 TST). Adicionado modal com atalhos de justificativas para inclusão manual pelo DP em casos de falta de energia elétrica / falha no relógio REP. Integrado botão "Sincronizar do Ponto" na tela de Lançamentos Variáveis (`Events.tsx`) e botão de ação direta em `TimeManagement.tsx`. Suíte de testes `TimePayrollAndBankIntegration.test.ts` implementada com 100% de sucesso.
 - **15/10/2026 - Ponto Eletrônico / Jornada Noturna Sob Demanda**: Implementada funcionalidade para o operador de DP alocar batidas da madrugada (ex: 00:02, 00:15) na jornada de encerramento do dia anterior. Mantida a imutabilidade estrita da trilha legal (`time_punch_records`), utilizando a tabela de auditoria `time_entry_adjustments` com o identificador `[SHIFT_PREVIOUS_DAY]`. A ordenação diária soma +1440 minutos para batidas deslocadas da madrugada, posicionando-as como 4ª batida (fechando o par de saída noturna) e recalculando horas trabalhadas e adicional noturno com exatidão.
 - Hotfix: Adicionada a coluna receives_advance na tabela employment_contracts para resolver erro em produção (schema cache).
 - Hotfix: Adicionada a coluna workplace_id na tabela employment_contracts para resolver erro em produção.
@@ -336,3 +337,41 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
      - Ao passar o mouse, é exibido o ícone de ação rápida para reverter a qualquer momento caso o operador decida desfazer (`undoShiftPunch`).
   5. **Garantia de Qualidade**:
      - Criada a suíte de testes automatizados `src/tests/time/TimePunchShiftDay.test.ts` validando a ordenação de +1440 min, a matemática de horas de virada de turno, o registro do ajuste auditado e o cancelamento/reversão.
+
+---
+
+## 17. INTEGRAÇÃO DE PONTO ELETRÔNICO COM FOLHA DE PAGAMENTO, BANCO DE HORAS E INCLUSÃO MANUAL POR FALHA DE RELÓGIO (PORTARIA MTP 671/2021)
+
+- **Contexto Operacional e Exigências de Negócio**:
+  - A apuração mensal de ponto (seja por relógio físico Control iD, AFD importado ou Ponto Mobile REP-P) consolida os minutos trabalhados, horas extras 50% e 100%, adicional noturno, faltas e atrasos.
+  - Para processar a folha de pagamento e apurar o banco de horas, esses totais precisam ser convertidos automaticamente em eventos variáveis de folha (`payroll_variable_events`) ou créditos/débitos na conta de banco de horas (`time_bank_accounts` e `time_bank_transactions`), eliminando a digitação manual de eventos pelo operador de DP.
+  - Além disso, imprevistos técnicos (como queda de energia elétrica na unidade, quebra ou indisponibilidade temporária do relógio de ponto físico REP) impedem colaboradores de registrar a marcação no horário exato. O analista de ponto necessita de um fluxo rápido, auditável e em conformidade com a Portaria MTP 671/2021 para incluir a batida com a devida justificativa legal.
+
+- **Arquitetura da Solução**:
+  1. **Inclusão de Marcação Manual com Atalhos de Falha Técnica / Queda de Energia**:
+     - No Cartão de Ponto Mensal (`TimeManagement.tsx`), foi adicionado o botão em destaque **`+ Incluir Marcação Manual`** no topo da tela, além do botão por linha do dia.
+     - O modal de inclusão conta com seleção dinâmica de colaborador, data, horário, tipo de batida (Entrada, Saída de Intervalo, Retorno, Saída de Turno) e **atalhos de motivos frequentes**:
+       - ⚡ *"Queda de energia no estabelecimento / Relógio parou de funcionar"*
+       - ⏰ *"Esquecimento do registro de ponto pelo colaborador"*
+       - 📟 *"Inconsistência técnica no coletor / Biometria não reconhecida"*
+       - 🚗 *"Serviço externo autorizado / Trabalho fora da sede"*
+     - A marcação é gravada em `time_punch_records` com NSR sequencial e `source = 'MANUAL'`, e em `time_entry_adjustments` com `status = 'APPROVED'`.
+
+  2. **Motor de Integração do Ponto com Folha e Banco (`integrateTimesheetToPayrollAndBank`)**:
+     - O método analisa todos os colaboradores da competência (`fetchMonthlyTimesheet`) e direciona as horas conforme a política da empresa ou escolha do operador:
+       - **Regime Híbrido Automático (Recomendado)**: quem possui conta de Banco de Horas ativa acumula créditos de horas extras e débitos de atrasos no banco; contratos com regime de pagamento recebem as horas extras em folha (rubricas 150 para 50% e 160 para 100%).
+       - **Regime Banco de Horas (Compensação)**: credita a totalidade das horas extras em `time_bank_transactions`, provisionando automaticamente a conta de Acordo Individual (CLT Art. 59 §5º, validade 6 meses) caso o colaborador ainda não possua conta ativa.
+       - **Regime Folha de Pagamento (Pagamento em Dinheiro)**: gera lançamentos variáveis em `payroll_variable_events` para as rubricas 150 e 160.
+     - **Regra Legal de Adicional Noturno (código 301)**:
+       - Em estrita observância à CLT Art. 73 e à Súmula 60 do TST, o adicional noturno visa compensar o desgaste biológico do trabalho noturno e **NUNCA pode ser compensado em banco de horas**. Portanto, o sistema SEMPRE direciona o Adicional Noturno para a Folha de Pagamento em dinheiro.
+     - **Idempotência Estrita**:
+       - Antes de inserir os novos eventos da competência, o sistema remove exclusivamente lançamentos anteriores com `reference ilike '%INTEGRAÇÃO_PONTO%'`, preservando intactos todos os lançamentos manuais do DP (premiações, comissões, bônus e vales).
+     - **Rastreabilidade e Fechamento**:
+       - Registra o fechamento do período na tabela `time_period_closures`.
+
+  3. **Interfaces de Acionamento**:
+     - **Módulo de Ponto (`TimeManagement.tsx`)**: Botão **`⚡ Integrar com Folha & Banco`** abre o modal de conferência com totais da competência, escolha da destinação e feedback em tempo real.
+     - **Módulo de Folha de Pagamento (`Events.tsx`)**: Botão **`Sincronizar do Ponto`** integrado no cabeçalho da tabela de lançamentos variáveis, permitindo ao operador de folha importar as horas apuradas com um único clique.
+
+  4. **Garantia de Qualidade e Testes**:
+     - Suíte de testes automatizados `src/tests/time/TimePayrollAndBankIntegration.test.ts` cobrindo registro de batida manual por queda de energia, integração em folha (rubricas 150, 160, 301), alimentação de banco de horas e isolamento de lançamentos manuais.

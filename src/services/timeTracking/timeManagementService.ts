@@ -1122,6 +1122,383 @@ export class TimeManagementService {
     const { error } = await query;
     if (error) throw error;
   }
+
+  /**
+   * Transforma a apuração do Ponto em Lançamentos da Folha de Pagamento e/ou Créditos no Banco de Horas
+   */
+  static async integrateTimesheetToPayrollAndBank(params: {
+    tenantId: string;
+    companyId?: string;
+    year: number;
+    month: number;
+    payrollPeriodId?: string;
+    destiny?: 'HYBRID' | 'PAYROLL_ONLY' | 'BANK_ONLY';
+    contractIdFilter?: string;
+    userName?: string;
+  }): Promise<IntegrateTimesheetResult> {
+    const {
+      tenantId,
+      companyId,
+      year,
+      month,
+      destiny = 'HYBRID',
+      contractIdFilter,
+      userName = 'Operador DP'
+    } = params;
+
+    // 1. Identificar ou provisionar o período de folha (payroll_periods)
+    let periodId = params.payrollPeriodId;
+    if (!periodId) {
+      let pQuery = supabase
+        .from('payroll_periods')
+        .select('id, status')
+        .eq('tenant_id', tenantId)
+        .eq('year', year)
+        .eq('month', month)
+        .eq('type', 'MONTHLY');
+
+      if (companyId) {
+        pQuery = pQuery.eq('company_id', companyId);
+      }
+
+      const { data: pList } = await pQuery;
+      if (pList && pList.length > 0) {
+        periodId = pList[0].id;
+      } else {
+        // Criar o período mensal caso ainda não exista
+        const { data: newPeriod, error: pCreateErr } = await supabase
+          .from('payroll_periods')
+          .insert({
+            tenant_id: tenantId,
+            company_id: companyId || null,
+            month,
+            year,
+            type: 'MONTHLY',
+            status: 'DRAFT'
+          })
+          .select('id')
+          .single();
+
+        if (pCreateErr) throw new Error('Não foi possível localizar ou criar a competência da folha: ' + pCreateErr.message);
+        periodId = newPeriod.id;
+      }
+    }
+
+    // 2. Buscar catálogo de rubricas ativas do tenant
+    const { data: rubricsData, error: rErr } = await supabase
+      .from('payroll_rubrics')
+      .select('id, code, name, type')
+      .eq('tenant_id', tenantId)
+      .eq('is_active', true);
+
+    if (rErr) throw new Error('Falha ao consultar rubricas: ' + rErr.message);
+
+    const rubricByCode: Record<string, { id: string; code: string; name: string }> = {};
+    (rubricsData || []).forEach((r: any) => {
+      rubricByCode[r.code] = { id: r.id, code: r.code, name: r.name };
+    });
+
+    // 3. Buscar colaboradores para integração
+    const workers = await this.fetchWorkersForTimeManagement(tenantId, companyId);
+    const targetWorkers = contractIdFilter
+      ? workers.filter((w) => w.contract_id === contractIdFilter)
+      : workers;
+
+    if (targetWorkers.length === 0) {
+      throw new Error('Nenhum colaborador localizado para integração nesta competência.');
+    }
+
+    let totalEventsCreated = 0;
+    let totalBankCreditsMinutes = 0;
+    let totalPayrollHeHours = 0;
+    let totalNightShiftHours = 0;
+    const summaryList: IntegrateTimesheetResult['summary'] = [];
+
+    const lastDayOfMonth = new Date(year, month, 0).getDate();
+    const periodDateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
+
+    // 4. Processar cada colaborador
+    for (const worker of targetWorkers) {
+      if (!worker.contract_id) continue;
+
+      // Apurar espelho do mês
+      const timesheet = await this.fetchMonthlyTimesheet({
+        tenantId,
+        workerId: worker.worker_id,
+        contractId: worker.contract_id,
+        year,
+        month
+      });
+
+      // Calcular horas de adicional noturno acumuladas nos dias
+      let totalNightMinutes = 0;
+      timesheet.days.forEach((d) => {
+        d.punches.forEach((p) => {
+          const [h] = p.time.split(':').map(Number);
+          if (h >= 22 || h < 5) totalNightMinutes += 30; // cálculo padrão proporcional noturno
+        });
+      });
+
+      const he50Min = timesheet.total_overtime_50_minutes;
+      const he100Min = timesheet.total_overtime_100_minutes;
+      const totalHeMin = he50Min + he100Min;
+      const delaysMin = timesheet.total_delay_minutes;
+      const absenceMin = timesheet.total_absence_minutes;
+
+      const he50Hours = Math.round((he50Min / 60) * 100) / 100;
+      const he100Hours = Math.round((he100Min / 60) * 100) / 100;
+      const nightHours = Math.round((totalNightMinutes / 60) * 100) / 100;
+      const delaysHours = Math.round((delaysMin / 60) * 100) / 100;
+      const absencesDays = absenceMin > 0 ? Math.max(1, Math.round(absenceMin / 480)) : 0;
+
+      // Verificar se o contrato possui conta ativa de Banco de Horas
+      const { data: existingAccount } = await supabase
+        .from('time_bank_accounts')
+        .select('*')
+        .eq('contract_id', worker.contract_id)
+        .eq('status', 'ACTIVE')
+        .maybeSingle();
+
+      const shouldUseBank =
+        destiny === 'BANK_ONLY' ||
+        (destiny === 'HYBRID' && (existingAccount != null || worker.position_title.toLowerCase().includes('banco')));
+
+      let bankCreditedMinutes = 0;
+
+      // A) Destino Banco de Horas
+      if (shouldUseBank) {
+        let accountId = existingAccount?.id;
+        let currentBalance = existingAccount?.balance_minutes || 0;
+
+        // Se não tiver conta, provisiona conta de Acordo Individual (CLT Art. 59 §5º, 6 meses)
+        if (!accountId) {
+          const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+          const endDateObj = new Date(year, month - 1 + 6, 0);
+          const endDate = `${endDateObj.getFullYear()}-${String(endDateObj.getMonth() + 1).padStart(2, '0')}-${String(endDateObj.getDate()).padStart(2, '0')}`;
+
+          const { data: newAcc, error: accErr } = await supabase
+            .from('time_bank_accounts')
+            .insert({
+              tenant_id: tenantId,
+              company_id: companyId || null,
+              contract_id: worker.contract_id,
+              balance_minutes: 0,
+              start_date: startDate,
+              end_date: endDate,
+              status: 'ACTIVE',
+              policy_type: 'ACORDO_INDIVIDUAL',
+              validity_months: 6,
+              expiration_rule: 'PAY_AS_OVERTIME'
+            })
+            .select('id')
+            .single();
+
+          if (!accErr && newAcc) {
+            accountId = newAcc.id;
+          }
+        }
+
+        if (accountId) {
+          // Creditar Horas Extras no Banco de Horas
+          if (totalHeMin > 0) {
+            await supabase.from('time_bank_transactions').insert({
+              tenant_id: tenantId,
+              account_id: accountId,
+              date: periodDateStr,
+              minutes: totalHeMin,
+              transaction_type: 'OVERTIME',
+              description: `Crédito de horas extras apuradas no ponto (${timesheet.month_label})`,
+              payroll_period_id: periodId
+            });
+
+            currentBalance += totalHeMin;
+            bankCreditedMinutes += totalHeMin;
+            totalBankCreditsMinutes += totalHeMin;
+          }
+
+          // Debitar atrasos significativos no Banco de Horas
+          if (delaysMin > 10) {
+            await supabase.from('time_bank_transactions').insert({
+              tenant_id: tenantId,
+              account_id: accountId,
+              date: periodDateStr,
+              minutes: -delaysMin,
+              transaction_type: 'DELAY',
+              description: `Débito de atrasos apurados no ponto (${timesheet.month_label})`,
+              payroll_period_id: periodId
+            });
+            currentBalance -= delaysMin;
+          }
+
+          // Atualizar saldo da conta
+          await supabase
+            .from('time_bank_accounts')
+            .update({
+              balance_minutes: currentBalance,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', accountId);
+        }
+      }
+
+      // B) Destino Folha de Pagamento (payroll_variable_events)
+      // 1. Limpar eventos anteriores de integração do ponto para este contrato e período (idempotência)
+      await supabase
+        .from('payroll_variable_events')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('period_id', periodId)
+        .eq('contract_id', worker.contract_id)
+        .ilike('reference', '%INTEGRAÇÃO_PONTO%');
+
+      const eventsToInsert: any[] = [];
+
+      // Se NÃO for banco de horas, Horas Extras 50% e 100% vão para a folha
+      if (!shouldUseBank) {
+        if (he50Hours > 0 && rubricByCode['150']) {
+          eventsToInsert.push({
+            tenant_id: tenantId,
+            period_id: periodId,
+            contract_id: worker.contract_id,
+            rubric_id: rubricByCode['150'].id,
+            quantity: he50Hours,
+            amount: 0,
+            reference: `INTEGRAÇÃO_PONTO: HE 50% (${he50Hours}h)`
+          });
+          totalPayrollHeHours += he50Hours;
+        }
+
+        if (he100Hours > 0 && rubricByCode['160']) {
+          eventsToInsert.push({
+            tenant_id: tenantId,
+            period_id: periodId,
+            contract_id: worker.contract_id,
+            rubric_id: rubricByCode['160'].id,
+            quantity: he100Hours,
+            amount: 0,
+            reference: `INTEGRAÇÃO_PONTO: HE 100% (${he100Hours}h)`
+          });
+          totalPayrollHeHours += he100Hours;
+        }
+
+        if (delaysHours > 0 && rubricByCode['802']) {
+          eventsToInsert.push({
+            tenant_id: tenantId,
+            period_id: periodId,
+            contract_id: worker.contract_id,
+            rubric_id: rubricByCode['802'].id,
+            quantity: delaysHours,
+            amount: 0,
+            reference: `INTEGRAÇÃO_PONTO: Atrasos (${delaysHours}h)`
+          });
+        }
+      }
+
+      // Adicional Noturno (cód 301): SEMPRE vai para folha de pagamento (CLT art. 73 e Súmula 60 TST)
+      if (nightHours > 0 && rubricByCode['301']) {
+        eventsToInsert.push({
+          tenant_id: tenantId,
+          period_id: periodId,
+          contract_id: worker.contract_id,
+          rubric_id: rubricByCode['301'].id,
+          quantity: nightHours,
+          amount: 0,
+          reference: `INTEGRAÇÃO_PONTO: Adic. Noturno (${nightHours}h)`
+        });
+        totalNightShiftHours += nightHours;
+      }
+
+      // Faltas injustificadas (cód 801): Se houver faltas sem abono, lança na folha
+      if (absencesDays > 0 && rubricByCode['801']) {
+        eventsToInsert.push({
+          tenant_id: tenantId,
+          period_id: periodId,
+          contract_id: worker.contract_id,
+          rubric_id: rubricByCode['801'].id,
+          quantity: absencesDays,
+          amount: 0,
+          reference: `INTEGRAÇÃO_PONTO: Faltas (${absencesDays}d)`
+        });
+      }
+
+      if (eventsToInsert.length > 0) {
+        const { error: insErr } = await supabase.from('payroll_variable_events').insert(eventsToInsert);
+        if (!insErr) {
+          totalEventsCreated += eventsToInsert.length;
+        }
+      }
+
+      summaryList.push({
+        worker_name: worker.full_name,
+        he50_hours: he50Hours,
+        he100_hours: he100Hours,
+        night_hours: nightHours,
+        bank_credited_minutes: bankCreditedMinutes,
+        delays_hours: delaysHours,
+        absences_days: absencesDays
+      });
+    }
+
+    // 5. Registrar fechamento em time_period_closures
+    const closurePayload = {
+      tenant_id: tenantId,
+      company_id: companyId || null,
+      payroll_period_id: periodId,
+      period_start: `${year}-${String(month).padStart(2, '0')}-01`,
+      period_end: periodDateStr,
+      status: 'CLOSED',
+      total_contracts: targetWorkers.length,
+      total_events_generated: totalEventsCreated,
+      summary: {
+        total_payroll_he_hours: totalPayrollHeHours,
+        total_bank_credits_minutes: totalBankCreditsMinutes,
+        total_night_hours: totalNightShiftHours
+      },
+      closed_by: userName,
+      closed_at: new Date().toISOString()
+    };
+
+    await supabase.from('time_period_closures').insert(closurePayload);
+
+    return {
+      success: true,
+      total_contracts_processed: targetWorkers.length,
+      total_events_created: totalEventsCreated,
+      total_bank_credits_minutes: totalBankCreditsMinutes,
+      total_payroll_he_hours: Math.round(totalPayrollHeHours * 100) / 100,
+      total_night_shift_hours: Math.round(totalNightShiftHours * 100) / 100,
+      summary: summaryList
+    };
+  }
+}
+
+export interface IntegrateTimesheetParams {
+  tenantId: string;
+  companyId?: string;
+  year: number;
+  month: number;
+  payrollPeriodId?: string;
+  destiny?: 'HYBRID' | 'PAYROLL_ONLY' | 'BANK_ONLY';
+  contractIdFilter?: string;
+  userName?: string;
+}
+
+export interface IntegrateTimesheetResult {
+  success: boolean;
+  total_contracts_processed: number;
+  total_events_created: number;
+  total_bank_credits_minutes: number;
+  total_payroll_he_hours: number;
+  total_night_shift_hours: number;
+  summary: {
+    worker_name: string;
+    he50_hours: number;
+    he100_hours: number;
+    night_hours: number;
+    bank_credited_minutes: number;
+    delays_hours: number;
+    absences_days: number;
+  }[];
 }
 
 export interface WorkerOption {

@@ -10,12 +10,14 @@ import {
   FileText,
   DollarSign,
   X,
-  ListPlus
+  ListPlus,
+  RefreshCw
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useCompany } from "../../contexts/CompanyContext";
 import { toast } from 'sonner';
 import { confirmDialog } from '../../components/ConfirmDialogProvider';
+import { TimeManagementService } from '../../services/timeTracking/timeManagementService';
 
 interface PayrollPeriod {
   id: string;
@@ -69,6 +71,7 @@ export default function () {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [syncingTime, setSyncingTime] = useState(false);
 
   // Form State
   const [selectedContractId, setSelectedContractId] = useState("");
@@ -249,6 +252,39 @@ export default function () {
     setLoadingEvents(false);
   };
 
+  const handleSyncFromTimeTracking = async () => {
+    if (!activePeriod) return;
+    setSyncingTime(true);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const { data: tenantData } = await supabase
+        .from("tenant_users")
+        .select("tenant_id")
+        .eq("user_id", userData.user?.id)
+        .single();
+
+      if (!tenantData?.tenant_id) return;
+
+      const res = await TimeManagementService.integrateTimesheetToPayrollAndBank({
+        tenantId: tenantData.tenant_id,
+        companyId: selectedCompanyId || undefined,
+        year: activePeriod.year,
+        month: activePeriod.month,
+        payrollPeriodId: activePeriod.id,
+        destiny: 'HYBRID',
+        userName: 'Operador DP'
+      });
+
+      toast.success(`Ponto integrado com sucesso! ${res.total_events_created} eventos na folha e ${Math.floor(res.total_bank_credits_minutes / 60)}h no banco de horas.`);
+      await fetchEvents(activePeriod.id);
+    } catch (err: any) {
+      console.error('Erro na sincronização de ponto:', err);
+      toast.error('Erro ao sincronizar do ponto: ' + (err.message || 'Falha de conexão'));
+    } finally {
+      setSyncingTime(false);
+    }
+  };
+
   const openModal = async () => {
     setSelectedContractId("");
     setSelectedRubricId("");
@@ -420,6 +456,16 @@ export default function () {
               >
                 <Plus size={18} />
                 <span>Novo Lançamento</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSyncFromTimeTracking}
+                disabled={syncingTime || activePeriod?.status === "CLOSED"}
+                className="px-3.5 py-2 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Sincronizar horas extras, adicional noturno e faltas do ponto"
+              >
+                <RefreshCw size={14} className={syncingTime ? "animate-spin" : ""} />
+                <span>{syncingTime ? "Sincronizando..." : "Sincronizar do Ponto"}</span>
               </button>
             </div>
 
