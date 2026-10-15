@@ -157,3 +157,62 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
 - **Resultados e Cobertura**:
   - Testado com arquivo real de 19.625 linhas de relógio físico Control iD (`00014003710008237`), processando com sucesso 18.573 batidas em apenas ~430ms sem erros.
   - Suíte de testes TDD implementada em `src/tests/time/AfdImportFileService.test.ts`. Total global do projeto ampliado para **435 testes verdes em 65 arquivos de teste**.
+
+## 9. CONCILIAÇÃO AUTOMÁTICA DE PONTO E SÍNTESE DE AVISOS DE AUDITORIA
+
+- **Diagnóstico das Mensagens de Conciliação**:
+  - O arquivo AFD extraído do relógio físico Control iD acumulava 19.625 linhas com 18.573 batidas ao longo dos anos, contendo marcações de 84 colaboradores históricos (incluindo ex-colaboradores e funcionários anteriores).
+  - Pela Portaria MTP 671/2021 e CLT art. 74, nenhuma batida do relógio pode ser descartada: batidas de colaboradores não localizados no cadastro ativo do sistema são obrigatoriamente preservadas na trilha de auditoria (`time_punch_records`) com `worker_id: null` para posterior conciliação.
+  - Identificada falha na consulta SQL de colaboradores em `afdImportService.ts`: a query solicitava `employment_contracts(pis)`, campo inexistente na tabela contratual (no schema, o PIS localiza-se em `workers.pis_pasep`), fazendo com que o array em memória retornasse vazio durante a importação.
+  - Correção na consulta de `workers` (`pis_pasep`, `people.cpf`, `people.full_name`) e suporte nativo ao Registro Tipo 5 do AFD (Cadastro do Empregado no REP), permitindo correlacionar PIS e Nome do colaborador automaticamente.
+  - Consolidação dos avisos de auditoria: substituída a geração de 13.820 strings individuais de NSR por avisos agrupados por PIS/Nome do colaborador, eliminando sobrecarga no frontend e fornecendo listagem sintetizada com busca, paginação e botão de ação direta de conciliação.
+- **Script de Conciliação em Produção (`RECONCILIACAO_PONTO_ELETRONICO.sql`)**:
+  - Ajuste na trigger `prevent_punch_record_mutation`: mantém a imutabilidade estrita da trilha de auditoria legal (NSR, data, hora, relógio 100% blindados contra alterações), autorizando exclusivamente a conciliação cadastral de `worker_id` e `contract_id` quando nulos.
+  - Vinculação imediata dos PIS aos cadastros dos 10 colaboradores ativos identificados no arquivo (Kauan, Lukas, Railda, Kawane, Leon, Rosemeire, Cleonice, Rosane, Camila, Igor), conciliando 4.753 batidas.
+  - Criação da RPC `reconcile_afd_punch_records(p_tenant_id)` com `SECURITY DEFINER` para conciliação atômica via interface web.
+
+---
+
+## 10. GESTÃO DE PIS / PASEP / NIS NO CADASTRO DE COLABORADORES E NOVAS ADMISSÕES
+
+- **Localização Conceitual e Técnica**:
+  - O número de inscrição PIS / PASEP / NIS é formalmente um dado de identificação laboral associado ao vínculo empregatício do trabalhador na empresa, residindo na tabela `public.workers` (`pis_pasep TEXT`).
+  - No formulário do colaborador (`Profile.tsx`), o campo foi integrado nativamente na aba **Contrato e Vínculo** (`ContractTab.tsx`), no card "Contrato de Trabalho", permitindo visualização e edição direta.
+- **Fluxo para Novos Colaboradores**:
+  1. No cadastro inicial (`/funcionarios/novo`), o operador preenche os dados civis na aba *Dados Pessoais* (`people`) e o sistema gera o registro do vínculo (`workers`).
+  2. Ao prosseguir para a aba *Contrato e Vínculo* (`ContractTab`), o operador informa a data de admissão, regras contratuais, cargo, setor e o **PIS / PASEP / NIS**.
+  3. Ao salvar o contrato, o sistema atualiza `employment_contracts` e persiste automaticamente o valor sanitizado de `pis_pasep` na tabela `workers`.
+  4. Novos arquivos AFD importados pelo módulo de Ponto Eletrônico reconhecem imediatamente o colaborador pelo PIS ou CPF, vinculando 100% das batidas do relógio REP de forma automática sem pendências na auditoria.
+- **UI e Usabilidade**:
+  - Campo com máscara orientativa (`023.66060.51-5` ou 11 dígitos numéricos).
+  - Texto informativo destacando o uso para conciliação automática com relógios de ponto REP e arquivos AFD (Portaria MTP 671/2021).
+  - Botão de salvamento explícito no rodapé do formulário ("Salvar Contrato e Vínculo") com indicador de carregamento, mantendo sincronia com o botão de salvamento geral do cabeçalho.
+
+---
+
+## 11. CARTÃO DE PONTO MENSAL INTERATIVO & TRATAMENTO DIÁRIO DE JORNADA
+
+- **Visão Integrada de Tratamento de Ponto**:
+  - A aba **Tratamento & Inconsistências** (`/ponto/gestao`) foi redesenhada para operar como o **Cartão de Ponto Mensal Interativo do Colaborador**, eliminando a necessidade de abas fragmentadas. O operador do DP visualiza diretamente a vida mensal do colaborador e realiza correções no mesmo fluxo.
+- **Controles de Seleção e Filtros**:
+  - **Seletor de Competência (Mês / Ano)**: navegação rápida mês a mês com atalhos de avanço/recuo e input de calendário.
+  - **Seletor de Colaborador**: dropdown de colaboradores ativos da empresa com nome, cargo e número do PIS.
+  - **Filtro de Exibição dos Dias**: opções para exibir *Todos os Dias do Mês (01 a 31)*, *Apenas Dias Trabalhados* ou *Apenas Inconsistências / Faltas*.
+- **Cards de Indicadores e Saldos no Topo**:
+  - **Horas Trabalhadas**: total de horas apuradas no mês vs horas previstas de contrato.
+  - **Horas Extras**: total consolidado com discriminação de extras 50% e extras 100%.
+  - **Atrasos & Faltas**: totalização de minutos de atraso e horas de faltas injustificadas.
+  - **Saldo do Banco de Horas**: saldo acumulado da conta do colaborador (+HH:MM ou -HH:MM) atualizado.
+- **Grade Diária de Batidas do Relógio (REP)**:
+  - Listagem do dia 01 ao último dia do mês com data, dia da semana e destaque para finais de semana (Folga / DSR).
+  - **Batidas Reais do Relógio**: badges em estilo dark com os horários exatos (`12:12 | 17:24 | 18:37 | 20:55`), NSR de auditoria e origem; batidas manuais identificadas em badge âmbar com indicador visual `M`.
+  - **Apuração Diária**: horas trabalhadas líquidas e tempo de intervalo intrajornada.
+  - **Saldo / Extras do Dia**: horas extras a 50%, 100% ou atrasos apurados.
+  - **Status Legal da Jornada**: crachás com status *Regular*, *Batida Ímpar (Falta saída)* com pulso de atenção, *Folga / DSR*, *Falta Injustificada*, *Atraso* e *Abonado / Justificado*.
+- **Modais de Ação Imediata de Tratamento**:
+  1. **Inclusão de Batida Manual (+ Batida)**:
+     - Permite incluir batida esquecida selecionando data, horário real, tipo de marcação (Entrada, Saída de Intervalo, Retorno de Intervalo, Saída de Turno) e justificativa legal obrigatória.
+     - Persistência em `time_punch_records` com origem `MANUAL`, garantindo conformidade com a Portaria MTP 671/2021 e registro auditado em `time_entry_adjustments`.
+  2. **Registro de Abono / Justificativa Legal (Abonar)**:
+     - Enquadramento legal por tipo: Atestado Médico (Art. 473 CLT), Declaração de Comparecimento, Falta Abonada pelo Empregador, Casamento/Gala, Falecimento/Luto, Doação de Sangue, Convocação Judicial, etc.
+     - Justificativa detalhada (ex: CRM, CID, atestado apresentado) e cancelamento das faltas no cálculo do espelho mensal.

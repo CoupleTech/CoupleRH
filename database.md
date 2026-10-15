@@ -12613,6 +12613,94 @@ END;
 $$;
 ```
 
+---
+
+### Script: `RECONCILIACAO_PONTO_ELETRONICO.sql` (Portaria MTP 671/2021)
+
+```sql
+-- Atualização da trigger de imutabilidade para permitir conciliação de worker_id/contract_id quando nulos
+CREATE OR REPLACE FUNCTION public.prevent_punch_record_mutation()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        IF (OLD.worker_id IS NULL OR OLD.contract_id IS NULL)
+           AND (NEW.nsr = OLD.nsr 
+                AND NEW.punched_at = OLD.punched_at 
+                AND NEW.device_id = OLD.device_id 
+                AND NEW.record_type = OLD.record_type 
+                AND NEW.tenant_id = OLD.tenant_id) THEN
+            RETURN NEW;
+        END IF;
+    END IF;
+
+    RAISE EXCEPTION 'A trilha de registros originais de ponto (time_punch_records) é estritamente imutável (Portaria MTP 671/2021 e CLT art. 74). Operações de alteração de horário/NSR ou exclusão são terminantemente proibidas.';
+END;
+$$ LANGUAGE plpgsql;
+
+-- RPC de conciliação atômica de batidas AFD
+CREATE OR REPLACE FUNCTION public.reconcile_afd_punch_records(
+    p_tenant_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_reconciled INTEGER := 0;
+BEGIN
+    IF NOT (p_tenant_id = ANY (public.user_tenant_ids())) THEN
+        RAISE EXCEPTION 'Acesso negado: o usuário não pertence ao tenant indicado.';
+    END IF;
+
+    WITH match_source AS (
+        SELECT 
+            p.id AS punch_id,
+            w.id AS target_worker_id,
+            c.id AS target_contract_id,
+            w.company_id AS target_company_id
+        FROM public.time_punch_records p
+        JOIN public.workers w ON w.tenant_id = p.tenant_id AND (
+            REGEXP_REPLACE(COALESCE(w.pis_pasep, ''), '[^0-9]', '', 'g') = REGEXP_REPLACE(COALESCE(p.pis, ''), '[^0-9]', '', 'g')
+            OR REGEXP_REPLACE(COALESCE(w.pis_pasep, ''), '[^0-9]', '', 'g') = SUBSTRING(REGEXP_REPLACE(COALESCE(p.pis, ''), '[^0-9]', '', 'g') FROM 2)
+            OR (
+                EXISTS (
+                    SELECT 1 FROM public.people pe 
+                    WHERE pe.id = w.person_id 
+                    AND (
+                        REGEXP_REPLACE(COALESCE(pe.cpf, ''), '[^0-9]', '', 'g') = REGEXP_REPLACE(COALESCE(p.cpf, ''), '[^0-9]', '', 'g')
+                        OR REGEXP_REPLACE(COALESCE(pe.cpf, ''), '[^0-9]', '', 'g') = REGEXP_REPLACE(COALESCE(p.pis, ''), '[^0-9]', '', 'g')
+                        OR REGEXP_REPLACE(COALESCE(pe.cpf, ''), '[^0-9]', '', 'g') = SUBSTRING(REGEXP_REPLACE(COALESCE(p.pis, ''), '[^0-9]', '', 'g') FROM 2)
+                    )
+                )
+            )
+        )
+        LEFT JOIN LATERAL (
+            SELECT id FROM public.employment_contracts ec 
+            WHERE ec.worker_id = w.id 
+            ORDER BY (CASE WHEN ec.status = 'ACTIVE' THEN 1 ELSE 2 END)
+            LIMIT 1
+        ) c ON true
+        WHERE p.tenant_id = p_tenant_id AND p.worker_id IS NULL
+    )
+    UPDATE public.time_punch_records t
+    SET 
+        worker_id = m.target_worker_id,
+        contract_id = m.target_contract_id,
+        company_id = COALESCE(t.company_id, m.target_company_id)
+    FROM match_source m
+    WHERE t.id = m.punch_id;
+
+    GET DIAGNOSTICS v_reconciled = ROW_COUNT;
+
+    RETURN jsonb_build_object('success', true, 'reconciled', v_reconciled);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.reconcile_afd_punch_records(UUID) TO authenticated, service_role;
+NOTIFY pgrst, 'reload schema';
+```
+
 
 
 

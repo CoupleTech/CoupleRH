@@ -6,10 +6,12 @@ import {
   AlertCircle,
   Loader2,
   Calendar,
+  Zap
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useCompany } from "../../contexts/CompanyContext";
 import { Pagination } from "../../components/Pagination";
+import { TimeClosureService } from "../../services/timeTracking/timeClosureService";
 
 interface PayrollPeriod {
   id: string;
@@ -190,6 +192,141 @@ export default function Timesheet() {
     }));
   };
 
+  const [syncing, setSyncing] = useState(false);
+
+  const handleAutoSyncFromTimeTracking = async () => {
+    if (!activePeriodId || contracts.length === 0) return;
+    setSyncing(true);
+    setSuccessMsg("");
+    setErrorMsg("");
+
+    try {
+      const selectedPeriod = periods.find((p) => p.id === activePeriodId);
+      if (!selectedPeriod) throw new Error("Competência não encontrada");
+
+      const year = selectedPeriod.year;
+      const month = selectedPeriod.month;
+      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+      const lastDay = new Date(year, month, 0).getDate();
+      const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+      const contractIds = contracts.map((c) => c.id);
+
+      // 1. Buscar resumos diários de ponto apurados
+      const { data: dailySummaries, error: dailyError } = await supabase
+        .from("time_daily_summary")
+        .select("*")
+        .in("contract_id", contractIds)
+        .gte("date", startDate)
+        .lte("date", endDate);
+
+      if (dailyError) throw dailyError;
+
+      // 2. Buscar contas ativas de banco de horas
+      const { data: bankAccounts } = await supabase
+        .from("time_bank_accounts")
+        .select("contract_id, status")
+        .in("contract_id", contractIds)
+        .eq("status", "ACTIVE");
+
+      const activeBankContractIds = new Set((bankAccounts || []).map((b) => b.contract_id));
+
+      // 3. Consolidar minutos por contrato
+      const contractSummariesMap: Record<string, {
+        worked: number;
+        he50: number;
+        he100: number;
+        night: number;
+        delay: number;
+        absence: number;
+      }> = {};
+
+      contracts.forEach((c) => {
+        contractSummariesMap[c.id] = {
+          worked: 0,
+          he50: 0,
+          he100: 0,
+          night: 0,
+          delay: 0,
+          absence: 0
+        };
+      });
+
+      if (dailySummaries && dailySummaries.length > 0) {
+        dailySummaries.forEach((d) => {
+          const acc = contractSummariesMap[d.contract_id];
+          if (acc) {
+            acc.worked += d.worked_minutes || 0;
+            acc.he50 += d.overtime_50_minutes || 0;
+            acc.he100 += d.overtime_100_minutes || 0;
+            acc.night += d.night_shift_minutes || 0;
+            acc.delay += d.delay_minutes || 0;
+            acc.absence += d.absence_minutes || 0;
+          }
+        });
+      }
+
+      // 4. Gerar eventos utilizando o TimeClosureService
+      const newEventsData: Record<string, Record<string, number>> = {};
+      let totalCalculatedEvents = 0;
+
+      contracts.forEach((c) => {
+        const sum = contractSummariesMap[c.id];
+        const hasTimeBank = activeBankContractIds.has(c.id);
+
+        const generated = TimeClosureService.generateContractVariableEvents({
+          tenant_id: "",
+          period_id: activePeriodId,
+          contractSummary: {
+            contract_id: c.id,
+            has_active_time_bank: hasTimeBank,
+            total_worked_minutes: sum.worked,
+            overtime_50_minutes: sum.he50,
+            overtime_100_minutes: sum.he100,
+            night_shift_minutes: sum.night,
+            delay_minutes: sum.delay,
+            absence_minutes: sum.absence
+          },
+          rubrics: rubrics.map((r) => ({
+            id: r.id,
+            code: r.code,
+            name: r.code,
+            type: r.code.startsWith("8") ? "DEDUCTION" : "EARNING"
+          }))
+        });
+
+        const contractEvents: Record<string, number> = {
+          [TARGET_CODES.FALTAS]: 0,
+          [TARGET_CODES.ATRASOS]: 0,
+          [TARGET_CODES.HE50]: 0,
+          [TARGET_CODES.HE60]: 0,
+          [TARGET_CODES.HE100]: 0,
+          [TARGET_CODES.ADICIONAL_NOTURNO]: 0
+        };
+
+        generated.forEach((ev) => {
+          if (ev.rubric_code && contractEvents[ev.rubric_code] !== undefined) {
+            contractEvents[ev.rubric_code] = ev.quantity;
+            totalCalculatedEvents++;
+          }
+        });
+
+        newEventsData[c.id] = contractEvents;
+      });
+
+      setEventsData(newEventsData);
+      setSuccessMsg(
+        `Sincronização concluída! ${totalCalculatedEvents} lançamentos de ponto foram apurados automaticamente conforme a CLT. Revise e clique em "Salvar Fechamento" para atualizar a folha.`
+      );
+      setTimeout(() => setSuccessMsg(""), 6000);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg("Erro ao sincronizar do ponto eletrônico: " + (err.message || "Desconhecido"));
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setSuccessMsg("");
@@ -205,24 +342,62 @@ export default function Timesheet() {
 
       if (!tenantData) throw new Error("Tenant não encontrado");
 
-      // Primeiro, deletar eventos variáveis antigos para esses códigos na competência
-      // Para evitar duplicação ou manter valores zerados que foram removidos
-      const rubricIds = rubrics.map(r => r.id);
-      if (rubricIds.length > 0) {
+      const selectedPeriod = periods.find((p) => p.id === activePeriodId);
+      const year = selectedPeriod?.year || new Date().getFullYear();
+      const month = selectedPeriod?.month || new Date().getMonth() + 1;
+      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+      const lastDay = new Date(year, month, 0).getDate();
+      const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+      // 1. Criar ou atualizar registro de fechamento do ponto (time_period_closures)
+      const { data: closureData, error: closureError } = await supabase
+        .from("time_period_closures")
+        .upsert(
+          {
+            tenant_id: tenantData.tenant_id,
+            company_id: selectedCompanyId || null,
+            payroll_period_id: activePeriodId,
+            period_start: startDate,
+            period_end: endDate,
+            status: "CLOSED",
+            total_contracts: contracts.length,
+            closed_by: userData.user?.id,
+            closed_at: new Date().toISOString()
+          },
+          { onConflict: "tenant_id, payroll_period_id, company_id" }
+        )
+        .select("id")
+        .single();
+
+      const closureId = closureData?.id || null;
+
+      // 2. Buscar eventos existentes para conciliação idempotente
+      const rubricIds = rubrics.map((r) => r.id);
+      const { data: existingEvents } = await supabase
+        .from("payroll_variable_events")
+        .select("id, origin, rubric_id")
+        .eq("period_id", activePeriodId)
+        .in("rubric_id", rubricIds);
+
+      // Deletar apenas eventos anteriores gerados pelo Ponto (preserva origin = 'MANUAL')
+      const timeEventsToDelete = (existingEvents || [])
+        .filter((e) => e.origin === "TIME_TRACKING" || !e.origin)
+        .map((e) => e.id);
+
+      if (timeEventsToDelete.length > 0) {
         await supabase
           .from("payroll_variable_events")
           .delete()
-          .eq("period_id", activePeriodId)
-          .in("rubric_id", rubricIds);
+          .in("id", timeEventsToDelete);
       }
 
-      // Preparar inserts apenas para values > 0
+      // 3. Preparar novos inserts com origin = 'TIME_TRACKING' e rastreio
       const inserts = [];
       for (const contractId of Object.keys(eventsData)) {
         for (const code of Object.keys(eventsData[contractId])) {
           const amount = eventsData[contractId][code];
           if (amount > 0) {
-            const rubric = rubrics.find(r => r.code === code);
+            const rubric = rubrics.find((r) => r.code === code);
             if (rubric) {
               inserts.push({
                 tenant_id: tenantData.tenant_id,
@@ -231,7 +406,9 @@ export default function Timesheet() {
                 rubric_id: rubric.id,
                 amount: 0,
                 quantity: amount,
-                reference: 'ESPELHO_PONTO'
+                reference: "FECHAMENTO_PONTO",
+                origin: "TIME_TRACKING",
+                time_period_closure_id: closureId
               });
             }
           }
@@ -239,15 +416,27 @@ export default function Timesheet() {
       }
 
       if (inserts.length > 0) {
-        const { error } = await supabase.from("payroll_variable_events").insert(inserts);
-        if (error) throw error;
+        const { error: insertError } = await supabase
+          .from("payroll_variable_events")
+          .insert(inserts);
+        if (insertError) throw insertError;
       }
 
-      setSuccessMsg("Fechamento do Espelho de Ponto salvo com sucesso! O Motor de Folha já lerá essas informações.");
+      // Atualizar total de eventos gerados no closure
+      if (closureId) {
+        await supabase
+          .from("time_period_closures")
+          .update({ total_events_generated: inserts.length })
+          .eq("id", closureId);
+      }
+
+      setSuccessMsg(
+        "Fechamento do Ponto concluído e integrado com sucesso! Os eventos foram registrados na Folha de Pagamento com rastreabilidade total."
+      );
       setTimeout(() => setSuccessMsg(""), 5000);
     } catch (err: any) {
       console.error(err);
-      setErrorMsg("Erro ao salvar os lançamentos: " + (err.message || "Desconhecido"));
+      setErrorMsg("Erro ao salvar o fechamento do ponto: " + (err.message || "Desconhecido"));
     } finally {
       setSaving(false);
     }
@@ -275,14 +464,27 @@ export default function Timesheet() {
           </p>
         </div>
 
-        <button 
-          onClick={handleSave}
-          disabled={saving || loading || !activePeriodId}
-          className="btn-primary"
-        >
-          {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-          <span>Salvar Fechamento</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleAutoSyncFromTimeTracking}
+            disabled={syncing || saving || loading || !activePeriodId}
+            className="btn-secondary flex items-center gap-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+            title="Importa e consolida automaticamente as horas de atrasos, faltas, adicionais noturnos e HE apurados pelo ponto eletrônico"
+          >
+            {syncing ? <Loader2 size={18} className="animate-spin text-indigo-600" /> : <Zap size={18} className="text-amber-500" />}
+            <span>Sincronizar do Ponto</span>
+          </button>
+
+          <button 
+            onClick={handleSave}
+            disabled={saving || loading || !activePeriodId}
+            className="btn-primary"
+          >
+            {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+            <span>Salvar Fechamento</span>
+          </button>
+        </div>
       </div>
 
       {successMsg && (

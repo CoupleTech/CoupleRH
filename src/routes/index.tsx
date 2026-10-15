@@ -10,6 +10,7 @@ import SignaturesVault from '../pages/Documents/SignaturesVault';
 import PersonalDocsInbox from '../pages/Documents/PersonalDocsInbox';
 import EmployeePortal from '../pages/Portals/EmployeePortal';
 import EmployeePortalLogin from '../pages/Portals/Login';
+import PublicDocumentVerification from '../pages/Public/PublicDocumentVerification';
 import VacationsList from '../pages/Vacations/List';
 import VacationWizard from '../pages/Vacations/Wizard';
 import LeavesList from '../pages/Leaves/List';
@@ -17,6 +18,7 @@ import LeaveWizard from '../pages/Leaves/Wizard';
 import BenefitsList from '../pages/Benefits/List';
 import BenefitForm from '../pages/Benefits/Form';
 import Timesheet from '../pages/TimeTracking/Timesheet';
+import TimeManagement from '../pages/TimeTracking/TimeManagement';
 import PayrollRubrics from '../pages/Payroll/Rubrics';
 import PayrollEvents from '../pages/Payroll/Events';
 import PayrollCalculations from '../pages/Payroll/Calculations';
@@ -65,6 +67,8 @@ export function AppRoutes() {
           <Route path="/update-password" element={<UpdatePassword />} />
           <Route path="/portal/login" element={<EmployeePortalLogin />} />
           <Route path="/portal/dashboard" element={<EmployeePortal />} />
+          <Route path="/verificar" element={<PublicDocumentVerification />} />
+          <Route path="/verificar/:codigo" element={<PublicDocumentVerification />} />
           
           {/* Rotas Administrativas protegidas */}
           <Route element={<ProtectedRoute />}>
@@ -85,6 +89,8 @@ export function AppRoutes() {
               <Route path="/desligamentos" element={<TerminationsList />} />
               <Route path="/desligamentos/novo" element={<OffboardingWizard />} />
               
+              <Route path="/ponto/gestao" element={<TimeManagement />} />
+              <Route path="/ponto/gestao/:tab" element={<TimeManagement />} />
               <Route path="/ponto/espelho" element={<Timesheet />} />
               
               <Route path="/ferias" element={<VacationsList />} />

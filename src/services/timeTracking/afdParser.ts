@@ -27,9 +27,21 @@ export interface AfdPunchRecord {
   rawLine: string;
 }
 
+export interface AfdEmployeeRecord {
+  nsr: number;
+  recordType: number; // 5
+  operationType?: 'I' | 'A' | 'E';
+  date?: string;
+  time?: string;
+  pis: string;
+  name: string;
+  rawLine: string;
+}
+
 export interface AfdParseResult {
   header?: AfdHeader;
   punchRecords: AfdPunchRecord[];
+  employeeRecords: AfdEmployeeRecord[];
   otherRecordsCount: number;
   warnings: string[];
   errors: string[];
@@ -150,6 +162,7 @@ export function parseAfdContent(content: string): AfdParseResult {
   const warnings: string[] = [];
   const errors: string[] = [];
   const punchRecords: AfdPunchRecord[] = [];
+  const employeeRecords: AfdEmployeeRecord[] = [];
   let header: AfdHeader | undefined;
   let otherRecordsCount = 0;
 
@@ -284,6 +297,29 @@ export function parseAfdContent(content: string): AfdParseResult {
         crc_ok: crcOk,
         rawLine,
       });
+    } else if (recordType === 5) {
+      // Registro 5: Relação de Empregados no REP (Portaria 1510 / 671)
+      // Posição 11 a 18: Data da operação (DDMMAAAA)
+      // Posição 19 a 22: Horário da operação (HHMM)
+      // Posição 23: Operação (I/A/E)
+      // Posição 24 a 35: PIS (12 dígitos numéricos)
+      // Posição 36 a 87: Nome do colaborador
+      const opDate = parseDateDDMMAAAA(rawLine.substring(10, 18));
+      const opTime = parseTimeHHMM(rawLine.substring(18, 22));
+      const opType = (rawLine.substring(22, 23).toUpperCase() || 'I') as 'I' | 'A' | 'E';
+      const pis = rawLine.substring(23, 35).trim();
+      const name = rawLine.substring(35, 87).trim();
+
+      employeeRecords.push({
+        nsr,
+        recordType: 5,
+        operationType: opType,
+        date: opDate,
+        time: opTime,
+        pis,
+        name,
+        rawLine,
+      });
     } else {
       otherRecordsCount++;
     }
@@ -294,6 +330,7 @@ export function parseAfdContent(content: string): AfdParseResult {
   return {
     header,
     punchRecords,
+    employeeRecords,
     otherRecordsCount,
     warnings,
     errors,

@@ -5,6 +5,7 @@ import { vacationService } from "../../../services/vacationService";
 import { generateAvisoHTML, generateReciboHTML } from "../../../utils/vacationPrint";
 import VacationWizard from "../../Vacations/Wizard";
 import { toast } from 'sonner';
+import { formatDate } from "../../../lib/dateUtils";
 
 interface VacationsTabProps {
   workerId: string | null;

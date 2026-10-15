@@ -237,6 +237,7 @@ export default function EmployeeProfile() {
           <ContractTab 
             workerId={id || null} 
             contracts={workerData?.employment_contracts || []}
+            workerData={workerData}
             onSaved={handleGenericSave}
           />
         </div>

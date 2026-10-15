@@ -32,9 +32,11 @@ const NAV_SECTIONS = [
     ]
   },
   {
-    label: 'Ponto e Escalas',
+    label: 'Ponto Eletrônico',
     items: [
-      { to: '/jornadas', icon: Clock, label: 'Jornadas de Trabalho' },
+      { to: '/ponto/gestao', icon: Watch, label: 'Gestão de Ponto' },
+      { to: '/ponto/espelho', icon: Clock, label: 'Espelho e Fechamento' },
+      { to: '/jornadas', icon: CalendarDays, label: 'Jornadas de Trabalho' },
       { to: '/feriados', icon: CalendarDays, label: 'Feriados' },
     ]
   },
@@ -47,9 +49,8 @@ const NAV_SECTIONS = [
     ]
   },
   {
-    label: 'Ponto e Folha',
+    label: 'Folha de Pagamento',
     items: [
-      { to: '/ponto/espelho', icon: Clock, label: 'Espelho de Ponto' },
       { to: '/folha/processamento', icon: Calculator, label: 'Motor de Cálculo' },
       { to: '/folha/lancamentos', icon: Activity, label: 'Lançamentos Variáveis' },
       { to: '/folha/holerites', icon: FileText, label: 'Holerites' },

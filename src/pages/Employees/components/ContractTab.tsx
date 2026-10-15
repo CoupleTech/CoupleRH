@@ -4,7 +4,7 @@ import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useCompany } from "../../../contexts/CompanyContext";
 
-export default function ContractTab({ workerId, contracts, onSaved }: any) {
+export default function ContractTab({ workerId, contracts, onSaved, workerData }: any) {
   const { user } = useAuth();
   const { selectedCompanyId } = useCompany();
   const [loading, setLoading] = useState(false);
@@ -31,6 +31,7 @@ export default function ContractTab({ workerId, contracts, onSaved }: any) {
     admission_date: "",
     base_salary: "",
     status: "ACTIVE",
+    pis_pasep: "",
     receives_advance: true,
     allow_cumulative_hazard_allowances: false
   });
@@ -43,7 +44,8 @@ export default function ContractTab({ workerId, contracts, onSaved }: any) {
 
   useEffect(() => {
     if (contract) {
-      setFormData({
+      setFormData(prev => ({
+        ...prev,
         workplace_id: contract.workplace_id || contract.establishment_id || "",
         department_id: contract.department_id || "",
         position_id: contract.position_id || "",
@@ -55,9 +57,26 @@ export default function ContractTab({ workerId, contracts, onSaved }: any) {
         status: contract.status || "ACTIVE",
         receives_advance: contract.receives_advance ?? true,
         allow_cumulative_hazard_allowances: Boolean(contract.allow_cumulative_hazard_allowances)
-      });
+      }));
     }
   }, [contract]);
+
+  useEffect(() => {
+    if (workerData?.pis_pasep !== undefined) {
+      setFormData(prev => ({ ...prev, pis_pasep: workerData.pis_pasep || "" }));
+    } else if (workerId) {
+      supabase
+        .from("workers")
+        .select("pis_pasep")
+        .eq("id", workerId)
+        .maybeSingle()
+        .then(({ data, error }) => {
+          if (!error && data?.pis_pasep) {
+            setFormData(prev => ({ ...prev, pis_pasep: data.pis_pasep || "" }));
+          }
+        });
+    }
+  }, [workerId, workerData?.pis_pasep]);
 
   const fetchAuxiliaryData = async () => {
     setFetchingAux(true);
@@ -119,6 +138,8 @@ export default function ContractTab({ workerId, contracts, onSaved }: any) {
         allow_cumulative_hazard_allowances: formData.allow_cumulative_hazard_allowances
       };
 
+      let saveError = null;
+
       if (contract) {
         // Atualiza contrato existente
         const { error } = await supabase
@@ -126,14 +147,53 @@ export default function ContractTab({ workerId, contracts, onSaved }: any) {
           .update(payload)
           .eq("id", contract.id);
           
-        if (error) throw error;
+        saveError = error;
+
+        // Fallback resiliente: caso a coluna não exista no banco de dados (schema cache)
+        if (saveError && (saveError.code === 'PGRST204' || saveError.message?.includes('allow_cumulative_hazard_allowances'))) {
+          console.warn("Coluna allow_cumulative_hazard_allowances ausente no banco. Repetindo salvamento sem ela...");
+          const fallbackPayload = { ...payload };
+          delete fallbackPayload.allow_cumulative_hazard_allowances;
+          const retry = await supabase
+            .from("employment_contracts")
+            .update(fallbackPayload)
+            .eq("id", contract.id);
+          saveError = retry.error;
+        }
+
+        if (saveError) throw saveError;
       } else {
         // Cria novo contrato
         const { error } = await supabase
           .from("employment_contracts")
           .insert([payload]);
 
-        if (error) throw error;
+        saveError = error;
+
+        // Fallback resiliente: caso a coluna não exista no banco de dados (schema cache)
+        if (saveError && (saveError.code === 'PGRST204' || saveError.message?.includes('allow_cumulative_hazard_allowances'))) {
+          console.warn("Coluna allow_cumulative_hazard_allowances ausente no banco. Repetindo salvamento sem ela...");
+          const fallbackPayload = { ...payload };
+          delete fallbackPayload.allow_cumulative_hazard_allowances;
+          const retry = await supabase
+            .from("employment_contracts")
+            .insert([fallbackPayload]);
+          saveError = retry.error;
+        }
+
+        if (saveError) throw saveError;
+      }
+
+      // Atualiza o PIS / PASEP na tabela workers
+      if (workerId) {
+        const { error: workerErr } = await supabase
+          .from("workers")
+          .update({
+            pis_pasep: formData.pis_pasep ? formData.pis_pasep.trim() : null
+          })
+          .eq("id", workerId);
+
+        if (workerErr) throw workerErr;
       }
 
       onSaved(); // Atualiza a tela inteira (Profile)
@@ -224,6 +284,24 @@ export default function ContractTab({ workerId, contracts, onSaved }: any) {
               <option value="SUSPENDED">Afastado/Suspenso</option>
               <option value="INACTIVE">Inativo (Desligado)</option>
             </select>
+          </div>
+
+          <div className="space-y-1.5 md:col-span-2">
+            <label className="text-sm font-medium text-slate-700 flex items-center justify-between">
+              <span>PIS / PASEP / NIS</span>
+              <span className="text-xs text-primary-600 font-medium">Ponto Eletrônico & Folha</span>
+            </label>
+            <input
+              type="text"
+              className="input"
+              placeholder="Ex: 023.66060.51-5 ou 11 dígitos numéricos"
+              maxLength={20}
+              value={formData.pis_pasep}
+              onChange={(e) => setFormData({ ...formData, pis_pasep: e.target.value })}
+            />
+            <p className="text-xs text-slate-500">
+              Chave de identificação no relógio REP. Essencial para conciliação automática com arquivos AFD (Portaria MTP 671/2021).
+            </p>
           </div>
         </div>
       </div>
@@ -349,6 +427,21 @@ export default function ContractTab({ workerId, contracts, onSaved }: any) {
             </p>
           </div>
         </div>
+      </div>
+
+      <div className="flex justify-end gap-3 pt-4">
+        <button
+          type="submit"
+          disabled={loading}
+          className="btn-primary flex items-center gap-2 px-6 py-2.5 shadow-sm"
+        >
+          {loading ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            <Save size={18} />
+          )}
+          <span>{loading ? "Salvando..." : "Salvar Contrato e Vínculo"}</span>
+        </button>
       </div>
 
     </form>
