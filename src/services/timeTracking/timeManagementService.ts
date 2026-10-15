@@ -392,6 +392,7 @@ export class TimeManagementService {
         *,
         employment_contracts!inner (
           id,
+          company_id,
           workers (
             people (
               full_name
@@ -406,7 +407,7 @@ export class TimeManagementService {
       .order('date', { ascending: false });
 
     if (filters.companyId) {
-      query = query.eq('company_id', filters.companyId);
+      query = query.eq('employment_contracts.company_id', filters.companyId);
     }
     if (filters.startDate) {
       query = query.gte('date', filters.startDate);
@@ -426,6 +427,7 @@ export class TimeManagementService {
 
     return (data || []).map((row: any) => ({
       ...row,
+      company_id: row.company_id ?? row.employment_contracts?.company_id,
       worker_name: row.employment_contracts?.workers?.people?.full_name ?? 'Colaborador',
       position_name: row.employment_contracts?.positions?.title ?? 'Geral'
     }));
@@ -696,12 +698,12 @@ export class TimeManagementService {
     if (contractId) {
       const { data: bankAcc } = await supabase
         .from('time_bank_accounts')
-        .select('current_balance_minutes')
+        .select('balance_minutes')
         .eq('contract_id', contractId)
         .eq('status', 'ACTIVE')
         .maybeSingle();
       if (bankAcc) {
-        bankBalance = bankAcc.current_balance_minutes || 0;
+        bankBalance = (bankAcc as any).balance_minutes ?? (bankAcc as any).current_balance_minutes ?? 0;
       }
     }
 

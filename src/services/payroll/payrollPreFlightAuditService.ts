@@ -588,7 +588,7 @@ export class PayrollPreFlightAuditService {
     // Checar resumos com MISSING_PUNCH ou inconsistências
     const { data: summariesRaw } = await supabase
       .from('time_daily_summary')
-      .select('contract_id, status, violations')
+      .select('contract_id, status')
       .gte('date', startOfMonth)
       .lte('date', endOfMonth)
       .eq('status', 'INCONSISTENT');

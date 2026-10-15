@@ -140,7 +140,16 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
     1. Importado `formatDate` de `../../lib/dateUtils` em `Vacations/Wizard.tsx`.
     2. Padronizado o cálculo de datas de início, retorno e término de férias para UTC (`Date.UTC`), evitando distorções decorrentes do fuso horário brasileiro (GMT-3).
     3. Importação de `formatDate` estendida preventivamente aos componentes que a referenciavam sem import (`Leaves/Wizard.tsx`, `Leaves/List.tsx`, `SST/Dashboard.tsx`, `Payroll/Reports.tsx`, `Offboarding/List.tsx`, `TRCTViewer.tsx`, `DependentsTab.tsx`, `DocumentsTab.tsx`, `LeavesTab.tsx` e `ScaleTab.tsx`).
-  - **Validação**: Build de produção Vite finalizado com sucesso (`dist/assets/index-D3T48Yc0.js`) e 435 testes automatizados aprovados no Vitest.
+- **15/10/2026 - Hotfix Produção (Gestão de Ponto: Filtro de Empresa e Saldo do Banco de Horas)**:
+  - **Causa Raiz**:
+    1. A rota `/ponto/gestao` disparava erro HTTP 400 (`code: 42703, message: column time_daily_summary.company_id does not exist`) ao listar os resumos diários, pois a query em `TimeManagementService.fetchDailySummaries` aplicava `.eq('company_id', filters.companyId)` diretamente sobre `time_daily_summary`, coluna inexistente na tabela em produção.
+    2. Ao carregar o cartão de ponto, disparava erro HTTP 400 em `time_bank_accounts?select=current_balance_minutes`, pois a coluna no banco é `balance_minutes`.
+  - **Correções Aplicadas**:
+    1. Em `src/services/timeTracking/timeManagementService.ts`, o filtro de empresa em `fetchDailySummaries` foi ajustado para `query.eq('employment_contracts.company_id', filters.companyId)`, aproveitando o inner join já existente com `employment_contracts` (onde `company_id` reside), e mapeando `company_id: row.company_id ?? row.employment_contracts?.company_id`.
+    2. Em `fetchCardData`, ajustado o select para `balance_minutes` com leitura defensiva `(bankAcc as any).balance_minutes ?? (bankAcc as any).current_balance_minutes ?? 0`.
+    3. Em `src/services/payroll/payrollPreFlightAuditService.ts`, removido o campo inexistente `violations` da consulta a `time_daily_summary`.
+    4. Criada a migration `00087_fix_time_daily_summary_and_bank_columns.sql` adicionando estruturalmente `company_id` (com backfill), índices de busca e gatilho de sincronização em `time_bank_accounts`.
+  - **Validação**: Testes executados diretamente contra o banco de produção via script autenticado com 100% de sucesso (0 erros nas queries), 435 testes Vitest aprovados e build validado.
 
 ---
 
