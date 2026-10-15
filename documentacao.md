@@ -375,3 +375,21 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
 
   4. **Garantia de Qualidade e Testes**:
      - Suíte de testes automatizados `src/tests/time/TimePayrollAndBankIntegration.test.ts` cobrindo registro de batida manual por queda de energia, integração em folha (rubricas 150, 160, 301), alimentação de banco de horas e isolamento de lançamentos manuais.
+
+---
+
+### 18. Proposta de Arquitetura: Regime de Horas no Contrato, Compensação de Atrasos/Faltas e Carga Legada de Banco de Horas (15/10/2026)
+
+- **Contexto Operacional e Trabalhista**:
+  1. **Flag de Regime no Contrato de Trabalho (`employment_contracts.overtime_regime`)**:
+     - Cada contrato individual possui uma modalidade acordada de remuneração da sobrejornada:
+       - `TIME_BANK`: Banco de Horas formal (CLT art. 59 § 2º e § 5º). Toda hora além da jornada gera crédito no banco, e atrasos/faltas geram débitos a compensar.
+       - `OVERTIME_PAYROLL`: Pagamento integral em dinheiro em folha (sem compensação). Todas as horas extras apuradas geram rubricas 150 (HE 50%) e 160 (HE 100%), e atrasos/faltas geram rubricas 802 e 801 com perda de DSR.
+       - `HYBRID`: Regime misto (ex: horas extras comuns de segunda a sábado no banco; domingos e feriados 100% pagos em folha).
+  2. **Abono de Atrasos e Faltas com o Banco de Horas (Compensação Operacional)**:
+     - Quando o colaborador tem atraso ou falta injustificada, o operador de DP pode decidir **abonar a ocorrência consumindo o saldo positivo do Banco de Horas**.
+     - A operação registra uma transação auditável do tipo `COMPENSATION_DELAY` ou `COMPENSATION_ABSENCE`, consumindo os minutos correspondentes do saldo acumulado do trabalhador e marcando a ocorrência como justificada/abonada no ponto, cancelando o desconto em folha e preservando o DSR da semana.
+  3. **Lançamento Manual e Carga de Saldo Inicial Legado**:
+     - Na transição de softwares anteriores para o coupleRH, colaboradores trazem saldos positivos ou negativos pré-existentes.
+     - A solução prevê um modal de **Ajuste Manual / Saldo Inicial** permitindo informar Colaborador, Data de Corte, Saldo (+/- HH:MM) e Justificativa ("Carga de implantação do sistema legado"), gerando registro com tipo `INITIAL_BALANCE` / `MANUAL_ADJUSTMENT`.
+     - Suporte futuro a importação em lote por planilha CSV/Excel para agilizar a implantação de empresas com grande quadro funcional.

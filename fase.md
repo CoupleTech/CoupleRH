@@ -137,6 +137,28 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 - [x] **PT-14** Testes: jornadas, noturno, 12x36, feriados, banco de horas, idempotência de importação — *Concluído em 14/10/2026: implementada bateria abrangente de testes de integração e cenários de homologação em TimeTrackingIntegrationPT14.test.ts cobrindo tolerâncias da CLT (Art. 58 §1º e Súmula 366 TST), adicional noturno com redução ficta legal, escala 12x36 (Art. 59-A CLT com feriados compensados e extras após 12h), feriados e domingos trabalhados fora de escala (HE 100%), ciclo completo de banco de horas (ingestão, teto de saldo com transbordo para folha e alertas de vencimento) e idempotência de ingestão de arquivos AFD (12/12 testes aprovados).*
 **Gate:** marcação por relógio **ou** AFD **ou** celular aparece no espelho; colaborador vê saldo e extrato do banco de horas; AFD/AEJ exportáveis; marcação original impossível de alterar. — **VALIDADO (TODOS OS CRITÉRIOS APROVADOS)**
 
+### ⏱️ Entregas Adicionais: Banco de Horas, Regimes Contratuais e Carga Legada
+- [ ] **TB-01** Flag e Regime de Compensação no Contrato (`employment_contracts` e `ContractTab.tsx`):
+  - Adicionar campo `overtime_regime` com opções:
+    - `TIME_BANK` ("Banco de Horas — CLT Art. 59 § 2º/§ 5º")
+    - `OVERTIME_PAYROLL` ("Horas Extras em Folha de Pagamento — 100% Remuneradas")
+    - `HYBRID` ("Regime Híbrido — 50% Banco / 100% Dinheiro")
+  - Alimentar automaticamente o motor de apuração (`workShiftEngine` e `integrateTimesheetToPayrollAndBank`) para direcionar horas extras e faltas conforme o contrato individual.
+- [ ] **TB-02** Abono e Compensação de Atrasos/Faltas com Saldo de Banco de Horas:
+  - Permitir ao analista de DP/ponto abonar ocorrências de jornada (atraso, saída antecipada ou falta) consumindo o saldo positivo do banco de horas.
+  - Registrar a transação como `COMPENSATION_DELAY` ou `COMPENSATION_ABSENCE` em `time_bank_transactions`, prevenindo descontos indevidos na folha (rubricas 801/802) e perda do DSR.
+  - Validação de saldo disponível com opção de compensação parcial e feedback de saldo remanescente.
+- [ ] **TB-03** Lançamento Manual e Carga de Saldo Inicial de Banco de Horas (Migração de Sistema Anterior):
+  - Interface no Cartão de Ponto / Extrato de Banco de Horas para lançamento manual de saldo inicial legado (migração de outro software).
+  - Campos: Colaborador/Contrato, Data de Corte, Saldo Inicial (+HH:MM ou -HH:MM), Justificativa/Origem auditável ("Migração de saldo legado sistema X").
+  - Provisionamento da conta `time_bank_accounts` e gravação de transação com tipo `INITIAL_BALANCE` / `MANUAL_ADJUSTMENT`.
+  - Carga em lote por arquivo CSV/Excel para importação em massa de saldos iniciais de múltiplos colaboradores.
+- [ ] **TB-04** Funcionalidades Complementares Sugeridas para Banco de Horas:
+  - Painel de Alertas de Vencimento de Banco de Horas (vigência CLT de 6 meses no acordo individual ou 12 meses na CCT) com indicação de dias restantes para programar folgas compensatórias antes da liquidação rescisória/expirada.
+  - Emissão e envio automático do Termo de Acordo Individual de Banco de Horas para assinatura digital pelo trabalhador no celular (integrado ao módulo de Assinaturas P6 / Art. 59 § 5º da CLT).
+  - Regra de teto mensal de acúmulo no banco (ex: limite de até 20h extras/mês no banco, transbordando o excedente para pagamento imediato em dinheiro na folha).
+
+
 ## ✍️ FASE P6: Assinatura digital de documentos
 **Status:** `[Concluído]` · **Ref.:** 📘 Doc §8 · **Pré-requisito:** definição do nível de assinatura por documento (ver Pendências); P7 para holerite fechado
 - [x] **AS-01** Migrations (`employee_documents`, `signatures_log`, `document_events`); RLS; storage privado — *Concluído em 14/10/2026: criada migration 00083_document_signatures_as01.sql com enriquecimento de employee_documents (doc_type, source_ref, hash_original H1, hash_signed H2, signed_file_url, due_at, version, verification_code único gerado via PL/pgSQL, signature_level ADVANCED, requires_otp, viewed_at, signed_at), signatures_log com triggers de bloqueio contra UPDATE/DELETE para garantia de imutabilidade forense, criação da tabela document_events com histórico de ciclo de vida e auditoria, bucket private-documents com public = false e políticas RLS de storage; modelo de domínio e utilitários implementados em documentSignatureModel.ts; suíte de testes TDD DocumentSignaturesAS01.test.ts implementada com 100% de aprovação (6/6 testes).*
