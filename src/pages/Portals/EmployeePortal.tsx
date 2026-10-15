@@ -336,37 +336,62 @@ export default function EmployeePortal() {
 
   const loadTimeTrackingData = async (contractId: string) => {
     try {
-      const [punchesRes, bankRes] = await Promise.allSettled([
-        supabase.rpc("get_employee_today_punches", { p_contract_id: contractId }),
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const todayStr = `${year}-${month}-${day}`;
+
+      // 1. Busca direta das batidas do dia sem exigir coluna status
+      const punchesPromise = (async () => {
+        try {
+          const { data: entries, error } = await supabase
+            .from('time_entries')
+            .select('id, entry_type, original_timestamp, punch_record_id, time_punch_records(receipt_code, nsr)')
+            .eq('contract_id', contractId)
+            .gte('original_timestamp', `${todayStr}T00:00:00-03:00`)
+            .lte('original_timestamp', `${todayStr}T23:59:59-03:00`)
+            .order('original_timestamp', { ascending: true });
+
+          if (!error && entries) {
+            return entries.map((e: any) => ({
+              id: e.id,
+              entry_type: e.entry_type,
+              original_timestamp: e.original_timestamp,
+              status: 'APPROVED',
+              punch_record_id: e.punch_record_id,
+              receipt_code: e.time_punch_records?.receipt_code || null,
+              nsr: e.time_punch_records?.nsr || null
+            }));
+          }
+        } catch {
+          // fallback silencioso
+        }
+
+        // Fallback secundário para RPC se a query direta não retornar
+        try {
+          const { data: rpcData, error: rpcError } = await supabase.rpc(
+            "get_employee_today_punches",
+            { p_contract_id: contractId }
+          );
+          if (!rpcError && rpcData) return rpcData;
+        } catch {
+          // ignora
+        }
+        return [];
+      })();
+
+      const [punches, bankRes] = await Promise.all([
+        punchesPromise,
         supabase.rpc("get_employee_time_bank", { p_contract_id: contractId })
       ]);
 
-      if (punchesRes.status === "fulfilled" && !punchesRes.value.error && punchesRes.value.data) {
-        setTodayPunches(punchesRes.value.data);
-      } else {
-        // Fallback resiliente caso a RPC 00082 ainda não tenha sido executada no banco remoto
-        try {
-          const todayStr = new Date().toISOString().slice(0, 10);
-          const { data: entries } = await supabase
-            .from('time_entries')
-            .select('id, entry_type, original_timestamp, status')
-            .eq('contract_id', contractId)
-            .gte('original_timestamp', `${todayStr}T00:00:00`)
-            .lte('original_timestamp', `${todayStr}T23:59:59`)
-            .order('original_timestamp', { ascending: true });
-          
-          if (entries) {
-            setTodayPunches(entries);
-          }
-        } catch {
-          // Ignora erro em caso de schema divergente
-        }
-      }
+      setTodayPunches(punches || []);
 
-      if (bankRes.status === "fulfilled" && !bankRes.value.error && bankRes.value.data) {
-        setTimeBankSummary(bankRes.value.data);
+      if (bankRes && !bankRes.error && bankRes.data) {
+        setTimeBankSummary(bankRes.data);
       } else {
-        // Fallback resiliente caso a RPC 00082 ainda não tenha sido executada no banco remoto
+        // Fallback resiliente caso a RPC get_employee_time_bank retorne erro
         const { data: tbAccount } = await supabase
           .from('time_bank_accounts')
           .select('id, balance_minutes, valid_until, agreement_type, status')

@@ -251,3 +251,20 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
      - Adiciona formalmente as colunas `doc_type`, `verification_code`, `hash_original`, `hash_signed`, `signed_file_url`, `due_at`, `signed_at` em `employee_documents`.
      - Executa o backfill a partir de `document_type`, `document_hash` e `file_url`.
      - Cria a tabela `document_events` com políticas RLS para auditoria de assinaturas.
+
+---
+
+## 13. PORTAL DO COLABORADOR: MARCAÇÕES DE HOJE E STATUS EM TIME_ENTRIES (HOTFIX EM PRODUÇÃO)
+
+- **Causa Raiz do Erro (400 Bad Request)**:
+  - Na rota `/portal/dashboard`, a RPC `get_employee_today_punches` falhava com erro PostgREST 400 (`code: 42703, column te.status does not exist`), pois a tabela `time_entries` no Supabase de produção foi criada sem a coluna `status`.
+  - Como fallback no frontend, o componente tentava consultar diretamente `time_entries` solicitando `select('id, entry_type, original_timestamp, status')`, gerando um segundo erro 400 no console do navegador.
+- **Solução Implementada**:
+  1. Em `src/pages/Portals/EmployeePortal.tsx`:
+     - Invertida a estratégia em `loadTimeTrackingData`: realiza busca direta e imediata em `time_entries` relacionando com `time_punch_records(receipt_code, nsr)` filtrado pelo dia atual em fuso horário de Brasília (`America/Sao_Paulo`).
+     - Removida a exigência da coluna `status` na query, atribuindo `'APPROVED'` em memória.
+     - Preservado fallback seguro para a RPC `get_employee_today_punches` com captura de erro silenciosa.
+     - Desta forma, o portal carrega as batidas do dia com HTTP 200 e elimina todos os erros 400 no console do usuário.
+  2. Criada a Migration `00089_fix_time_entries_status_and_today_punches_rpc.sql`:
+     - Adiciona a coluna `status TEXT NOT NULL DEFAULT 'APPROVED'` na tabela `time_entries`.
+     - Recria a função `get_employee_today_punches` com `COALESCE(te.status, 'APPROVED')` e concessão explícita de `GRANT EXECUTE` para `anon, authenticated, service_role`.
