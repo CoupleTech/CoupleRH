@@ -268,3 +268,23 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   2. Criada a Migration `00089_fix_time_entries_status_and_today_punches_rpc.sql`:
      - Adiciona a coluna `status TEXT NOT NULL DEFAULT 'APPROVED'` na tabela `time_entries`.
      - Recria a função `get_employee_today_punches` com `COALESCE(te.status, 'APPROVED')` e concessão explícita de `GRANT EXECUTE` para `anon, authenticated, service_role`.
+
+---
+
+## 14. PONTO DIGITAL MOBILE (REP-P): CORREÇÃO DE REGISTER_MOBILE_PUNCH E UNIFICAÇÃO COM RELÓGIO FÍSICO
+
+- **Causa Raiz do Erro (400 Bad Request / 42703 column p.pis does not exist)**:
+  - Ao registrar o ponto pelo celular no Portal do Colaborador (`TimePunchModal.tsx`), a RPC `register_mobile_punch` tentava extrair `REGEXP_REPLACE(p.pis, '[^0-9]', '', 'g')` a partir do alias `p` (`public.people`).
+  - No modelo de dados do coupleRH, `people` armazena exclusivamente dados civis (como CPF), enquanto o número do PIS / PASEP / NIS reside na tabela de vínculos trabalhistas `public.workers` (`pis_pasep TEXT`).
+  - Além disso, a inserção subsequente em `public.time_entries` forçava a coluna `status`, gerando rejeição caso a coluna ainda não estivesse adicionada.
+- **Unificação entre Ponto Digital (Celular) e Relógio Físico (Control iD)**:
+  - Ambas as fontes alimentam a mesma tabela central e imutável `public.time_punch_records`:
+    - Batidas via celular são registradas com `source = 'MOBILE'` pelo dispositivo virtual provisionado `REP_P_MOBILE`.
+    - Batidas via relógio físico são importadas com `source = 'REP_PHYSICAL'` pelo número de série do fabricante (ex: Control iD).
+  - Na aba **Tratamento & Inconsistências** (`/ponto/gestao`), o serviço `timeManagementService.ts` consulta todas as batidas em `time_punch_records` para o colaborador no mês, agrupando-as por dia e ordenando cronologicamente por horário. Portanto, marcações feitas no celular de manhã e no relógio físico à tarde aparecem integradas no mesmo espelho diário.
+- **Solução Implementada**:
+  1. Em `supabase/migrations/00078_time_punch_geofence_pt05.sql` e na nova Migration `00090_fix_register_mobile_punch_pis_column.sql`:
+     - Atualizada a consulta para `COALESCE(REGEXP_REPLACE(w.pis_pasep, '[^0-9]', '', 'g'), '')` a partir de `public.workers w`.
+     - Definido `SET search_path = public, extensions;` para garantir localização da função `digest` (pgcrypto).
+     - Removida a exigência de `status` no espelho de `time_entries`.
+     - Concedidas permissões `GRANT EXECUTE ON FUNCTION public.register_mobile_punch TO authenticated, anon;`.

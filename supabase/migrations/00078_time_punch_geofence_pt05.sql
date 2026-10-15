@@ -38,6 +38,7 @@ RETURNS TABLE (
     receipt_code TEXT
 )
 SECURITY DEFINER
+SET search_path = public, extensions
 AS $$
 DECLARE
     v_tenant_id UUID;
@@ -57,7 +58,7 @@ BEGIN
         ec.company_id,
         ec.worker_id,
         REGEXP_REPLACE(p.cpf, '[^0-9]', '', 'g'),
-        REGEXP_REPLACE(p.pis, '[^0-9]', '', 'g')
+        COALESCE(REGEXP_REPLACE(w.pis_pasep, '[^0-9]', '', 'g'), '')
     INTO
         v_tenant_id,
         v_company_id,
@@ -163,16 +164,14 @@ BEGIN
         original_timestamp,
         entry_type,
         punch_record_id,
-        device_info,
-        status
+        device_info
     ) VALUES (
         v_tenant_id,
         p_contract_id,
         v_punched_at,
         p_entry_type,
         v_punch_id,
-        p_device_fingerprint,
-        'APPROVED'
+        p_device_fingerprint
     );
 
     RETURN QUERY SELECT 
