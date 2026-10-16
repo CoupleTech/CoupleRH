@@ -403,27 +403,44 @@ export default function () {
     // Lazy load items
     const payslip = payslips.find((p) => p.id === payslipId);
     if (payslip && !payslip.items) {
-      const { data } = await supabase
-        .from("payslip_items")
-        .select(
-          `
-          id, reference, amount, type,
-          payroll_rubrics ( name )
-        `,
-        )
-        .eq("payslip_id", payslipId);
+      try {
+        const { data, error } = await supabase
+          .from("payslip_items")
+          .select(
+            `
+            id, reference, amount, type,
+            payroll_rubrics!payslip_items_rubric_id_fkey ( code, name )
+          `,
+          )
+          .eq("payslip_id", payslipId);
 
-      if (data) {
-        const items = data.map((i: any) => ({
-          id: i.id,
-          rubric_name: i.payroll_rubrics?.name || "Rubrica Removida",
-          reference: i.reference,
-          amount: i.amount,
-          type: i.type,
-        }));
+        if (error) {
+          console.error("Erro ao carregar itens do holerite:", error);
+          setPayslips((prev) =>
+            prev.map((p) => (p.id === payslipId ? { ...p, items: [] } : p)),
+          );
+          return;
+        }
 
+        if (data) {
+          const items = data.map((i: any) => ({
+            id: i.id,
+            rubric_name: i.payroll_rubrics 
+              ? `[${i.payroll_rubrics.code}] ${i.payroll_rubrics.name}` 
+              : "Rubrica Removida",
+            reference: i.reference,
+            amount: i.amount,
+            type: i.type,
+          }));
+
+          setPayslips((prev) =>
+            prev.map((p) => (p.id === payslipId ? { ...p, items } : p)),
+          );
+        }
+      } catch (err) {
+        console.error("Exceção ao buscar itens do holerite:", err);
         setPayslips((prev) =>
-          prev.map((p) => (p.id === payslipId ? { ...p, items } : p)),
+          prev.map((p) => (p.id === payslipId ? { ...p, items: [] } : p)),
         );
       }
     }

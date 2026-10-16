@@ -486,7 +486,7 @@ export class PayrollPreFlightAuditService {
         ),
         payslip_items (
           id, reference, amount, type,
-          payroll_rubrics ( code, name )
+          payroll_rubrics!payslip_items_rubric_id_fkey ( code, name )
         )
       `)
       .eq('period_id', periodId);
@@ -527,7 +527,7 @@ export class PayrollPreFlightAuditService {
           ),
           payslip_items (
             id, reference, amount, type,
-            payroll_rubrics ( code, name )
+            payroll_rubrics!payslip_items_rubric_id_fkey ( code, name )
           )
         `)
         .eq('period_id', prevPeriod.id);

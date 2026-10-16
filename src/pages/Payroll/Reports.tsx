@@ -101,7 +101,7 @@ export default function PayrollReports() {
             reference,
             amount,
             type,
-            payroll_rubrics (code, name)
+            payroll_rubrics!payslip_items_rubric_id_fkey (code, name)
           ),
           employment_contracts (
             admission_date,
