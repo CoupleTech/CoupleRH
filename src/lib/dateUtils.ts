@@ -23,3 +23,10 @@ export function formatDateTime(dateString: string | Date | null | undefined): st
 
   return date.toLocaleString('pt-BR', { timeZone: 'UTC' });
 }
+
+export function formatCurrency(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return 'R$ 0,00';
+  const num = typeof value === 'string' ? parseFloat(value.replace(',', '.')) : Number(value);
+  if (isNaN(num)) return 'R$ 0,00';
+  return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
