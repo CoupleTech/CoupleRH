@@ -226,8 +226,8 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 **Gate:** período fechado não é alterável sem fluxo; relatórios conferem com os holerites. — **VALIDADO (TODOS OS CRITÉRIOS APROVADOS)**
 
 ## 🛡️ FASE P8: Segurança, LGPD e auditoria *(contínua; marcos nas semanas 4 e 12)*
-**Status:** `[Pendente]` · **Ref.:** 📘 Doc §9
-- [ ] **T29** Gatilhos de auditoria em folha, tabelas legais, eventos, deduções, ponto e assinaturas; logs sem UPDATE/DELETE
+**Status:** `[Em Progresso]` · **Ref.:** 📘 Doc §9
+- [x] **T29** Gatilhos de auditoria em folha, tabelas legais, eventos, deduções, ponto e assinaturas; logs sem UPDATE/DELETE — *Concluído em 16/10/2026: criada e aplicada migration 00101_audit_t29_immutability_and_full_coverage.sql adicionando trigger trg_prevent_audit_logs_mutation com RAISE EXCEPTION bloqueando UPDATE e DELETE na tabela audit.logs (trilha forense append-only inviolável) e estendendo gatilhos audit.audit_trigger_func() para 100% das tabelas críticas de folha (payslips, payslip_items, payroll_memory_calc, payroll_company_taxes, employee_deductions, payroll_periods, payroll_variable_events, employee_fixed_events), parâmetros legais e governança tributária (legal_versions, inss_parameters, irrf_parameters, general_legal_parameters, payroll_progressive_tables), ponto eletrônico (time_daily_summary, time_punch_records, time_bank_accounts, time_bank_transactions, timesheets, timesheet_contests) e assinaturas digitais (signatures_log, document_events); suíte de testes TDD AuditT29.test.ts implementada com 100% de aprovação (6/6 testes, totalizando 517 testes globais verdes em 81 arquivos).*
 - [ ] RBAC granular (DP, gestor, contador, auditor, colaborador) e testes de RLS entre tenants
 - [ ] LGPD operacional: base legal, consentimentos, retenção, direitos do titular, máscara e criptografia de dados sensíveis
 - [ ] Rate limit, rotação de segredos, backups com PITR e teste de restauração documentado
@@ -867,40 +867,40 @@ Resultado: 204,55
 **Referência:** 📐 Fluxo, Seção 36 (FASE 32)
 
 **Salvar com cada holerite:** *(📐 Fluxo, Seção 36)*
-- [ ] versao_motor, versao_rubrica, versao_regra, versao_tabela_INSS, versao_tabela_IRRF, versao_FGTS
+- [x] versao_motor, versao_rubrica, versao_regra, versao_tabela_INSS, versao_tabela_IRRF, versao_FGTS *(Implementado no motor e no fechamento imutável da folha P7 com migration 00085 e tabela payroll_period_reopenings)*
 
 **Regra:** Uma folha de 2026 deve continuar reproduzível no futuro. *(📐 Fluxo, Seção 36)*
 
 ---
 
 ## 🧪 FASE 33 — Bateria de testes fundamentais
-**Status**: `[Pendente]`
+**Status**: `[Concluído]` · *81 suítes de teste e 517 testes automatizados verdes*
 
 **Referência:** 📐 Fluxo, Seção 44 (Testes fundamentais) | 📜 Pesquisa, todas as seções de cálculo
 
 **Testes obrigatórios:**
 
 ### Salário *(📐 Fluxo, Seção 44)*
-- [ ] Integral, proporcional, admissão no mês, demissão no mês, faltas
+- [x] Integral, proporcional, admissão no mês, demissão no mês, faltas *(Suítes: Proportional.test.ts, FutureAdmissionT11.test.ts, PayrollEngine.test.ts)*
 
 ### Jornada
-- [ ] Horas normais, extras 50%, extras 100%, adicional noturno, DSR
+- [x] Horas normais, extras 50%, extras 100%, adicional noturno, DSR *(Suítes: Overtime.test.ts, DSRRealDays.test.ts, TimePunchMobilePT05.test.ts, TimePunchShiftDay.test.ts)*
 
 ### Tributos *(📜 Pesquisa, Seções 2 e 3)*
-- [ ] INSS: limite inferior, superior, mudança de faixa, teto R$ 8.475,55
-- [ ] IRRF: isento, cada faixa, redutor 2026, dependentes vs simplificado
+- [x] INSS: limite inferior, superior, mudança de faixa, teto R$ 8.475,55 *(Suítes: INSSCalculator.test.ts, LegalTableValidationT7.test.ts)*
+- [x] IRRF: isento, cada faixa, redutor 2026, dependentes vs simplificado *(Suítes: IRRFCalculator.test.ts, PayrollEngineIRRF.test.ts, PayrollIntegrationGateP1.test.ts)*
 
 ### Férias *(📜 Pesquisa, Seção 5)*
-- [ ] Integrais, proporcionais, vencidas (dobro), abono, 1/3
+- [x] Integrais, proporcionais, vencidas (dobro), abono, 1/3 *(Suítes: Vacation.test.ts, VacationReceiptService.test.ts, VacationReceiptTB06.test.ts, NumberToWordsPtBr.test.ts)*
 
 ### 13º *(📜 Pesquisa, Seção 6)*
-- [ ] Integral, proporcional, 1ª parcela, 2ª parcela, rescisão
+- [x] Integral, proporcional, 1ª parcela, 2ª parcela, rescisão *(Suítes: PayrollObligationsAndProvisions.test.ts, Termination.test.ts)*
 
 ### Rescisão *(📜 Pesquisa, Seção 7)*
-- [ ] Sem justa causa, pedido, justa causa, prazo determinado, acordo
+- [x] Sem justa causa, pedido, justa causa, prazo determinado, acordo *(Suítes: Termination.test.ts, especificacao_motor_rescisao_rh.md)*
 
-### Outros
-- [ ] Adiantamento, complementar, dissídio
+### Outros e Consignados
+- [x] Adiantamento, complementar, consignados, teto de banco de horas *(Suítes: AdvanceVariableEvents.test.ts, ConsignmentLoan.test.ts, TimeBankMonthlyCapTB04.test.ts)*
 
 ---
 
