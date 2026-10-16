@@ -9,6 +9,12 @@
  */
 
 import { supabase } from '../../lib/supabase';
+import {
+  TimeBankService,
+  type TimeBankPolicyType,
+  type TimeBankAlertStatus,
+  formatMinutesToHours
+} from './timeBankService';
 import type {
   TimeDevice,
   TimeDeviceKind,
@@ -608,55 +614,135 @@ export class TimeManagementService {
   }
 
   /**
-   * Busca colaboradores ativos para o seletor do Cartão de Ponto
+   * Busca colaboradores ativos para o seletor do Cartão de Ponto (com resiliência a schemas legados)
    */
   static async fetchWorkersForTimeManagement(
     tenantId: string,
     companyId?: string
   ): Promise<WorkerOption[]> {
-    let query = supabase
-      .from('workers')
-      .select(`
-        id,
-        pis_pasep,
-        people (
-          id,
-          full_name,
-          cpf
-        ),
-        employment_contracts (
-          id,
-          status,
-          company_id,
-          positions (
-            title
-          ),
-          departments (
-            name
-          )
-        )
-      `)
-      .eq('tenant_id', tenantId);
+    let data: any[] | null = null;
 
-    const { data, error } = await query;
-    if (error) throw error;
+    // 1. Tentar query completa com overtime_regime
+    try {
+      const { data: fullData, error: fullError } = await supabase
+        .from('workers')
+        .select(`
+          id,
+          company_id,
+          pis_pasep,
+          people (
+            id,
+            full_name,
+            cpf
+          ),
+          employment_contracts (
+            id,
+            status,
+            company_id,
+            overtime_regime,
+            positions (
+              title
+            ),
+            departments (
+              name
+            )
+          )
+        `)
+        .eq('tenant_id', tenantId);
+
+      if (!fullError && fullData) {
+        data = fullData;
+      } else {
+        throw fullError;
+      }
+    } catch (err: any) {
+      console.warn('Query completa falhou (provável ausência de overtime_regime). Acionando fallback resiliente:', err?.message);
+      
+      // 2. Fallback resiliente sem overtime_regime
+      try {
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('workers')
+          .select(`
+            id,
+            company_id,
+            pis_pasep,
+            people (
+              id,
+              full_name,
+              cpf
+            ),
+            employment_contracts (
+              id,
+              status,
+              company_id,
+              positions (
+                title
+              ),
+              departments (
+                name
+              )
+            )
+          `)
+          .eq('tenant_id', tenantId);
+
+        if (!fallbackError && fallbackData) {
+          data = fallbackData;
+        } else {
+          throw fallbackError;
+        }
+      } catch (fbErr: any) {
+        console.warn('Fallback 2 falhou. Acionando fallback mínimo essencial:', fbErr?.message);
+        
+        // 3. Fallback mínimo essencial
+        const { data: minimalData, error: minErr } = await supabase
+          .from('workers')
+          .select(`
+            id,
+            company_id,
+            pis_pasep,
+            people (
+              id,
+              full_name,
+              cpf
+            ),
+            employment_contracts (
+              id,
+              status,
+              company_id
+            )
+          `)
+          .eq('tenant_id', tenantId);
+
+        if (minErr) {
+          console.error('Erro ao carregar colaboradores do banco:', minErr);
+          throw minErr;
+        }
+        data = minimalData;
+      }
+    }
 
     const list: WorkerOption[] = [];
     (data || []).forEach((w: any) => {
       const contracts = Array.isArray(w.employment_contracts) ? w.employment_contracts : [];
       const activeContract = contracts.find((c: any) => c.status === 'ACTIVE') || contracts[0];
       
-      if (companyId && activeContract?.company_id && activeContract.company_id !== companyId) {
+      const targetCompany = activeContract?.company_id || w.company_id;
+      if (companyId && targetCompany && targetCompany !== companyId) {
         return;
       }
+
+      const positionObj = Array.isArray(activeContract?.positions) ? activeContract.positions[0] : activeContract?.positions;
+      const departmentObj = Array.isArray(activeContract?.departments) ? activeContract.departments[0] : activeContract?.departments;
 
       list.push({
         worker_id: w.id,
         contract_id: activeContract?.id || '',
         full_name: w.people?.full_name || 'Sem Nome',
-        position_title: activeContract?.positions?.title || 'Colaborador',
-        department_name: activeContract?.departments?.name,
-        pis_pasep: w.pis_pasep
+        cpf: w.people?.cpf,
+        position_title: positionObj?.title || 'Colaborador',
+        department_name: departmentObj?.name,
+        pis_pasep: w.pis_pasep,
+        overtime_regime: activeContract?.overtime_regime || 'TIME_BANK'
       });
     });
 
@@ -1135,6 +1221,7 @@ export class TimeManagementService {
     destiny?: 'HYBRID' | 'PAYROLL_ONLY' | 'BANK_ONLY';
     contractIdFilter?: string;
     userName?: string;
+    monthlyBankCapHours?: number | null;
   }): Promise<IntegrateTimesheetResult> {
     const {
       tenantId,
@@ -1143,7 +1230,8 @@ export class TimeManagementService {
       month,
       destiny = 'HYBRID',
       contractIdFilter,
-      userName = 'Operador DP'
+      userName = 'Operador DP',
+      monthlyBankCapHours
     } = params;
 
     // 1. Identificar ou provisionar o período de folha (payroll_periods)
@@ -1212,6 +1300,8 @@ export class TimeManagementService {
     let totalBankCreditsMinutes = 0;
     let totalPayrollHeHours = 0;
     let totalNightShiftHours = 0;
+    let totalBankCapOverflowHours = 0;
+    let contractsWithOverflow = 0;
     const summaryList: IntegrateTimesheetResult['summary'] = [];
 
     const lastDayOfMonth = new Date(year, month, 0).getDate();
@@ -1251,6 +1341,20 @@ export class TimeManagementService {
       const delaysHours = Math.round((delaysMin / 60) * 100) / 100;
       const absencesDays = absenceMin > 0 ? Math.max(1, Math.round(absenceMin / 480)) : 0;
 
+      // TB-01: Regime de compensação soberano do contrato individual
+      const contractRegime = worker.overtime_regime || 'TIME_BANK';
+      let effectiveDestiny: 'TIME_BANK' | 'OVERTIME_PAYROLL' | 'HYBRID' = contractRegime;
+
+      if (params.destiny === 'PAYROLL_ONLY') {
+        effectiveDestiny = 'OVERTIME_PAYROLL';
+      } else if (params.destiny === 'BANK_ONLY') {
+        effectiveDestiny = 'TIME_BANK';
+      }
+
+      const isBankOnly = effectiveDestiny === 'TIME_BANK';
+      const isHybrid = effectiveDestiny === 'HYBRID';
+      const isPayrollOnly = effectiveDestiny === 'OVERTIME_PAYROLL';
+
       // Verificar se o contrato possui conta ativa de Banco de Horas
       const { data: existingAccount } = await supabase
         .from('time_bank_accounts')
@@ -1259,11 +1363,17 @@ export class TimeManagementService {
         .eq('status', 'ACTIVE')
         .maybeSingle();
 
-      const shouldUseBank =
-        destiny === 'BANK_ONLY' ||
-        (destiny === 'HYBRID' && (existingAccount != null || worker.position_title.toLowerCase().includes('banco')));
+      const shouldUseBank = isBankOnly || isHybrid;
 
       let bankCreditedMinutes = 0;
+
+      // TB-04.3: Análise do Teto Mensal de Acúmulo no Banco
+      const capAnalysis = TimeBankService.calculateMonthlyCapOverflow({
+        overtime50Minutes: he50Min,
+        overtime100Minutes: he100Min,
+        monthlyCapHours: monthlyBankCapHours,
+        isHybrid
+      });
 
       // A) Destino Banco de Horas
       if (shouldUseBank) {
@@ -1280,7 +1390,6 @@ export class TimeManagementService {
             .from('time_bank_accounts')
             .insert({
               tenant_id: tenantId,
-              company_id: companyId || null,
               contract_id: worker.contract_id,
               balance_minutes: 0,
               start_date: startDate,
@@ -1299,21 +1408,28 @@ export class TimeManagementService {
         }
 
         if (accountId) {
+          // O crédito no banco respeita o teto mensal calculado
+          const minutesToCreditInBank = capAnalysis.bankMinutes;
+
           // Creditar Horas Extras no Banco de Horas
-          if (totalHeMin > 0) {
+          if (minutesToCreditInBank > 0) {
+            const description = capAnalysis.hasCap && capAnalysis.overflowMinutes > 0
+              ? `Crédito de horas extras apuradas no ponto (limitado ao teto mensal de ${monthlyBankCapHours}h00; ${Math.round(capAnalysis.overflowMinutes / 60 * 100) / 100}h transbordaram para folha)`
+              : `Crédito de horas extras apuradas no ponto (${timesheet.month_label})`;
+
             await supabase.from('time_bank_transactions').insert({
               tenant_id: tenantId,
               account_id: accountId,
               date: periodDateStr,
-              minutes: totalHeMin,
+              minutes: minutesToCreditInBank,
               transaction_type: 'OVERTIME',
-              description: `Crédito de horas extras apuradas no ponto (${timesheet.month_label})`,
+              description,
               payroll_period_id: periodId
             });
 
-            currentBalance += totalHeMin;
-            bankCreditedMinutes += totalHeMin;
-            totalBankCreditsMinutes += totalHeMin;
+            currentBalance += minutesToCreditInBank;
+            bankCreditedMinutes += minutesToCreditInBank;
+            totalBankCreditsMinutes += minutesToCreditInBank;
           }
 
           // Debitar atrasos significativos no Banco de Horas
@@ -1353,45 +1469,66 @@ export class TimeManagementService {
 
       const eventsToInsert: any[] = [];
 
-      // Se NÃO for banco de horas, Horas Extras 50% e 100% vão para a folha
-      if (!shouldUseBank) {
-        if (he50Hours > 0 && rubricByCode['150']) {
-          eventsToInsert.push({
-            tenant_id: tenantId,
-            period_id: periodId,
-            contract_id: worker.contract_id,
-            rubric_id: rubricByCode['150'].id,
-            quantity: he50Hours,
-            amount: 0,
-            reference: `INTEGRAÇÃO_PONTO: HE 50% (${he50Hours}h)`
-          });
-          totalPayrollHeHours += he50Hours;
-        }
+      // TB-04.3: Horas extras 50% em folha:
+      // Se for OVERTIME_PAYROLL recebe tudo; se usar banco recebe o transbordo do teto (overflow50Hours)
+      const effectiveHe50Hours = isPayrollOnly
+        ? he50Hours
+        : (shouldUseBank ? capAnalysis.overflow50Hours : 0);
 
-        if (he100Hours > 0 && rubricByCode['160']) {
-          eventsToInsert.push({
-            tenant_id: tenantId,
-            period_id: periodId,
-            contract_id: worker.contract_id,
-            rubric_id: rubricByCode['160'].id,
-            quantity: he100Hours,
-            amount: 0,
-            reference: `INTEGRAÇÃO_PONTO: HE 100% (${he100Hours}h)`
-          });
-          totalPayrollHeHours += he100Hours;
-        }
+      if (effectiveHe50Hours > 0 && rubricByCode['150']) {
+        const isOverflow = shouldUseBank && capAnalysis.overflow50Hours > 0;
+        eventsToInsert.push({
+          tenant_id: tenantId,
+          period_id: periodId,
+          contract_id: worker.contract_id,
+          rubric_id: rubricByCode['150'].id,
+          quantity: effectiveHe50Hours,
+          amount: 0,
+          reference: isOverflow
+            ? `INTEGRAÇÃO_PONTO: HE 50% (Transbordo Teto Banco: ${effectiveHe50Hours}h)`
+            : `INTEGRAÇÃO_PONTO: HE 50% (${effectiveHe50Hours}h)`
+        });
+        totalPayrollHeHours += effectiveHe50Hours;
+      }
 
-        if (delaysHours > 0 && rubricByCode['802']) {
-          eventsToInsert.push({
-            tenant_id: tenantId,
-            period_id: periodId,
-            contract_id: worker.contract_id,
-            rubric_id: rubricByCode['802'].id,
-            quantity: delaysHours,
-            amount: 0,
-            reference: `INTEGRAÇÃO_PONTO: Atrasos (${delaysHours}h)`
-          });
-        }
+      // TB-04.3: Horas extras 100% em folha:
+      // Se for OVERTIME_PAYROLL ou HYBRID recebe normal; se for TIME_BANK recebe o transbordo do teto (overflow100Hours)
+      const effectiveHe100Hours = (isPayrollOnly || isHybrid)
+        ? he100Hours
+        : (shouldUseBank ? capAnalysis.overflow100Hours : 0);
+
+      if (effectiveHe100Hours > 0 && rubricByCode['160']) {
+        const isOverflow = isBankOnly && capAnalysis.overflow100Hours > 0;
+        eventsToInsert.push({
+          tenant_id: tenantId,
+          period_id: periodId,
+          contract_id: worker.contract_id,
+          rubric_id: rubricByCode['160'].id,
+          quantity: effectiveHe100Hours,
+          amount: 0,
+          reference: isOverflow
+            ? `INTEGRAÇÃO_PONTO: HE 100% (Transbordo Teto Banco: ${effectiveHe100Hours}h)`
+            : `INTEGRAÇÃO_PONTO: HE 100% (${effectiveHe100Hours}h)`
+        });
+        totalPayrollHeHours += effectiveHe100Hours;
+      }
+
+      if (capAnalysis.hasCap && capAnalysis.overflowMinutes > 0) {
+        totalBankCapOverflowHours += (capAnalysis.overflow50Hours + capAnalysis.overflow100Hours);
+        contractsWithOverflow++;
+      }
+
+      // Atrasos em folha: apenas se for OVERTIME_PAYROLL
+      if (isPayrollOnly && delaysHours > 0 && rubricByCode['802']) {
+        eventsToInsert.push({
+          tenant_id: tenantId,
+          period_id: periodId,
+          contract_id: worker.contract_id,
+          rubric_id: rubricByCode['802'].id,
+          quantity: delaysHours,
+          amount: 0,
+          reference: `INTEGRAÇÃO_PONTO: Atrasos (${delaysHours}h)`
+        });
       }
 
       // Adicional Noturno (cód 301): SEMPRE vai para folha de pagamento (CLT art. 73 e Súmula 60 TST)
@@ -1435,7 +1572,11 @@ export class TimeManagementService {
         night_hours: nightHours,
         bank_credited_minutes: bankCreditedMinutes,
         delays_hours: delaysHours,
-        absences_days: absencesDays
+        absences_days: absencesDays,
+        bank_cap_applied_hours: capAnalysis.hasCap ? (monthlyBankCapHours || undefined) : undefined,
+        overflow_he_hours: capAnalysis.hasCap && capAnalysis.overflowMinutes > 0
+          ? (capAnalysis.overflow50Hours + capAnalysis.overflow100Hours)
+          : undefined
       });
     }
 
@@ -1452,7 +1593,9 @@ export class TimeManagementService {
       summary: {
         total_payroll_he_hours: totalPayrollHeHours,
         total_bank_credits_minutes: totalBankCreditsMinutes,
-        total_night_hours: totalNightShiftHours
+        total_night_hours: totalNightShiftHours,
+        total_bank_cap_overflow_hours: totalBankCapOverflowHours,
+        contracts_with_overflow: contractsWithOverflow
       },
       closed_by: userName,
       closed_at: new Date().toISOString()
@@ -1467,9 +1610,683 @@ export class TimeManagementService {
       total_bank_credits_minutes: totalBankCreditsMinutes,
       total_payroll_he_hours: Math.round(totalPayrollHeHours * 100) / 100,
       total_night_shift_hours: Math.round(totalNightShiftHours * 100) / 100,
+      total_bank_cap_overflow_hours: Math.round(totalBankCapOverflowHours * 100) / 100,
+      contracts_with_overflow: contractsWithOverflow,
       summary: summaryList
     };
   }
+
+  /**
+   * Abona e compensa ocorrências de jornada (atrasos ou faltas) consumindo saldo positivo do banco de horas (TB-02).
+   * Previne descontos indevidos na folha de pagamento (rubricas 801/802) e perda do DSR.
+   */
+  static async compensateTimesheetOccurrence(params: {
+    tenantId: string;
+    contractId: string;
+    date: string;
+    occurrenceType: 'DELAY' | 'ABSENCE';
+    minutes: number;
+    allowPartial?: boolean;
+    justification?: string;
+    userName?: string;
+  }): Promise<{
+    success: boolean;
+    compensated_minutes: number;
+    remaining_occurrence_minutes: number;
+    remaining_balance_minutes: number;
+    message: string;
+  }> {
+    const {
+      tenantId,
+      contractId,
+      date,
+      occurrenceType,
+      minutes,
+      allowPartial = false,
+      justification = 'Compensação aprovada pelo gestor',
+      userName = 'Gestor DP'
+    } = params;
+
+    if (minutes <= 0) {
+      throw new Error('A quantidade de minutos para compensação deve ser maior que zero.');
+    }
+
+    // 1. Localizar conta ativa de Banco de Horas do colaborador
+    const { data: account, error: accErr } = await supabase
+      .from('time_bank_accounts')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('contract_id', contractId)
+      .eq('status', 'ACTIVE')
+      .maybeSingle();
+
+    if (accErr) throw new Error('Falha ao consultar banco de horas: ' + accErr.message);
+    if (!account) {
+      throw new Error('O colaborador não possui conta ativa de Banco de Horas vinculada ao contrato.');
+    }
+
+    const currentBalance = account.balance_minutes || 0;
+    if (currentBalance <= 0) {
+      throw new Error(`Saldo insuficiente no banco de horas. Saldo atual: ${currentBalance} min.`);
+    }
+
+    if (minutes > currentBalance && !allowPartial) {
+      throw new Error(
+        `Saldo insuficiente para compensação integral. Solicitado: ${minutes} min, disponível: ${currentBalance} min.`
+      );
+    }
+
+    const compensatedMinutes = Math.min(minutes, currentBalance);
+    const remainingOccurrenceMinutes = minutes - compensatedMinutes;
+    const remainingBalanceMinutes = currentBalance - compensatedMinutes;
+
+    const txType = occurrenceType === 'DELAY' ? 'COMPENSATION_DELAY' : 'COMPENSATION_ABSENCE';
+    const txDesc = `[${userName}] ${justification} (Compensados ${compensatedMinutes} min de ${occurrenceType === 'DELAY' ? 'atraso' : 'falta'})`;
+
+    // 2. Gravar transação de compensação no banco de horas
+    const { error: txErr } = await supabase.from('time_bank_transactions').insert({
+      tenant_id: tenantId,
+      account_id: account.id,
+      date,
+      minutes: -compensatedMinutes,
+      transaction_type: txType,
+      description: txDesc
+    });
+
+    if (txErr) throw new Error('Falha ao registrar transação no banco de horas: ' + txErr.message);
+
+    // 3. Atualizar saldo da conta de banco de horas
+    const { error: updErr } = await supabase
+      .from('time_bank_accounts')
+      .update({
+        balance_minutes: remainingBalanceMinutes,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', account.id);
+
+    if (updErr) throw new Error('Falha ao atualizar saldo do banco de horas: ' + updErr.message);
+
+    // 4. Se existir resumo diário (time_daily_summary) para esta data, ajustar para prevenir desconto na folha
+    const { data: dailySummary } = await supabase
+      .from('time_daily_summary')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('contract_id', contractId)
+      .eq('date', date)
+      .single();
+
+    if (dailySummary) {
+      const summaryUpdate: any = {
+        updated_at: new Date().toISOString()
+      };
+
+      if (occurrenceType === 'DELAY') {
+        summaryUpdate.delay_minutes = Math.max(0, (dailySummary.delay_minutes || 0) - compensatedMinutes);
+      } else {
+        summaryUpdate.absence_minutes = Math.max(0, (dailySummary.absence_minutes || 0) - compensatedMinutes);
+      }
+
+      // Se todas as pendências foram zeradas, regulariza o status do dia
+      const remainingDelays = summaryUpdate.delay_minutes ?? dailySummary.delay_minutes ?? 0;
+      const remainingAbsences = summaryUpdate.absence_minutes ?? dailySummary.absence_minutes ?? 0;
+      const hasOtherIssues =
+        (dailySummary.intrajornada_violation_minutes || 0) > 0 ||
+        (dailySummary.interjornada_violation_minutes || 0) > 0 ||
+        (dailySummary.inconsistencies && dailySummary.inconsistencies.length > 0);
+
+      if (remainingDelays === 0 && remainingAbsences === 0 && !hasOtherIssues) {
+        summaryUpdate.status = 'REGULAR';
+      }
+
+      await supabase
+        .from('time_daily_summary')
+        .update(summaryUpdate)
+        .eq('id', dailySummary.id);
+    }
+
+    return {
+      success: true,
+      compensated_minutes: compensatedMinutes,
+      remaining_occurrence_minutes: remainingOccurrenceMinutes,
+      remaining_balance_minutes: remainingBalanceMinutes,
+      message: `Sucesso: ${compensatedMinutes} minutos compensados com o saldo do Banco de Horas. Saldo remanescente: ${remainingBalanceMinutes} min.`
+    };
+  }
+
+  /**
+   * Lança saldo inicial / legado de banco de horas (TB-03).
+   * Tenta acionar a RPC atômica register_time_bank_initial_balance;
+   * se a RPC não existir no Postgres, executa fallback resiliente local via Supabase.
+   */
+  static async registerInitialBalance(params: {
+    tenantId: string;
+    contractId: string;
+    cutoffDate: string;
+    minutes: number;
+    justification: string;
+    policyType?: TimeBankPolicyType;
+    validityMonths?: number;
+    companyId?: string;
+    userName?: string;
+  }): Promise<{
+    success: boolean;
+    account_id: string;
+    transaction_id?: string;
+    final_balance_minutes: number;
+    message: string;
+  }> {
+    const {
+      tenantId,
+      contractId,
+      cutoffDate,
+      minutes,
+      justification,
+      policyType = 'ACORDO_INDIVIDUAL',
+      validityMonths = 6,
+      companyId,
+      userName = 'Gestor DP'
+    } = params;
+
+    if (!contractId) {
+      throw new Error('ID do contrato é obrigatório para lançar saldo inicial.');
+    }
+    if (!cutoffDate) {
+      throw new Error('Data de corte é obrigatória para lançar saldo inicial.');
+    }
+    if (!justification || justification.trim().length < 3) {
+      throw new Error('Justificativa auditável de origem é obrigatória.');
+    }
+
+    const desc = `[${userName}] ${justification.trim()}`;
+
+    // 1. Tentar executar via RPC atômica no banco de dados
+    try {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('register_time_bank_initial_balance', {
+        p_tenant_id: tenantId,
+        p_contract_id: contractId,
+        p_cutoff_date: cutoffDate,
+        p_minutes: minutes,
+        p_justification: desc,
+        p_policy_type: policyType,
+        p_validity_months: validityMonths,
+        p_company_id: companyId || null
+      });
+
+      if (!rpcError && rpcData && rpcData.length > 0) {
+        const row = rpcData[0];
+        return {
+          success: true,
+          account_id: row.account_id,
+          transaction_id: row.transaction_id,
+          final_balance_minutes: row.final_balance_minutes,
+          message: row.message || 'Saldo inicial lançado com sucesso via RPC.'
+        };
+      }
+    } catch (e) {
+      console.warn('Falha na RPC register_time_bank_initial_balance, acionando fallback resiliente:', e);
+    }
+
+    // 2. Fallback resiliente: queries diretas no Supabase
+    // 2.1 Buscar conta ativa existente
+    const { data: existingAccount, error: accErr } = await supabase
+      .from('time_bank_accounts')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('contract_id', contractId)
+      .eq('status', 'ACTIVE')
+      .maybeSingle();
+
+    if (accErr) {
+      throw new Error('Erro ao consultar banco de horas: ' + accErr.message);
+    }
+
+    let accountId = existingAccount?.id;
+    let currentBalance = existingAccount?.balance_minutes || 0;
+
+    // 2.2 Se não existir conta ativa, provisionar nova conta
+    if (!accountId) {
+      const calculatedEndDate = new Date(cutoffDate);
+      calculatedEndDate.setMonth(calculatedEndDate.getMonth() + validityMonths);
+      calculatedEndDate.setDate(calculatedEndDate.getDate() - 1);
+      const endDateStr = calculatedEndDate.toISOString().split('T')[0];
+
+      const { data: newAcc, error: createErr } = await supabase
+        .from('time_bank_accounts')
+        .insert({
+          tenant_id: tenantId,
+          contract_id: contractId,
+          balance_minutes: 0,
+          start_date: cutoffDate,
+          end_date: endDateStr,
+          status: 'ACTIVE',
+          policy_type: policyType,
+          validity_months: validityMonths,
+          expiration_rule: 'PAY_AS_OVERTIME',
+          warning_days_before_expiration: 30,
+          payout_rubric_code: '152'
+        })
+        .select()
+        .single();
+
+      if (createErr || !newAcc) {
+        throw new Error('Falha ao provisionar conta de banco de horas: ' + (createErr?.message || ''));
+      }
+
+      accountId = newAcc.id;
+      currentBalance = 0;
+    }
+
+    const finalBalance = currentBalance + minutes;
+
+    // 2.3 Gravar transação INITIAL_BALANCE
+    const { data: newTx, error: txErr } = await supabase
+      .from('time_bank_transactions')
+      .insert({
+        tenant_id: tenantId,
+        account_id: accountId,
+        date: cutoffDate,
+        minutes,
+        transaction_type: 'INITIAL_BALANCE',
+        description: desc
+      })
+      .select()
+      .single();
+
+    if (txErr) {
+      throw new Error('Falha ao registrar transação de saldo inicial: ' + txErr.message);
+    }
+
+    // 2.4 Atualizar saldo da conta
+    const { error: updErr } = await supabase
+      .from('time_bank_accounts')
+      .update({
+        balance_minutes: finalBalance,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', accountId);
+
+    if (updErr) {
+      throw new Error('Falha ao atualizar saldo acumulado da conta: ' + updErr.message);
+    }
+
+    return {
+      success: true,
+      account_id: accountId,
+      transaction_id: newTx?.id,
+      final_balance_minutes: finalBalance,
+      message: `Saldo inicial (${formatMinutesToHours(minutes)}) gravado com sucesso. Saldo acumulado: ${formatMinutesToHours(finalBalance)}.`
+    };
+  }
+
+  /**
+   * Processa importação em lote (CSV/Excel) de saldos iniciais de múltiplos colaboradores (TB-03).
+   */
+  static async importInitialBalancesBatch(params: {
+    tenantId: string;
+    companyId?: string;
+    csvText: string;
+    userName?: string;
+  }): Promise<InitialBalancesBatchResult> {
+    const { tenantId, companyId, csvText, userName = 'Importação em Lote' } = params;
+
+    const parsed = TimeBankService.parseInitialBalancesCsv(csvText);
+    const workers = await this.fetchWorkersForTimeManagement(tenantId, companyId);
+
+    // Indexar colaboradores por CPF limpo (11 dígitos), por contract_id e por worker_id
+    const workerMapByCpf = new Map<string, WorkerOption>();
+    const workerMapByContract = new Map<string, WorkerOption>();
+    const workerMapById = new Map<string, WorkerOption>();
+
+    workers.forEach((w) => {
+      if (w.cpf) {
+        const cleanCpf = w.cpf.replace(/\D/g, '');
+        if (cleanCpf) workerMapByCpf.set(cleanCpf, w);
+      }
+      if (w.contract_id) workerMapByContract.set(w.contract_id, w);
+      if (w.worker_id) workerMapById.set(w.worker_id, w);
+    });
+
+    const items: InitialBalancesBatchItemResult[] = [];
+    let successCount = 0;
+    let failureCount = 0;
+
+    // 1. Processar linhas inválidas do parser
+    for (const inv of parsed.invalidRows) {
+      failureCount++;
+      items.push({
+        line: inv.raw_line_number,
+        identifier: inv.identifier,
+        cutoff_date: inv.cutoff_date,
+        minutes: 0,
+        formatted_hours: inv.formatted_hours,
+        status: 'ERROR',
+        message: inv.error || 'Erro de formatação na linha.'
+      });
+    }
+
+    // 2. Processar linhas válidas
+    for (const row of parsed.validRows) {
+      const cleanIdent = row.identifier.replace(/\D/g, '');
+      const matchedWorker =
+        workerMapByCpf.get(cleanIdent) ||
+        workerMapByContract.get(row.identifier) ||
+        workerMapById.get(row.identifier);
+
+      if (!matchedWorker) {
+        failureCount++;
+        items.push({
+          line: row.raw_line_number,
+          identifier: row.identifier,
+          cutoff_date: row.cutoff_date,
+          minutes: row.minutes,
+          formatted_hours: row.formatted_hours,
+          status: 'ERROR',
+          message: `Colaborador não localizado com o CPF/Identificador "${row.identifier}".`
+        });
+        continue;
+      }
+
+      try {
+        const regRes = await this.registerInitialBalance({
+          tenantId,
+          contractId: matchedWorker.contract_id,
+          cutoffDate: row.cutoff_date,
+          minutes: row.minutes,
+          justification: row.description,
+          policyType: row.policy_type,
+          validityMonths: row.validity_months,
+          companyId,
+          userName
+        });
+
+        if (regRes.success) {
+          successCount++;
+          items.push({
+            line: row.raw_line_number,
+            identifier: row.identifier,
+            name: matchedWorker.full_name,
+            contract_id: matchedWorker.contract_id,
+            cutoff_date: row.cutoff_date,
+            minutes: row.minutes,
+            formatted_hours: row.formatted_hours,
+            status: 'SUCCESS',
+            message: regRes.message
+          });
+        } else {
+          failureCount++;
+          items.push({
+            line: row.raw_line_number,
+            identifier: row.identifier,
+            name: matchedWorker.full_name,
+            contract_id: matchedWorker.contract_id,
+            cutoff_date: row.cutoff_date,
+            minutes: row.minutes,
+            formatted_hours: row.formatted_hours,
+            status: 'ERROR',
+            message: regRes.message || 'Falha ao registrar saldo inicial.'
+          });
+        }
+      } catch (err: any) {
+        failureCount++;
+        items.push({
+          line: row.raw_line_number,
+          identifier: row.identifier,
+          name: matchedWorker.full_name,
+          contract_id: matchedWorker.contract_id,
+          cutoff_date: row.cutoff_date,
+          minutes: row.minutes,
+          formatted_hours: row.formatted_hours,
+          status: 'ERROR',
+          message: err.message || 'Erro inesperado ao registrar saldo.'
+        });
+      }
+    }
+
+    // Ordenar por número de linha
+    items.sort((a, b) => a.line - b.line);
+
+    return {
+      totalLines: parsed.totalLines,
+      successCount,
+      failureCount,
+      items
+    };
+  }
+
+  /**
+   * Painel de Alertas de Vencimento de Banco de Horas (TB-04 Item 1).
+   * Monitora a proximidade do encerramento do ciclo legal (CLT Art. 59).
+   */
+  static async fetchTimeBankExpirationAlerts(params: {
+    tenantId: string;
+    companyId?: string;
+    referenceDate?: string;
+  }): Promise<TimeBankExpirationAlertsPanel> {
+    const { tenantId, companyId, referenceDate } = params;
+    const refDate = referenceDate || new Date().toISOString().split('T')[0];
+
+    let accounts: any[] = [];
+
+    try {
+      const { data, error } = await supabase
+        .from('time_bank_accounts')
+        .select(`
+          id,
+          tenant_id,
+          contract_id,
+          balance_minutes,
+          start_date,
+          end_date,
+          status,
+          policy_type,
+          validity_months,
+          warning_days_before_expiration,
+          expiration_rule,
+          employment_contracts!contract_id (
+            id,
+            worker_id,
+            company_id,
+            workers (
+              id,
+              people (
+                full_name,
+                cpf
+              )
+            ),
+            positions (
+              title
+            )
+          )
+        `)
+        .eq('tenant_id', tenantId)
+        .eq('status', 'ACTIVE');
+
+      if (error) {
+        console.warn('Consulta padrão de alertas de banco de horas reportou aviso, acionando fallback defensivo:', error);
+        throw error;
+      }
+
+      accounts = data || [];
+    } catch (queryErr: any) {
+      console.warn('Consulta padrão de alertas de banco de horas acionou fallback defensivo:', queryErr?.message || queryErr);
+      // Fallback defensivo: consulta direta em time_bank_accounts sem join relacional profundo
+      try {
+        const { data: rawAccounts, error: rawErr } = await supabase
+          .from('time_bank_accounts')
+          .select('id, tenant_id, contract_id, balance_minutes, start_date, end_date, status, policy_type, validity_months, warning_days_before_expiration, expiration_rule')
+          .eq('tenant_id', tenantId)
+          .eq('status', 'ACTIVE');
+
+        if (!rawErr && rawAccounts && rawAccounts.length > 0) {
+          const contractIds = Array.from(new Set(rawAccounts.map((a: any) => a.contract_id).filter(Boolean)));
+          let contractsMap: Record<string, any> = {};
+
+          if (contractIds.length > 0) {
+            const { data: contractsData } = await supabase
+              .from('employment_contracts')
+              .select(`
+                id,
+                worker_id,
+                company_id,
+                workers (
+                  id,
+                  people (
+                    full_name,
+                    cpf
+                  )
+                ),
+                positions (
+                  title
+                )
+              `)
+              .in('id', contractIds);
+
+            (contractsData || []).forEach((c: any) => {
+              contractsMap[c.id] = c;
+            });
+          }
+
+          accounts = rawAccounts.map((acc: any) => ({
+            ...acc,
+            employment_contracts: contractsMap[acc.contract_id] || null
+          }));
+        } else {
+          accounts = [];
+        }
+      } catch (fallbackFatalErr) {
+        console.error('Falha no fallback de alertas de banco de horas:', fallbackFatalErr);
+        accounts = [];
+      }
+    }
+
+    let expiredCount = 0;
+    let criticalCount = 0;
+    let warningCount = 0;
+    let totalMinutesAtRisk = 0;
+    const alerts: TimeBankExpirationAlertItem[] = [];
+
+    (accounts || []).forEach((acc: any) => {
+      const contract = acc.employment_contracts;
+      const targetCompany = acc.company_id || contract?.company_id;
+      if (companyId && targetCompany && targetCompany !== companyId) {
+        return;
+      }
+
+      const worker = contract?.workers;
+      const person = worker?.people;
+      const workerName = person?.full_name || 'Colaborador';
+      const cpf = person?.cpf;
+      const positionTitle = contract?.positions?.title || 'Geral';
+
+      const alert = TimeBankService.checkExpirationAndAlerts(acc, refDate);
+
+      // Apenas computa risco e adiciona se tiver saldo positivo
+      if (acc.balance_minutes > 0) {
+        totalMinutesAtRisk += acc.balance_minutes;
+
+        if (alert.status === 'EXPIRED') {
+          expiredCount++;
+        } else if (alert.status === 'CRITICAL') {
+          criticalCount++;
+        } else if (alert.status === 'WARNING') {
+          warningCount++;
+        }
+
+        if (alert.status !== 'NORMAL') {
+          alerts.push({
+            account_id: acc.id,
+            contract_id: acc.contract_id,
+            worker_id: contract?.worker_id,
+            worker_name: workerName,
+            cpf,
+            position_title: positionTitle,
+            policy_type: acc.policy_type || 'ACORDO_INDIVIDUAL',
+            start_date: acc.start_date,
+            end_date: acc.end_date,
+            balance_minutes: acc.balance_minutes,
+            balance_formatted: formatMinutesToHours(acc.balance_minutes),
+            days_remaining: alert.days_remaining,
+            status: alert.status,
+            action_recommended: alert.action_recommended,
+            message: alert.message
+          });
+        }
+      }
+    });
+
+    // Ordenação por prioridade: EXPIRED (1) > CRITICAL (2) > WARNING (3) > NORMAL (4)
+    // Desempate: menor days_remaining primeiro
+    const priorityMap: Record<TimeBankAlertStatus, number> = {
+      EXPIRED: 1,
+      CRITICAL: 2,
+      WARNING: 3,
+      NORMAL: 4
+    };
+
+    alerts.sort((a, b) => {
+      const pA = priorityMap[a.status] || 5;
+      const pB = priorityMap[b.status] || 5;
+      if (pA !== pB) return pA - pB;
+      return a.days_remaining - b.days_remaining;
+    });
+
+    const totalHoursAtRisk = Math.round((totalMinutesAtRisk / 60) * 100) / 100;
+
+    return {
+      totalAccountsMonitored: (accounts || []).length,
+      expiredCount,
+      criticalCount,
+      warningCount,
+      totalPositiveHoursAtRisk: totalHoursAtRisk,
+      alerts
+    };
+  }
+}
+
+export interface TimeBankExpirationAlertItem {
+  account_id: string;
+  contract_id: string;
+  worker_id?: string;
+  worker_name: string;
+  cpf?: string;
+  position_title: string;
+  policy_type: TimeBankPolicyType;
+  start_date: string;
+  end_date: string;
+  balance_minutes: number;
+  balance_formatted: string;
+  days_remaining: number;
+  status: TimeBankAlertStatus;
+  action_recommended?: 'SCHEDULE_TIME_OFF' | 'IMMEDIATE_COMPENSATION_OR_PREPARE_PAYOUT' | 'PAY_AS_OVERTIME' | 'NONE';
+  message: string;
+}
+
+export interface TimeBankExpirationAlertsPanel {
+  totalAccountsMonitored: number;
+  expiredCount: number;
+  criticalCount: number;
+  warningCount: number;
+  totalPositiveHoursAtRisk: number;
+  alerts: TimeBankExpirationAlertItem[];
+}
+
+export interface InitialBalancesBatchItemResult {
+  line: number;
+  identifier: string;
+  name?: string;
+  contract_id?: string;
+  cutoff_date: string;
+  minutes: number;
+  formatted_hours: string;
+  status: 'SUCCESS' | 'ERROR';
+  message: string;
+}
+
+export interface InitialBalancesBatchResult {
+  totalLines: number;
+  successCount: number;
+  failureCount: number;
+  items: InitialBalancesBatchItemResult[];
 }
 
 export interface IntegrateTimesheetParams {
@@ -1490,6 +2307,8 @@ export interface IntegrateTimesheetResult {
   total_bank_credits_minutes: number;
   total_payroll_he_hours: number;
   total_night_shift_hours: number;
+  total_bank_cap_overflow_hours?: number;
+  contracts_with_overflow?: number;
   summary: {
     worker_name: string;
     he50_hours: number;
@@ -1498,6 +2317,8 @@ export interface IntegrateTimesheetResult {
     bank_credited_minutes: number;
     delays_hours: number;
     absences_days: number;
+    bank_cap_applied_hours?: number;
+    overflow_he_hours?: number;
   }[];
 }
 
@@ -1505,9 +2326,11 @@ export interface WorkerOption {
   worker_id: string;
   contract_id: string;
   full_name: string;
+  cpf?: string;
   position_title: string;
   department_name?: string;
   pis_pasep?: string;
+  overtime_regime?: 'TIME_BANK' | 'OVERTIME_PAYROLL' | 'HYBRID';
 }
 
 export interface MonthlyPunchItem {

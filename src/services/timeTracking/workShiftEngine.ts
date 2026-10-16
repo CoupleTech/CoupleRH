@@ -19,6 +19,7 @@ export interface DailyShiftInput {
   schedule: ShiftSchedule;
   isHolidayOrDsr?: boolean;
   previousDayExitTimestamp?: string; // Timestamp ISO da última saída do dia anterior
+  overtime_regime?: 'TIME_BANK' | 'OVERTIME_PAYROLL' | 'HYBRID';
 }
 
 /**
@@ -198,7 +199,19 @@ export function calculateDailyWorkShift(input: DailyShiftInput): TimeDailySummar
     }
   }
 
-  // 9. Ponto por Exceção (Art. 74 §4º CLT) e Definição do Status
+  // 9. Direcionamento para Banco de Horas conforme regime contratual (TB-01)
+  let timeBankCredited = 0;
+  let timeBankDebited = 0;
+
+  if (input.overtime_regime === 'TIME_BANK') {
+    timeBankCredited = overtime50 + overtime100;
+    timeBankDebited = delayMinutes;
+  } else if (input.overtime_regime === 'HYBRID') {
+    timeBankCredited = overtime50;
+    timeBankDebited = delayMinutes;
+  }
+
+  // 10. Ponto por Exceção (Art. 74 §4º CLT) e Definição do Status
   let status: TimeDailyStatus = 'REGULAR';
   if (hasMissingPunch || intrajornadaViolation > 0 || interjornadaViolation > 0) {
     status = 'INCONSISTENT';
@@ -223,8 +236,8 @@ export function calculateDailyWorkShift(input: DailyShiftInput): TimeDailySummar
     break_expected_minutes: expectedBreak,
     intrajornada_violation_minutes: intrajornadaViolation,
     interjornada_violation_minutes: interjornadaViolation,
-    time_bank_credited_minutes: 0,
-    time_bank_debited_minutes: 0,
+    time_bank_credited_minutes: timeBankCredited,
+    time_bank_debited_minutes: timeBankDebited,
     status,
     inconsistencies,
   };

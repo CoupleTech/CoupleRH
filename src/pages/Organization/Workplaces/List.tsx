@@ -24,6 +24,10 @@ interface Workplace {
   status: string;
   company_id: string;
   cost_center_id: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  radius_meters: number | null;
+  enforce_geofence: boolean;
   companies: {
     corporate_name: string;
     trade_name: string | null;
@@ -64,6 +68,10 @@ export default function () {
           status,
           company_id,
           cost_center_id,
+          latitude,
+          longitude,
+          radius_meters,
+          enforce_geofence,
           companies (
             corporate_name,
             trade_name
@@ -187,6 +195,7 @@ export default function () {
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Lotação</th>
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Centro de Custo</th>
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Empresa</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Geofencing (REP-P)</th>
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
                 </tr>
@@ -221,6 +230,23 @@ export default function () {
                       <span className="text-sm text-slate-600">
                         {item.companies.trade_name || item.companies.corporate_name}
                       </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {item.latitude !== null && item.longitude !== null ? (
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                            item.enforce_geofence
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : 'bg-blue-50 text-blue-700 border-blue-200'
+                          }`}
+                        >
+                          📍 {item.radius_meters || 50}m {item.enforce_geofence ? '(Restritivo)' : '(Auditoria)'}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs text-slate-400 font-medium bg-slate-50 border border-slate-200">
+                          Sem GPS
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${

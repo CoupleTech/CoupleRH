@@ -33,7 +33,8 @@ export default function ContractTab({ workerId, contracts, onSaved, workerData }
     status: "ACTIVE",
     pis_pasep: "",
     receives_advance: true,
-    allow_cumulative_hazard_allowances: false
+    allow_cumulative_hazard_allowances: false,
+    overtime_regime: "TIME_BANK"
   });
 
   useEffect(() => {
@@ -56,7 +57,8 @@ export default function ContractTab({ workerId, contracts, onSaved, workerData }
         base_salary: contract.base_salary ? String(contract.base_salary) : "",
         status: contract.status || "ACTIVE",
         receives_advance: contract.receives_advance ?? true,
-        allow_cumulative_hazard_allowances: Boolean(contract.allow_cumulative_hazard_allowances)
+        allow_cumulative_hazard_allowances: Boolean(contract.allow_cumulative_hazard_allowances),
+        overtime_regime: contract.overtime_regime || "TIME_BANK"
       }));
     }
   }, [contract]);
@@ -135,7 +137,8 @@ export default function ContractTab({ workerId, contracts, onSaved, workerData }
         base_salary: Number(formData.base_salary),
         status: formData.status,
         receives_advance: formData.receives_advance,
-        allow_cumulative_hazard_allowances: formData.allow_cumulative_hazard_allowances
+        allow_cumulative_hazard_allowances: formData.allow_cumulative_hazard_allowances,
+        overtime_regime: formData.overtime_regime || "TIME_BANK"
       };
 
       let saveError = null;
@@ -150,10 +153,11 @@ export default function ContractTab({ workerId, contracts, onSaved, workerData }
         saveError = error;
 
         // Fallback resiliente: caso a coluna não exista no banco de dados (schema cache)
-        if (saveError && (saveError.code === 'PGRST204' || saveError.message?.includes('allow_cumulative_hazard_allowances'))) {
-          console.warn("Coluna allow_cumulative_hazard_allowances ausente no banco. Repetindo salvamento sem ela...");
+        if (saveError && (saveError.code === 'PGRST204' || saveError.message?.includes('allow_cumulative_hazard_allowances') || saveError.message?.includes('overtime_regime'))) {
+          console.warn("Colunas estendidas ausentes no banco. Repetindo salvamento resiliente...");
           const fallbackPayload = { ...payload };
-          delete fallbackPayload.allow_cumulative_hazard_allowances;
+          if (saveError.message?.includes('allow_cumulative_hazard_allowances')) delete fallbackPayload.allow_cumulative_hazard_allowances;
+          if (saveError.message?.includes('overtime_regime')) delete fallbackPayload.overtime_regime;
           const retry = await supabase
             .from("employment_contracts")
             .update(fallbackPayload)
@@ -171,10 +175,11 @@ export default function ContractTab({ workerId, contracts, onSaved, workerData }
         saveError = error;
 
         // Fallback resiliente: caso a coluna não exista no banco de dados (schema cache)
-        if (saveError && (saveError.code === 'PGRST204' || saveError.message?.includes('allow_cumulative_hazard_allowances'))) {
-          console.warn("Coluna allow_cumulative_hazard_allowances ausente no banco. Repetindo salvamento sem ela...");
+        if (saveError && (saveError.code === 'PGRST204' || saveError.message?.includes('allow_cumulative_hazard_allowances') || saveError.message?.includes('overtime_regime'))) {
+          console.warn("Colunas estendidas ausentes no banco. Repetindo salvamento resiliente...");
           const fallbackPayload = { ...payload };
-          delete fallbackPayload.allow_cumulative_hazard_allowances;
+          if (saveError.message?.includes('allow_cumulative_hazard_allowances')) delete fallbackPayload.allow_cumulative_hazard_allowances;
+          if (saveError.message?.includes('overtime_regime')) delete fallbackPayload.overtime_regime;
           const retry = await supabase
             .from("employment_contracts")
             .insert([fallbackPayload]);
@@ -387,6 +392,26 @@ export default function ContractTab({ workerId, contracts, onSaved, workerData }
             {!contract && (
               <p className="text-[11px] text-slate-400 mt-1">Este salário criará o registro inicial no histórico do colaborador.</p>
             )}
+          </div>
+
+          <div className="space-y-1.5 md:col-span-2">
+            <label className="text-sm font-medium text-slate-700 flex items-center justify-between">
+              <span>Regime de Horas Extras e Compensação (CLT) <span className="text-red-500">*</span></span>
+              <span className="text-xs text-primary-600 font-medium">Ponto Eletrônico & Integração</span>
+            </label>
+            <select
+              required
+              className="input"
+              value={formData.overtime_regime}
+              onChange={(e) => setFormData({ ...formData, overtime_regime: e.target.value })}
+            >
+              <option value="TIME_BANK">Banco de Horas — CLT Art. 59 § 2º/§ 5º (Compensação)</option>
+              <option value="OVERTIME_PAYROLL">Horas Extras em Folha de Pagamento — 100% Remuneradas</option>
+              <option value="HYBRID">Regime Híbrido — 50% Banco / 100% Remuneradas em Folha</option>
+            </select>
+            <p className="text-xs text-slate-500">
+              Define o direcionamento automático das horas extras apuradas no espelho de ponto para banco de horas ou folha de pagamento. O Adicional Noturno (cód 301) é sempre remunerado em folha (Súmula 60 TST).
+            </p>
           </div>
         </div>
         

@@ -56,6 +56,9 @@ import type {
 } from '../../services/timeTracking/timeTrackingModel';
 import { AfdImportService } from '../../services/timeTracking/afdImportService';
 import { TimeExportService } from '../../services/timeTracking/timeExportService';
+import { InitialTimeBankBalanceModal } from '../../components/timeTracking/InitialTimeBankBalanceModal';
+import { TimeBankExpirationAlertsModal } from '../../components/timeTracking/TimeBankExpirationAlertsModal';
+import { TimeBankAgreementModal } from '../../components/timeTracking/TimeBankAgreementModal';
 import { confirmDialog } from '../../components/ConfirmDialogProvider';
 import { promptDialog } from '../../components/PromptDialogProvider';
 
@@ -66,6 +69,22 @@ export default function TimeManagement() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [loading, setLoading] = useState<boolean>(true);
   const [currentTenantId, setCurrentTenantId] = useState<string>('');
+
+  // Estado da Carga de Saldo Inicial Legado (TB-03)
+  const [initialBalanceModalOpen, setInitialBalanceModalOpen] = useState(false);
+
+  // Estados dos Alertas de Vencimento de Banco de Horas (TB-04.1)
+  const [expirationAlertsModalOpen, setExpirationAlertsModalOpen] = useState(false);
+  const [expirationAlertsSummary, setExpirationAlertsSummary] = useState<{
+    totalAlerts: number;
+    totalHoursAtRiskFormatted: string;
+    criticalCount: number;
+    expiredCount: number;
+  } | null>(null);
+
+  // Estados do Termo de Acordo Individual de Banco de Horas (TB-04.2)
+  const [agreementModalOpen, setAgreementModalOpen] = useState(false);
+  const [agreementPreSelectedWorkerId, setAgreementPreSelectedWorkerId] = useState<string | undefined>(undefined);
 
   // Estados dos Dispositivos
   const [devices, setDevices] = useState<TimeDevice[]>([]);
@@ -104,12 +123,24 @@ export default function TimeManagement() {
   const [integrateDestiny, setIntegrateDestiny] = useState<'HYBRID' | 'PAYROLL_ONLY' | 'BANK_ONLY'>('HYBRID');
   const [integrating, setIntegrating] = useState(false);
   const [integrateResult, setIntegrateResult] = useState<IntegrateTimesheetResult | null>(null);
+  // TB-04.3: Regra de Teto Mensal de Acúmulo no Banco com Transbordo para Folha
+  const [applyBankCap, setApplyBankCap] = useState<boolean>(true);
+  const [monthlyBankCapHours, setMonthlyBankCapHours] = useState<number>(20);
 
   const [abonoModalOpen, setAbonoModalOpen] = useState(false);
   const [abonoDate, setAbonoDate] = useState('');
   const [abonoType, setAbonoType] = useState('Atestado Médico (Art. 473 CLT)');
   const [abonoReason, setAbonoReason] = useState('');
   const [savingAbono, setSavingAbono] = useState(false);
+
+  // Estados para Compensação de Ocorrência com Banco de Horas (TB-02)
+  const [compensateModalOpen, setCompensateModalOpen] = useState(false);
+  const [compensateDate, setCompensateDate] = useState('');
+  const [compensateType, setCompensateType] = useState<'DELAY' | 'ABSENCE'>('DELAY');
+  const [compensateMinutes, setCompensateMinutes] = useState(0);
+  const [compensateAllowPartial, setCompensateAllowPartial] = useState(true);
+  const [compensateReason, setCompensateReason] = useState('Compensação acordada com a chefia imediata');
+  const [savingCompensate, setSavingCompensate] = useState(false);
 
   // Estados para Deslocamento de Jornada Noturna (Virada de Meia-Noite / Fechamento de Turno)
   const [shiftPunchModalOpen, setShiftPunchModalOpen] = useState(false);
@@ -186,13 +217,32 @@ export default function TimeManagement() {
         loadAfdFiles(tenantData.tenant_id),
         loadDailySummaries(tenantData.tenant_id),
         loadPendingApprovals(tenantData.tenant_id),
-        loadWorkers(tenantData.tenant_id)
+        loadWorkers(tenantData.tenant_id),
+        loadExpirationAlerts(tenantData.tenant_id)
       ]);
     } catch (err: any) {
       console.error('Erro ao carregar dados de gestão de ponto:', err);
       toast.error('Erro ao carregar módulo de ponto: ' + (err.message || 'Falha de conexão'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadExpirationAlerts = async (tenantId: string) => {
+    try {
+      const panel = await TimeManagementService.fetchTimeBankExpirationAlerts({
+        tenantId,
+        companyId: selectedCompanyId || undefined
+      });
+      const totalAlerts = panel.totalExpiredCount + panel.totalCriticalCount + panel.totalWarningCount;
+      setExpirationAlertsSummary({
+        totalAlerts,
+        totalHoursAtRiskFormatted: panel.totalHoursAtRiskFormatted,
+        criticalCount: panel.totalCriticalCount,
+        expiredCount: panel.totalExpiredCount
+      });
+    } catch (err) {
+      console.error('Erro ao carregar alertas de vencimento de banco de horas:', err);
     }
   };
 
@@ -309,7 +359,8 @@ export default function TimeManagement() {
         year,
         month,
         destiny: integrateDestiny,
-        userName: 'Operador DP'
+        userName: 'Operador DP',
+        monthlyBankCapHours: applyBankCap ? monthlyBankCapHours : null
       });
 
       setIntegrateResult(res);
@@ -358,6 +409,55 @@ export default function TimeManagement() {
       toast.error('Erro ao registrar abono: ' + err.message);
     } finally {
       setSavingAbono(false);
+    }
+  };
+
+  const handleOpenCompensateModal = (day: MonthlyDayTimesheet) => {
+    setCompensateDate(day.date);
+    const isAbsence = day.status === 'ABSENCE' || (day.worked_minutes === 0 && !day.isWeekend);
+    setCompensateType(isAbsence ? 'ABSENCE' : 'DELAY');
+    const minutesToFix = isAbsence
+      ? (day.expected_minutes || 480)
+      : (day.delay_minutes > 0 ? day.delay_minutes : 60);
+    setCompensateMinutes(minutesToFix);
+    setCompensateAllowPartial(true);
+    setCompensateReason(`Compensação de ${isAbsence ? 'falta' : 'atraso'} referente ao dia ${day.date.split('-').reverse().join('/')}`);
+    setCompensateModalOpen(true);
+  };
+
+  const handleSaveCompensate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentTenantId || !selectedWorkerId) return;
+
+    const worker = workersList.find((w) => w.worker_id === selectedWorkerId);
+    if (!worker || !worker.contract_id) {
+      toast.error('Contrato do colaborador não localizado');
+      return;
+    }
+
+    setSavingCompensate(true);
+    try {
+      const res = await TimeManagementService.compensateTimesheetOccurrence({
+        tenantId: currentTenantId,
+        contractId: worker.contract_id,
+        date: compensateDate,
+        occurrenceType: compensateType,
+        minutes: Number(compensateMinutes),
+        allowPartial: compensateAllowPartial,
+        justification: compensateReason,
+        userName: 'Gestor DP'
+      });
+
+      if (res.success) {
+        toast.success(res.message);
+        setCompensateModalOpen(false);
+        await loadWorkerTimesheet();
+      }
+    } catch (err: any) {
+      console.error('Erro ao compensar ocorrência:', err);
+      toast.error(err.message || 'Falha ao compensar com banco de horas');
+    } finally {
+      setSavingCompensate(false);
     }
   };
 
@@ -1103,7 +1203,7 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
           </div>
 
           {/* Cards de Acesso Rápido às Rotinas */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
               <div>
                 <div className="p-2.5 w-fit bg-primary-50 text-primary-600 rounded-xl mb-3">
@@ -1157,6 +1257,41 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
                 className="mt-4 inline-flex items-center justify-between w-full px-4 py-2.5 text-sm font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition"
               >
                 Ver Central de Aprovações
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2.5 w-fit bg-purple-50 text-purple-600 rounded-xl">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  {expirationAlertsSummary && expirationAlertsSummary.totalAlerts > 0 && (
+                    <span className={`px-2 py-0.5 text-xs font-black rounded-full ${
+                      (expirationAlertsSummary.expiredCount > 0 || expirationAlertsSummary.criticalCount > 0)
+                        ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                        : 'bg-amber-100 text-amber-700 border border-amber-200'
+                    }`}>
+                      {expirationAlertsSummary.totalAlerts} em alerta
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">Vencimentos Banco de Horas</h3>
+                <p className="text-sm text-slate-500 mt-1 leading-relaxed">
+                  Monitore vigência de 6 meses (CLT) ou 12 meses (CCT) antes do vencimento legal e passivo em rescisão.
+                </p>
+                {expirationAlertsSummary && expirationAlertsSummary.expiredCount > 0 && (
+                  <p className="text-xs font-bold text-rose-600 mt-2">
+                    ⚠️ {expirationAlertsSummary.expiredCount} conta(s) expirada(s) exigindo quitação!
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => setExpirationAlertsModalOpen(true)}
+                className="mt-4 inline-flex items-center justify-between w-full px-4 py-2.5 text-sm font-semibold text-purple-800 bg-purple-50 hover:bg-purple-100 rounded-xl transition cursor-pointer"
+              >
+                Painel de Vencimentos
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -1565,6 +1700,59 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
                   Incluir Marcação Manual
                 </button>
 
+                {/* Botão de Carga de Saldo Inicial / Legado (TB-03) */}
+                <button
+                  type="button"
+                  onClick={() => setInitialBalanceModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-xl transition shadow-xs cursor-pointer shrink-0"
+                  title="Lançamento Manual e Carga em Lote de Saldo Inicial Legado (CLT Art. 59)"
+                >
+                  <Clock className="w-3.5 h-3.5 text-purple-600" />
+                  Carga Saldo Inicial / Legado
+                </button>
+
+                {/* Botão de Painel de Vencimentos de Banco de Horas (TB-04) */}
+                <button
+                  type="button"
+                  onClick={() => setExpirationAlertsModalOpen(true)}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl transition shadow-xs cursor-pointer shrink-0 ${
+                    expirationAlertsSummary && (expirationAlertsSummary.expiredCount > 0 || expirationAlertsSummary.criticalCount > 0)
+                      ? 'text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300'
+                      : 'text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200'
+                  }`}
+                  title="Painel de Alertas de Vencimento de Banco de Horas (Vigência CLT de 6 meses no acordo individual ou 12 meses na CCT)"
+                >
+                  <AlertTriangle className={`w-3.5 h-3.5 ${
+                    expirationAlertsSummary && (expirationAlertsSummary.expiredCount > 0 || expirationAlertsSummary.criticalCount > 0)
+                      ? 'text-rose-600'
+                      : 'text-amber-600'
+                  }`} />
+                  Vencimentos Banco
+                  {expirationAlertsSummary && expirationAlertsSummary.totalAlerts > 0 && (
+                    <span className={`px-1.5 py-0.5 text-[10px] rounded-full font-black ${
+                      expirationAlertsSummary.expiredCount > 0 || expirationAlertsSummary.criticalCount > 0
+                        ? 'bg-rose-600 text-white'
+                        : 'bg-amber-500 text-white'
+                    }`}>
+                      {expirationAlertsSummary.totalAlerts}
+                    </span>
+                  )}
+                </button>
+
+                {/* Botão de Acordo Individual de Banco de Horas (TB-04.2) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAgreementPreSelectedWorkerId(selectedWorkerId);
+                    setAgreementModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition shadow-xs cursor-pointer shrink-0"
+                  title="Emitir e Enviar Acordo Individual de Banco de Horas para Assinatura Digital no Celular (CLT Art. 59 § 5º)"
+                >
+                  <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                  Acordo Banco CLT
+                </button>
+
                 {/* Botão de Integrar com Folha e Banco de Horas */}
                 <button
                   type="button"
@@ -1916,6 +2104,18 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
                           {/* Ações de Tratamento */}
                           <td className="py-3 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              {(day.delay_minutes > 0 || day.status === 'ABSENCE' || day.status === 'DELAY') && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenCompensateModal(day)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition"
+                                  title="Compensar Atraso/Falta com Saldo do Banco de Horas (CLT Art. 59)"
+                                >
+                                  <Clock className="w-3 h-3 text-amber-600" />
+                                  Compensar Banco
+                                </button>
+                              )}
+
                               <button
                                 type="button"
                                 onClick={() => handleOpenManualPunchModal(day.date)}
@@ -2731,8 +2931,42 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
                 </div>
               </div>
 
+              {/* TB-04.3: Regra de Teto Mensal de Acúmulo no Banco com Transbordo para Folha */}
+              <div className="p-4 bg-purple-50/70 border border-purple-200/80 rounded-xl space-y-2.5">
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={applyBankCap}
+                    onChange={(e) => setApplyBankCap(e.target.checked)}
+                    className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                  />
+                  <span className="text-xs font-bold text-purple-950">
+                    Aplicar Teto Mensal de Acúmulo no Banco de Horas (Transbordo Automático)
+                  </span>
+                </label>
+
+                {applyBankCap && (
+                  <div className="flex items-center gap-2.5 pl-6 pt-1">
+                    <span className="text-xs text-purple-900 font-medium">Limite de acúmulo no banco:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={120}
+                      value={monthlyBankCapHours}
+                      onChange={(e) => setMonthlyBankCapHours(Math.max(1, Number(e.target.value) || 0))}
+                      className="w-20 px-2.5 py-1 text-xs font-black text-center bg-white border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                    />
+                    <span className="text-xs font-bold text-purple-900">horas extras / mês</span>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-purple-800 leading-relaxed pl-6">
+                  💡 As horas extras que excederem o limite (ex: 20h/mês) não serão represadas no banco, sendo convertidas automaticamente em horas extras remuneradas em dinheiro na Folha de Pagamento.
+                </p>
+              </div>
+
               {integrateResult && (
-                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 space-y-1">
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 space-y-1 animate-in fade-in">
                   <p className="font-bold text-emerald-950 flex items-center gap-1.5 text-sm">
                     <CheckCircle className="w-4 h-4 text-emerald-600" />
                     Integração concluída com sucesso!
@@ -2741,6 +2975,11 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
                   <p>• {integrateResult.total_events_created} eventos gerados na Folha de Pagamento.</p>
                   <p>• {Math.floor(integrateResult.total_bank_credits_minutes / 60)}h {integrateResult.total_bank_credits_minutes % 60}m creditados no Banco de Horas.</p>
                   <p>• {integrateResult.total_payroll_he_hours}h extras e {integrateResult.total_night_shift_hours}h noturnas enviadas à folha.</p>
+                  {integrateResult.total_bank_cap_overflow_hours && integrateResult.total_bank_cap_overflow_hours > 0 ? (
+                    <p className="font-bold text-purple-800 pt-1">
+                      ⚡ Transbordo de Teto: {integrateResult.total_bank_cap_overflow_hours}h extras de {integrateResult.contracts_with_overflow} colaborador(es) excederam o teto mensal do banco e foram pagas em dinheiro na folha.
+                    </p>
+                  ) : null}
                 </div>
               )}
 
@@ -2893,6 +3132,139 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
       )}
 
       {/* ================================================================== */}
+      {/* MODAL: COMPENSAÇÃO DE OCORRÊNCIA COM BANCO DE HORAS (TB-02) */}
+      {/* ================================================================== */}
+      {compensateModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <span className="p-2.5 bg-amber-50 text-amber-600 rounded-xl">
+                  <Clock className="w-5 h-5" />
+                </span>
+                <div>
+                  <h3 className="font-bold text-slate-900">Compensar c/ Banco de Horas</h3>
+                  <p className="text-xs text-slate-500">
+                    {workersList.find((w) => w.worker_id === selectedWorkerId)?.full_name || 'Colaborador'} · {compensateDate ? compensateDate.split('-').reverse().join('/') : ''}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCompensateModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCompensate} className="space-y-4 mt-4">
+              <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2.5">
+                <Info className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-bold">Abono através do saldo positivo (CLT Art. 59)</p>
+                  <p className="mt-0.5">
+                    O débito desta ocorrência no Banco de Horas impede descontos indevidos no salário (rubricas 801/802) e preserva o DSR do colaborador.
+                  </p>
+                  <p className="mt-1 font-semibold text-slate-700">
+                    Saldo atual no banco: <strong className="text-amber-700">{monthlyTimesheet?.time_bank_balance_minutes !== undefined ? `${monthlyTimesheet.time_bank_balance_minutes >= 0 ? '+' : ''}${Math.floor(monthlyTimesheet.time_bank_balance_minutes / 60)}h ${Math.abs(monthlyTimesheet.time_bank_balance_minutes % 60)}m` : 'Consultando...'}</strong>
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-1">
+                    Tipo de Ocorrência *
+                  </label>
+                  <select
+                    value={compensateType}
+                    onChange={(e) => setCompensateType(e.target.value as any)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium text-slate-800"
+                  >
+                    <option value="DELAY">Atraso / Saída Antecipada</option>
+                    <option value="ABSENCE">Falta de Jornada</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-1">
+                    Minutos a Compensar *
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    required
+                    value={compensateMinutes}
+                    onChange={(e) => setCompensateMinutes(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none font-bold"
+                  />
+                  <span className="text-[11px] text-slate-400 mt-0.5 block">
+                    {Math.floor(compensateMinutes / 60)}h {compensateMinutes % 60}m
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="compensateAllowPartial"
+                  checked={compensateAllowPartial}
+                  onChange={(e) => setCompensateAllowPartial(e.target.checked)}
+                  className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500 cursor-pointer"
+                />
+                <label htmlFor="compensateAllowPartial" className="text-xs text-slate-700 font-medium cursor-pointer">
+                  Permitir compensação parcial caso o saldo seja menor que o total
+                </label>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-1">
+                  Justificativa / Motivo *
+                </label>
+                <textarea
+                  required
+                  rows={2}
+                  placeholder="Ex: Compensação de atraso com saldo positivo conforme acordo com o gestor."
+                  value={compensateReason}
+                  onChange={(e) => setCompensateReason(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setCompensateModalOpen(false)}
+                  disabled={savingCompensate}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingCompensate}
+                  className="inline-flex items-center gap-2 px-5 py-2 text-sm font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer"
+                >
+                  {savingCompensate ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Compensando...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Efetivar Compensação
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
       {/* MODAL: AJUSTE DE JORNADA NOTURNA (VIRADA DE MEIA-NOITE) */}
       {/* ================================================================== */}
       {shiftPunchModalOpen && selectedPunchToShift && (
@@ -3010,6 +3382,52 @@ e comprova a idoneidade jurídica do controle de jornada por REP-P.
           </div>
         </div>
       )}
+
+      {/* Modal de Carga de Saldo Inicial / Banco de Horas Legado (TB-03) */}
+      <InitialTimeBankBalanceModal
+        isOpen={initialBalanceModalOpen}
+        onClose={() => setInitialBalanceModalOpen(false)}
+        tenantId={currentTenantId}
+        companyId={selectedCompanyId || undefined}
+        workersList={workersList}
+        selectedWorkerId={selectedWorkerId}
+        onSuccess={async () => {
+          await loadWorkerTimesheet();
+          if (currentTenantId) await loadExpirationAlerts(currentTenantId);
+        }}
+      />
+
+      {/* Modal de Alertas de Vencimento de Banco de Horas (TB-04.1) */}
+      <TimeBankExpirationAlertsModal
+        isOpen={expirationAlertsModalOpen}
+        onClose={() => setExpirationAlertsModalOpen(false)}
+        tenantId={currentTenantId}
+        companyId={selectedCompanyId || undefined}
+        onSelectWorkerForTreatment={(workerId) => {
+          setSelectedWorkerId(workerId);
+          setActiveTab('treatment');
+        }}
+        onOpenAgreementModal={(workerId) => {
+          setAgreementPreSelectedWorkerId(workerId);
+          setAgreementModalOpen(true);
+        }}
+      />
+
+      {/* Modal de Emissão de Acordo Individual de Banco de Horas (TB-04.2) */}
+      <TimeBankAgreementModal
+        isOpen={agreementModalOpen}
+        onClose={() => {
+          setAgreementModalOpen(false);
+          setAgreementPreSelectedWorkerId(undefined);
+        }}
+        tenantId={currentTenantId}
+        companyId={selectedCompanyId || undefined}
+        workersList={workersList}
+        preSelectedWorkerId={agreementPreSelectedWorkerId || selectedWorkerId}
+        onSuccess={async () => {
+          if (currentTenantId) await loadExpirationAlerts(currentTenantId);
+        }}
+      />
     </div>
   );
 }

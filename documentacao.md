@@ -23,6 +23,9 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
 - **04/09/2026**: Inicialização do projeto, criação dos artefatos básicos de gestão (fase.md, documentacao.md, database.md), e definição da stack tecnológica (React + Supabase + Vercel).
 
 ## Histórico de Alterações
+- **15/10/2026 - Ponto Eletrônico / Lançamento Manual e Carga de Saldo Inicial de Banco de Horas (TB-03)**: Criada migration `00094_add_initial_balance_to_time_bank.sql` adicionando o tipo `INITIAL_BALANCE` na constraint de `time_bank_transactions` e a RPC atômica `register_time_bank_initial_balance` com provisionamento automático de conta de banco de horas caso o colaborador ainda não possua conta ativa. Implementado no domínio puro `TimeBankService` os métodos `registerInitialBalance` e `parseInitialBalancesCsv`, com suporte a arquivos CSV/Excel delimitados por vírgula ou ponto-e-vírgula, normalização de saldos positivos/negativos (`+HH:MM` e `-HH:MM` ou horas decimais) e validação estrita de calendário (datas inválidas como 32/13/2026 são devidamente rejeitadas com mensagens de diagnóstico). Desenvolvido no `TimeManagementService` os métodos `registerInitialBalance` (com fallback resiliente queries locais) e `importInitialBalancesBatch`, indexando colaboradores por CPF (11 dígitos) e emitindo relatório completo de importação com totais de sucesso/erro e logs explicativos linha a linha. Construído o componente modal `InitialTimeBankBalanceModal.tsx` com aba de lançamento manual individual (com seleção de colaborador, data de corte, política CLT de 6 ou 12 meses e sugestões de origens) e aba de carga em lote via CSV (com download de modelo, pré-visualização linha a linha e relatório de logs). Integrado botão destacado "Carga Saldo Inicial / Legado" no Cartão de Ponto em `TimeManagement.tsx`. Suíte de testes TDD `TimeBankInitialBalanceTB03.test.ts` implementada com 100% de sucesso (10/10 testes, totalizando 466 testes verdes).
+- **15/10/2026 - Ponto Eletrônico / Abono e Compensação de Ocorrências com Banco de Horas (TB-02)**: Criada migration `00093_add_compensation_delay_absence_to_time_bank.sql` adicionando os tipos `COMPENSATION_DELAY` e `COMPENSATION_ABSENCE` na constraint de `time_bank_transactions`. Implementado o método puro `TimeBankService.compensateOccurrence` com validação de saldo positivo, suporte a compensação total ou parcial (`allowPartial`) e retorno detalhado de saldo remanescente. Desenvolvido `TimeManagementService.compensateTimesheetOccurrence` que debita a conta ativa do colaborador, registra a transação auditada e atualiza o resumo diário (`time_daily_summary`), blindando a folha contra descontos indevidos de atrasos (rubrica 802) e faltas (rubrica 801), preservando também o direito ao DSR. Integrado modal interativo de compensação e botão "Compensar Banco" diretamente no Cartão de Ponto em `TimeManagement.tsx`. Suíte de testes TDD `TimeBankCompensationTB02.test.ts` implementada com 100% de aprovação.
+- **15/10/2026 - Ponto Eletrônico / Regime de Compensação no Contrato de Trabalho (TB-01)**: Criada migration `00092_add_overtime_regime_to_employment_contracts.sql` adicionando a coluna `overtime_regime` com constraint ('TIME_BANK', 'OVERTIME_PAYROLL', 'HYBRID') e padrão 'TIME_BANK'. Formulário `ContractTab.tsx` atualizado com seletor destacado, orientações sobre CLT Art. 59 e Súmula 60 TST, além de tratamento resiliente no salvamento. O motor `workShiftEngine.ts` foi aprimorado para computar `time_bank_credited_minutes` e `time_bank_debited_minutes` sob o regime contratual. O serviço `integrateTimesheetToPayrollAndBank` foi refatorado para consultar e respeitar o regime contratual individual de cada colaborador na apuração mensal, permitindo que na mesma empresa colaboradores com banco de horas e colaboradores com horas extras pagas em dinheiro sejam processados harmoniosamente na mesma rotina de integração de ponto. Suíte de testes TDD `OvertimeRegimeContractTB01.test.ts` implementada com 100% de sucesso.
 - **15/10/2026 - Ponto Eletrônico / Integração com Folha, Banco de Horas e Inclusão Manual**: Implementado o fluxo completo de transformação das batidas de ponto e arquivos AFD em eventos da Folha de Pagamento (`payroll_variable_events` para HE 50% cód 150, HE 100% cód 160, Noturno cód 301, Faltas cód 801, Atrasos cód 802) e alimentação do Banco de Horas (`time_bank_accounts` e `time_bank_transactions`), com garantia legal de que Adicional Noturno é sempre pago financeiramente em folha (CLT Art. 73 / Súmula 60 TST). Adicionado modal com atalhos de justificativas para inclusão manual pelo DP em casos de falta de energia elétrica / falha no relógio REP. Integrado botão "Sincronizar do Ponto" na tela de Lançamentos Variáveis (`Events.tsx`) e botão de ação direta em `TimeManagement.tsx`. Suíte de testes `TimePayrollAndBankIntegration.test.ts` implementada com 100% de sucesso.
 - **15/10/2026 - Ponto Eletrônico / Jornada Noturna Sob Demanda**: Implementada funcionalidade para o operador de DP alocar batidas da madrugada (ex: 00:02, 00:15) na jornada de encerramento do dia anterior. Mantida a imutabilidade estrita da trilha legal (`time_punch_records`), utilizando a tabela de auditoria `time_entry_adjustments` com o identificador `[SHIFT_PREVIOUS_DAY]`. A ordenação diária soma +1440 minutos para batidas deslocadas da madrugada, posicionando-as como 4ª batida (fechando o par de saída noturna) e recalculando horas trabalhadas e adicional noturno com exatidão.
 - Hotfix: Adicionada a coluna receives_advance na tabela employment_contracts para resolver erro em produção (schema cache).
@@ -152,6 +155,14 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
     3. Em `src/services/payroll/payrollPreFlightAuditService.ts`, removido o campo inexistente `violations` da consulta a `time_daily_summary`.
     4. Criada a migration `00087_fix_time_daily_summary_and_bank_columns.sql` adicionando estruturalmente `company_id` (com backfill), índices de busca e gatilho de sincronização em `time_bank_accounts`.
   - **Validação**: Testes executados diretamente contra o banco de produção via script autenticado com 100% de sucesso (0 erros nas queries), 435 testes Vitest aprovados e build validado.
+- **15/10/2026 - Hotfix Produção (Gestão de Ponto: Sincronização de company_id e RLS em time_bank_accounts)**:
+  - **Causa Raiz**:
+    1. Ao carregar a tela de Gestão de Ponto (`TimeManagement.tsx`), a consulta `fetchTimeBankExpirationAlerts` disparava o erro HTTP 400 (`code: 42703, message: column time_bank_accounts.company_id does not exist`), pois a tabela `time_bank_accounts` não possuía a coluna estrutural `company_id` no schema do banco em produção, e inserções em lote da migration 00094 e inserts de provisão referenciavam esse campo.
+    2. A relação com `employment_contracts` no PostgREST dependia de amarração unívoca via chave estrangeira explícita `employment_contracts!contract_id`.
+  - **Correções Aplicadas**:
+    1. Criada a migration `00096_add_company_id_to_time_bank_accounts.sql` e o script autônomo `FIX_TIME_BANK_ACCOUNTS_COMPANY_ID.sql` contendo `ALTER TABLE public.time_bank_accounts ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE;`, backfill automático retroativo a partir de `employment_contracts`, índices de performance (`company_id, status` e `tenant_id, status`), políticas RLS multitenant completas e recarregamento do schema cache (`NOTIFY pgrst, 'reload schema'`).
+    2. Em `src/services/timeTracking/timeManagementService.ts`, o método `fetchTimeBankExpirationAlerts` foi refatorado com amarração explícita de foreign key (`employment_contracts!contract_id`) e arquitetura resiliente com bloco de fallback defensivo em duas etapas (caso o PostgREST retorne erro ou o schema esteja desatualizado), garantindo que a tela de Gestão de Ponto permaneça operacional e estável em 100% dos cenários.
+  - **Validação**: Suíte completa de 193 testes de ponto e banco de horas aprovados com 100% de sucesso.
 
 ---
 
@@ -400,3 +411,139 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   5. **Recibo e Demonstrativo Contábil Completo de Férias (Art. 145 da CLT)**:
      - Reformulação do Recibo de Férias para apresentar todas as datas e garantias legais da CLT: Período Aquisitivo, Limite do Período Concessivo (Art. 134 para controle de dobra), Período de Gozo e Data Limite de Pagamento (Art. 145: até 2 dias antes do início do gozo).
      - Demonstrativo analítico de proventos/vencimentos: Férias Normais (rubrica 501), 1/3 Constitucional (rubrica 502), Abono Pecuniário (rubrica 503), 1/3 Abono (rubrica 504), incorporação de médias de variáveis habituais (Art. 142 § 5º da CLT), descontos de INSS/IRRF/Pensão e Líquido por extenso em PDF com assinatura eletrônica.
+
+---
+
+### 19. Implementação: Painel de Alertas de Vencimento de Banco de Horas (TB-04.1 — 15/10/2026)
+
+- **Contexto e Base Legal (CLT Art. 59 § 2º e § 5º)**:
+  - O Banco de Horas instituído por acordo individual escrito tem vigência legal máxima de **6 meses** (CLT art. 59 § 5º).
+  - O Banco de Horas pactuado por Convenção ou Acordo Coletivo de Trabalho (CCT/ACT) pode ter vigência de até **1 ano** (CLT art. 59 § 2º).
+  - Caso o saldo credor não seja compensado com folgas até o término do período de vigência, a CLT exige que as horas extras acumuladas sejam **obrigatoriamente pagas na folha de pagamento subsequente com o acréscimo legal de no mínimo 50%**, gerando passivo trabalhista imprevisto caso o DP não acompanhe os prazos com antecedência.
+
+- **Arquitetura da Solução**:
+  1. **Motor de Auditoria e Severidades (`TimeBankService.checkExpirationAndAlerts` & `TimeManagementService.fetchTimeBankExpirationAlerts`)**:
+     - Analisa todas as contas ativas do tenant (`time_bank_accounts`) comparando a data de expiração (`end_date`) contra a data de referência atual.
+     - Classificação automática por severidade de risco:
+       - 🔴 **`EXPIRED`** (Dias restantes < 0): Banco vencido com saldo positivo não compensado. Requer quitação financeira obrigatória na folha como horas extras com adicional de 50%/100%.
+       - 🟠 **`CRITICAL`** (Dias restantes entre 0 e 7 dias): Vencimento iminente. Exige concessão emergencial de folgas ou preparação de desembolso em folha.
+       - 🟡 **`WARNING`** (Dias restantes entre 8 e 30 dias): Janela preventiva para agendamento planejado de folgas compensatórias junto à liderança.
+       - 🟢 **`OK`** (> 30 dias restantes): Conta regular em período normal de acúmulo e compensação.
+     - Indicadores executivos consolidando: total de contas ativas, total de alertas, soma total de horas em risco (+HH:MM) e separação de vencidos vs críticos.
+
+  2. **Componente de Interface (`TimeBankExpirationAlertsModal.tsx`)**:
+     - Modal corporativo de alta densidade de informação com cards de métricas (Expiradas, Críticas, Em Alerta, Horas em Risco).
+     - Filtros rápidos por nível de severidade (Todas, Expiradas, Críticas, Alertas) e campo de busca textual em tempo real por nome ou CPF do colaborador.
+     - Tabela detalhada indicando Colaborador, Política (Acordo Individual 6m / Acordo Coletivo 12m), Data de Término, Saldo a Compensar, Dias Restantes e Badge de Status com recomendação de ação.
+     - Ação direta **"Ver Cartão"** que seleciona imediatamente o colaborador e direciona o usuário para o Cartão de Ponto Mensal.
+     - Ferramenta de exportação analítica para planilha **CSV/Excel** para envio a gestores de área.
+
+  3. **Integração na Gestão de Ponto (`TimeManagement.tsx`)**:
+     - Botão dinâmico na toolbar do Cartão de Ponto: **`⚠️ Vencimentos Banco [X]`** com contador e realce visual caso existam contas críticas ou vencidas.
+     - Card de rotina dedicado na aba **Visão Geral** com atalho direto ao painel.
+
+---
+
+### 20. Implementação: Emissão e Assinatura Digital do Termo de Acordo Individual de Banco de Horas (TB-04.2 — 15/10/2026)
+
+- **Contexto e Conformidade Legal (CLT Art. 59 § 5º)**:
+  - O Art. 59, § 5º da CLT estabelece que o banco de horas pode ser pactuado por **acordo individual escrito**, desde que a compensação ocorra no período máximo de **6 meses**.
+  - Para garantir validade jurídica plena e proteção contra passivos em reclamatórias trabalhistas, o termo de adesão precisa conter qualificação das partes, cláusulas expressas de limites de jornada e regras de liquidação, além de evidências eletrônicas auditáveis de manifestação de vontade (Assinatura Eletrônica Avançada conforme Lei nº 14.063/2020 e Art. 10 § 2º da MP 2.200-2/2001).
+
+- **Arquitetura da Solução**:
+  1. **Serviço de Negócio (`TimeBankAgreementService` & `DocumentGeneratorService`)**:
+     - Cálculo e validação automática da vigência estrita de 6 meses no acordo individual (rejeição automática se exceder 190 dias) e até 12 meses se convencionado por CCT/ACT.
+     - Geração do documento PDF timbrado institucional com snapshot canônico:
+       - Qualificação do empregador (Razão Social, CNPJ, Sede).
+       - Qualificação do empregado (Nome, CPF mascarado, Cargo).
+       - Cláusulas de limite diário (Art. 59 caput: máx 2h extras/dia), controle de extrato pelo portal e quitação rescisória/vencimento (Art. 59 § 3º).
+       - Cálculo criptográfico de Hash H1 (SHA-256) antes do envio para assinatura.
+       - Geração de código público de autenticidade no padrão `CRH-XXXX-XXXX`.
+     - Upload do arquivo no bucket de storage privado (`private-documents`) e gravação na tabela central de assinaturas (`employee_documents`) com `doc_type = 'TIME_BANK_AGREEMENT'`, `status = 'PENDING'`, `requires_otp = true` e `signature_level = 'ADVANCED'`.
+     - Registro de trilha forense em `document_events` (`action = 'CREATED'`).
+
+  2. **Notificação Instantânea para o Trabalhador**:
+     - O documento torna-se imediatamente disponível no **Portal do Colaborador Mobile** (`/portal/dashboard`), permitindo ao trabalhador visualizar o contrato na íntegra, apor sua rubrica touch/stylus e validar com OTP de segurança enviado por WhatsApp ou E-mail.
+     - Gerador de mensagem formatada para WhatsApp Web / Mobile com link direto de acesso e identificador de verificação.
+
+  3. **Componente de Interface (`TimeBankAgreementModal.tsx`)**:
+     - **Aba Emissão Individual**: seleção do colaborador, ajuste do período com cálculo automático de 6 meses, escolha de modalidade (Individual vs Coletivo), geração instantânea e botões de cópia e disparo para WhatsApp.
+     - **Aba Emissão em Lote**: seleção múltipla de trabalhadores para emissão em massa de termos de adesão corporativos com barra de progresso.
+     - **Aba Histórico & Status**: listagem dos acordos emitidos com busca rápida, códigos de autenticação, badges de status (`PENDING` âmbar / `SIGNED` verde) e botão de reenvio de lembrete via WhatsApp para pendentes.
+
+  4. **Pontos de Acesso na Gestão de Ponto**:
+     - Botão **`Acordo Banco CLT`** integrado na toolbar do Cartão de Ponto (`TimeManagement.tsx`).
+     - Botão de atalho direto **`Acordo CLT`** na tabela do Painel de Vencimentos (`TimeBankExpirationAlertsModal.tsx`), permitindo renovar preventivamente o acordo de qualquer trabalhador cujo saldo esteja próximo da expiração.
+
+---
+
+### 21. Implementação: Regra de Teto Mensal de Acúmulo no Banco de Horas com Transbordo para Folha (TB-04.3 — 15/10/2026)
+
+- **Contexto Operacional e Trabalhista**:
+  - Para evitar acúmulos excessivos de passivo no banco de horas e atender a acordos sindicais ou diretrizes de gestão de custos, as empresas estipulam um **teto mensal máximo de crédito no banco** (por exemplo, até 20 horas extras por mês).
+  - Toda hora extraordinária trabalhada além desse limite mensal não pode ser descartada nem represada no banco; ela deve **transbordar obrigatoriamente para a Folha de Pagamento da competência**, sendo remunerada em dinheiro com o adicional legal aplicável (50% ou 100%).
+
+- **Arquitetura da Solução**:
+  1. **Algoritmo de Rateio e Transbordo (`TimeBankService.calculateMonthlyCapOverflow`)**:
+     - Entrada: minutos de HE 50%, minutos de HE 100%, teto mensal em horas (`monthlyCapHours`) e flag de regime híbrido (`isHybrid`).
+     - Processamento:
+       - No regime **Híbrido**: o banco acolhe apenas horas de 50% (as horas de 100% em domingos e feriados já são naturalmente remuneradas em folha). Se as HE 50% ultrapassarem o teto, o excedente vira transbordo para a folha na rubrica 150.
+       - No regime **Banco Integral**: o banco absorve preferencialmente as horas com adicional de 50% até o limite do teto. Caso o espaço remanescente no teto permita, absorve as horas de 100% até atingir o limite estrito. As horas que transbordam são alocadas com precisão para pagamento em folha nas rubricas 150 (HE 50%) e 160 (HE 100%).
+     - Saída: `bankMinutes`, `overflowMinutes`, `overflow50Hours`, `overflow100Hours`, `bankCredited50Minutes` e `bankCredited100Minutes`.
+
+  2. **Motor de Integração do Ponto (`TimeManagementService.integrateTimesheetToPayrollAndBank`)**:
+     - No processamento mensal de cada colaborador:
+       - O crédito na tabela `time_bank_transactions` é limitado ao teto mensal configurado, acompanhado de descrição auditável:
+         `Crédito de horas extras apuradas no ponto (limitado ao teto mensal de 20h00; Xh transbordaram para folha)`.
+       - Os eventos de transbordo são inseridos automaticamente em `payroll_variable_events` identificados como:
+         `INTEGRAÇÃO_PONTO: HE 50% (Transbordo Teto Banco: Xh)` e `INTEGRAÇÃO_PONTO: HE 100% (Transbordo Teto Banco: Yh)`.
+       - O resultado consolidado apura `total_bank_cap_overflow_hours` e `contracts_with_overflow`.
+
+  3. **Interface Visual (`TimeManagement.tsx`)**:
+     - No modal de integração com a folha e banco de horas (`integrateModalOpen`), foi adicionado o controle de configuração:
+       `[x] Aplicar Teto Mensal de Acúmulo no Banco de Horas (Transbordo Automático): [ 20 ] horas extras / mês`.
+     - O card estatístico de conclusão exibe o resumo com destaque do transbordo:
+       `⚡ Transbordo de Teto: Xh extras de Y colaborador(es) excederam o teto mensal do banco e foram pagas em dinheiro na folha.`
+
+---
+
+### 22. Implementação: Geolocalização e Geofencing no Ponto Digital Mobile REP-P (TB-05 — 15/10/2026)
+
+- **Contexto Operacional e Trabalhista (Portaria MTP 671/2021 — REP-P)**:
+  - O registro de ponto eletrônico por aplicativo móvel/celular (PWA ou web app) exige garantias contra adulteração de horários e locais de prestação de serviços.
+  - Para colaboradores presenciais, as empresas necessitam delimitar o **perímetro geográfico (geofencing)** em torno de suas unidades físicas e estabelecimentos, impedindo marcações indevidas a quilômetros de distância.
+  - Para colaboradores em regime de **Teletrabalho / Home Office ou Trabalho Externo** (CLT art. 75-B), o sistema deve flexibilizar o registro de qualquer lugar sem impor barreiras indevidas.
+
+- **Arquitetura da Solução**:
+  1. **Modelo Geodésico e Fórmula de Haversine em PostgreSQL (`00095_geofence_server_side_validation_tb05.sql`)**:
+     - Criação da função imutável `calculate_haversine_distance_meters(lat1, lon1, lat2, lon2)` no banco de dados, utilizando o raio médio terrestre $R = 6.371.000$ metros.
+     - Enriquecimento da tabela `time_punch_records` com colunas de auditoria:
+       - `distance_meters NUMERIC(10, 2)`: distância métrica calculada entre o dispositivo do trabalhador e a sede no momento exato da batida.
+       - `geofence_status TEXT`: resultado categorizado (`INSIDE`, `OUTSIDE`, `TELEWORK`, `AUDIT_ONLY`, `NO_GPS`, `NO_CONFIG`).
+     - Blindagem da RPC `register_mobile_punch`: se `enforce_geofence = true` e o colaborador for presencial (`is_telework = false`), a ausência de GPS ou uma distância superior ao `radius_meters` configurado dispara `RAISE EXCEPTION`, impedindo qualquer tentativa de adulteração via API ou requisições forjadas.
+
+  2. **Serviço de Domínio Frontend (`timeTrackingGeoService.ts`)**:
+     - `calculateHaversineDistanceMeters`: cálculo geodésico no cliente com precisão de metros inteiros.
+     - `validateGeofence`: matriz de validação considerando teletrabalho, ausência de coordenadas na lotação, presença/ausência de GPS e flag `enforce_geofence`.
+     - `fetchContractWorkplaceGeofence`: consulta otimizada no Supabase dos dados geográficos vinculados ao contrato de trabalho (`latitude`, `longitude`, `radius_meters`, `enforce_geofence`, `is_telework`).
+
+  3. **Experiência do Usuário no Ponto Mobile (`TimePunchModal.tsx`)**:
+     - Sintonização contínua do sinal de GPS com feedback visual de precisão ($\pm X\text{m}$).
+     - Card dinâmico de Proximidade:
+       - **Verde Esmeralda (`INSIDE`)**: "📍 Perímetro Autorizado — Você está a 8m da sede (raio máx: 50m)".
+       - **Vermelho Vibrante (`OUTSIDE`)**: "⛔ Fora do Perímetro — Você está a 45m de distância (limite: 30m) — Bloqueado".
+       - **Azul Celeste (`TELEWORK`)**: "🏠 Regime de Teletrabalho / Externo — Registro autorizado em qualquer localização".
+       - **Âmbar (`NO_GPS`)**: "⛔ GPS Não Detectado — A empresa exige localização ativa nesta unidade".
+     - O botão de confirmação de registro fica **desabilitado** com indicação do bloqueio quando fora do raio autorizado.
+
+  4. **Gestão e Configuração de Lotações (`Workplaces/Form.tsx` e `Workplaces/List.tsx`)**:
+     - No formulário de Lotação (`/lotacoes/nova` e `/lotacoes/:id`), foi adicionada a seção **Perímetro de Ponto Digital & Geofencing (REP-P)** com:
+       - Coordenadas de Latitude e Longitude decimais.
+       - Botão **"Obter Meu GPS Atual"** para auto-preenchimento instantâneo pelo gestor diretamente do navegador.
+       - Raio de Tolerância em metros (default 50m).
+       - Checkbox para alternar entre **Geofencing Restritivo (Bloqueio)** e **Apenas Auditoria**.
+     - Na listagem de Lotações (`/lotacoes`), foi adicionada a coluna **Geofencing (REP-P)** com badges destacando o raio e a política (Restritivo vs Auditoria vs Sem GPS).
+
+
+
+

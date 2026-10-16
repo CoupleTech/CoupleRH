@@ -13110,3 +13110,568 @@ END $$;
 -- Recarregar cache de schema do PostgREST
 NOTIFY pgrst, 'reload schema';
 ```
+
+---
+
+### Migration: `00092_add_overtime_regime_to_employment_contracts.sql` (TB-01)
+Define o regime de compensação de horas extras e jornada individual por contrato de trabalho (`employment_contracts`): `TIME_BANK`, `OVERTIME_PAYROLL`, `HYBRID`.
+
+```sql
+-- Migration: 00092_add_overtime_regime_to_employment_contracts
+-- Tarefa TB-01: Adiciona overtime_regime em employment_contracts para definir a regra de compensação de horas de cada colaborador
+
+ALTER TABLE public.employment_contracts 
+ADD COLUMN IF NOT EXISTS overtime_regime TEXT NOT NULL DEFAULT 'TIME_BANK' 
+CHECK (overtime_regime IN ('TIME_BANK', 'OVERTIME_PAYROLL', 'HYBRID'));
+
+COMMENT ON COLUMN public.employment_contracts.overtime_regime IS 
+'Regime de compensação de jornada do contrato de trabalho: TIME_BANK (Banco de Horas - CLT Art. 59 § 2º/§ 5º), OVERTIME_PAYROLL (Horas Extras em Folha de Pagamento - 100% Remuneradas) ou HYBRID (Regime Híbrido - 50% Banco / 100% Dinheiro).';
+
+NOTIFY pgrst, 'reload schema';
+```
+
+---
+
+### Migration: `00093_add_compensation_delay_absence_to_time_bank.sql` (TB-02)
+Expande os tipos de transação suportados pela tabela `time_bank_transactions` para incluir `COMPENSATION_DELAY` e `COMPENSATION_ABSENCE`, permitindo que atrasos e faltas sejam abonados com o saldo do banco de horas, protegendo a folha contra descontos indevidos (rubricas 801/802) e perda do DSR.
+
+```sql
+-- Migration: 00093_add_compensation_delay_absence_to_time_bank.sql
+-- Tarefa TB-02: Adiciona COMPENSATION_DELAY e COMPENSATION_ABSENCE na constraint de time_bank_transactions
+
+ALTER TABLE public.time_bank_transactions
+    DROP CONSTRAINT IF EXISTS time_bank_transactions_transaction_type_check;
+
+ALTER TABLE public.time_bank_transactions
+    ADD CONSTRAINT time_bank_transactions_transaction_type_check
+    CHECK (transaction_type IN (
+        'OVERTIME',
+        'DELAY',
+        'ABSENCE',
+        'COMPENSATION_DAY_OFF',
+        'COMPENSATION_DELAY',
+        'COMPENSATION_ABSENCE',
+        'MANUAL_ADJUSTMENT',
+        'PAYOUT',
+        'EXPIRATION_PAYOUT'
+    ));
+
+COMMENT ON CONSTRAINT time_bank_transactions_transaction_type_check ON public.time_bank_transactions IS 
+'Tipos de transação de banco de horas suportados: OVERTIME, DELAY, ABSENCE, COMPENSATION_DAY_OFF, COMPENSATION_DELAY (abono de atraso com saldo), COMPENSATION_ABSENCE (abono de falta com saldo), MANUAL_ADJUSTMENT, PAYOUT e EXPIRATION_PAYOUT.';
+
+NOTIFY pgrst, 'reload schema';
+```
+
+---
+
+### Migration: `00094_add_initial_balance_to_time_bank.sql` (TB-03)
+Adiciona o tipo `INITIAL_BALANCE` na constraint de `time_bank_transactions` e a RPC atômica `register_time_bank_initial_balance` com provisionamento automático de conta de banco de horas (`time_bank_accounts`) caso o colaborador ainda não possua conta ativa.
+
+```sql
+-- Migration: 00094_add_initial_balance_to_time_bank.sql
+-- Tarefa TB-03: Lançamento Manual e Carga de Saldo Inicial de Banco de Horas
+--               (Migração de Sistema Anterior)
+
+-- 1. ATUALIZAR CONSTRAINT EM time_bank_transactions (Adicionando INITIAL_BALANCE)
+ALTER TABLE public.time_bank_transactions
+    DROP CONSTRAINT IF EXISTS time_bank_transactions_transaction_type_check;
+
+ALTER TABLE public.time_bank_transactions
+    ADD CONSTRAINT time_bank_transactions_transaction_type_check
+    CHECK (transaction_type IN (
+        'INITIAL_BALANCE',
+        'OVERTIME',
+        'DELAY',
+        'ABSENCE',
+        'COMPENSATION_DAY_OFF',
+        'COMPENSATION_DELAY',
+        'COMPENSATION_ABSENCE',
+        'MANUAL_ADJUSTMENT',
+        'PAYOUT',
+        'EXPIRATION_PAYOUT'
+    ));
+
+COMMENT ON CONSTRAINT time_bank_transactions_transaction_type_check ON public.time_bank_transactions IS 
+'Tipos de transação de banco de horas suportados: INITIAL_BALANCE (carga legada/saldo inicial), OVERTIME, DELAY, ABSENCE, COMPENSATION_DAY_OFF, COMPENSATION_DELAY, COMPENSATION_ABSENCE, MANUAL_ADJUSTMENT, PAYOUT e EXPIRATION_PAYOUT.';
+
+-- 2. RPC ATÔMICA PARA PROVISIONAMENTO E LANÇAMENTO DE SALDO INICIAL
+CREATE OR REPLACE FUNCTION public.register_time_bank_initial_balance(
+    p_tenant_id UUID,
+    p_contract_id UUID,
+    p_cutoff_date DATE,
+    p_minutes INTEGER,
+    p_justification TEXT,
+    p_policy_type TEXT DEFAULT 'ACORDO_INDIVIDUAL',
+    p_validity_months INTEGER DEFAULT 6,
+    p_company_id UUID DEFAULT NULL
+)
+RETURNS TABLE (
+    account_id UUID,
+    transaction_id UUID,
+    final_balance_minutes INTEGER,
+    cutoff_date DATE,
+    message TEXT
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_account_id UUID;
+    v_tx_id UUID;
+    v_current_balance INTEGER := 0;
+    v_new_balance INTEGER := 0;
+    v_end_date DATE;
+    v_validity INTEGER := COALESCE(p_validity_months, 6);
+    v_policy TEXT := COALESCE(p_policy_type, 'ACORDO_INDIVIDUAL');
+BEGIN
+    -- Validação legal CLT Art. 59
+    IF v_policy = 'ACORDO_INDIVIDUAL' AND v_validity > 6 THEN
+        RAISE EXCEPTION 'Banco de horas por Acordo Individual não pode ter vigência superior a 6 meses (Art. 59 § 5º CLT).';
+    END IF;
+
+    IF (v_policy = 'CCT' OR v_policy = 'ACT') AND v_validity > 12 THEN
+        RAISE EXCEPTION 'Banco de horas por CCT/ACT não pode ter vigência superior a 12 meses (Art. 59 § 2º CLT).';
+    END IF;
+
+    -- 1. Localizar conta ativa existente para o contrato
+    SELECT id, balance_minutes 
+    INTO v_account_id, v_current_balance
+    FROM public.time_bank_accounts
+    WHERE tenant_id = p_tenant_id
+      AND contract_id = p_contract_id
+      AND status = 'ACTIVE'
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    -- 2. Se não existir, provisionar nova conta ativa a partir da data de corte
+    IF v_account_id IS NULL THEN
+        v_end_date := (p_cutoff_date + (v_validity || ' months')::INTERVAL - '1 day'::INTERVAL)::DATE;
+
+        INSERT INTO public.time_bank_accounts (
+            tenant_id,
+            company_id,
+            contract_id,
+            balance_minutes,
+            start_date,
+            end_date,
+            status,
+            policy_type,
+            validity_months,
+            expiration_rule,
+            warning_days_before_expiration,
+            payout_rubric_code,
+            created_at,
+            updated_at
+        ) VALUES (
+            p_tenant_id,
+            p_company_id,
+            p_contract_id,
+            0,
+            p_cutoff_date,
+            v_end_date,
+            'ACTIVE',
+            v_policy,
+            v_validity,
+            'PAY_AS_OVERTIME',
+            30,
+            '152',
+            NOW(),
+            NOW()
+        )
+        RETURNING id INTO v_account_id;
+        
+        v_current_balance := 0;
+    END IF;
+
+    -- 3. Inserir a transação de INITIAL_BALANCE
+    v_new_balance := v_current_balance + p_minutes;
+
+    INSERT INTO public.time_bank_transactions (
+        tenant_id,
+        account_id,
+        date,
+        minutes,
+        transaction_type,
+        description,
+        created_at
+    ) VALUES (
+        p_tenant_id,
+        v_account_id,
+        p_cutoff_date,
+        p_minutes,
+        'INITIAL_BALANCE',
+        COALESCE(p_justification, 'Carga de saldo inicial / migração de sistema anterior'),
+        NOW()
+    )
+    RETURNING id INTO v_tx_id;
+
+    -- 4. Atualizar saldo acumulado da conta
+    UPDATE public.time_bank_accounts
+    SET balance_minutes = v_new_balance,
+        updated_at = NOW()
+    WHERE id = v_account_id;
+
+    RETURN QUERY
+    SELECT 
+        v_account_id,
+        v_tx_id,
+        v_new_balance,
+        p_cutoff_date,
+        'Saldo inicial lançado com sucesso no banco de horas.'::TEXT;
+END;
+$$;
+
+NOTIFY pgrst, 'reload schema';
+```
+
+---
+
+### Script 95: `00095_geofence_server_side_validation_tb05`
+Responsável por adicionar validação server-side com fórmula de Haversine em PostgreSQL, auditoria geodésica em `time_punch_records` e blindagem da RPC `register_mobile_punch` contra tentativas de adulteração de GPS no ponto mobile.
+
+```sql
+-- Migration: 00095_geofence_server_side_validation_tb05.sql
+-- Description: TB-05 - Validação server-side de geofence, cálculo Haversine e enriquecimento da RPC register_mobile_punch
+
+-- 1. ADICIONAR COLUNAS DE AUDITORIA DE GEOFENCING EM TIME_PUNCH_RECORDS
+ALTER TABLE public.time_punch_records
+    ADD COLUMN IF NOT EXISTS distance_meters NUMERIC(10, 2),
+    ADD COLUMN IF NOT EXISTS geofence_status TEXT;
+
+COMMENT ON COLUMN public.time_punch_records.distance_meters IS 'Distância métrica em relação à sede/lotação do colaborador no momento da batida.';
+COMMENT ON COLUMN public.time_punch_records.geofence_status IS 'Resultado da checagem de perímetro (INSIDE, OUTSIDE, TELEWORK, AUDIT_ONLY, NO_GPS).';
+
+-- 2. FUNÇÃO GEODÉSICA DE HAVERSINE NO POSTGRESQL (EM METROS)
+CREATE OR REPLACE FUNCTION public.calculate_haversine_distance_meters(
+    lat1 NUMERIC,
+    lon1 NUMERIC,
+    lat2 NUMERIC,
+    lon2 NUMERIC
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+    r CONSTANT NUMERIC := 6371000; -- Raio médio da Terra em metros
+    dlat NUMERIC;
+    dlon NUMERIC;
+    a NUMERIC;
+    c NUMERIC;
+BEGIN
+    IF lat1 IS NULL OR lon1 IS NULL OR lat2 IS NULL OR lon2 IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    IF lat1 = lat2 AND lon1 = lon2 THEN
+        RETURN 0;
+    END IF;
+
+    dlat := radians(lat2 - lat1);
+    dlon := radians(lon2 - lon1);
+
+    a := sin(dlat / 2.0)^2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2.0)^2;
+    c := 2.0 * atan2(sqrt(a), sqrt(1.0 - a));
+
+    RETURN ROUND(r * c, 1);
+END;
+$$;
+
+-- 3. ATUALIZAÇÃO DA RPC REGISTER_MOBILE_PUNCH COM VALIDAÇÃO SERVER-SIDE
+CREATE OR REPLACE FUNCTION public.register_mobile_punch(
+    p_contract_id UUID,
+    p_geo JSONB DEFAULT NULL,
+    p_device_fingerprint TEXT DEFAULT NULL,
+    p_ip INET DEFAULT NULL,
+    p_receipt_code TEXT DEFAULT NULL,
+    p_entry_type TEXT DEFAULT 'IN'
+)
+RETURNS TABLE (
+    punch_id UUID,
+    device_id UUID,
+    nsr BIGINT,
+    punched_at TIMESTAMPTZ,
+    receipt_code TEXT
+)
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+    v_tenant_id UUID;
+    v_company_id UUID;
+    v_worker_id UUID;
+    v_workplace_id UUID;
+    v_is_telework BOOLEAN := false;
+    v_cpf TEXT;
+    v_pis TEXT;
+    v_device_id UUID;
+    v_nsr BIGINT;
+    v_punched_at TIMESTAMPTZ := NOW();
+    v_punch_id UUID;
+    v_receipt_code TEXT;
+
+    -- Variáveis de Geofence
+    v_wp_name TEXT;
+    v_wp_lat NUMERIC;
+    v_wp_lon NUMERIC;
+    v_wp_radius INTEGER := 50;
+    v_wp_enforce BOOLEAN := false;
+    v_user_lat NUMERIC;
+    v_user_lon NUMERIC;
+    v_distance_meters NUMERIC := NULL;
+    v_geofence_status TEXT := 'NO_CONFIG';
+BEGIN
+    -- 1. Buscar dados do contrato de trabalho e lotação
+    SELECT 
+        ec.tenant_id,
+        ec.company_id,
+        ec.worker_id,
+        ec.workplace_id,
+        COALESCE(ec.is_telework, false),
+        REGEXP_REPLACE(p.cpf, '[^0-9]', '', 'g'),
+        COALESCE(REGEXP_REPLACE(w.pis_pasep, '[^0-9]', '', 'g'), '')
+    INTO
+        v_tenant_id,
+        v_company_id,
+        v_worker_id,
+        v_workplace_id,
+        v_is_telework,
+        v_cpf,
+        v_pis
+    FROM public.employment_contracts ec
+    JOIN public.workers w ON w.id = ec.worker_id
+    JOIN public.people p ON p.id = w.person_id
+    WHERE ec.id = p_contract_id;
+
+    IF v_tenant_id IS NULL THEN
+        RAISE EXCEPTION 'Contrato de trabalho % não encontrado.', p_contract_id;
+    END IF;
+
+    -- 2. Extrair coordenadas do payload GPS
+    IF p_geo IS NOT NULL THEN
+        BEGIN
+            v_user_lat := (p_geo->>'latitude')::NUMERIC;
+            v_user_lon := (p_geo->>'longitude')::NUMERIC;
+        EXCEPTION WHEN OTHERS THEN
+            v_user_lat := NULL;
+            v_user_lon := NULL;
+        END;
+    END IF;
+
+    -- 3. Validação de Geofencing contra o Local de Trabalho
+    IF v_is_telework THEN
+        v_geofence_status := 'TELEWORK';
+    ELSIF v_workplace_id IS NOT NULL THEN
+        SELECT 
+            wp.name,
+            wp.latitude,
+            wp.longitude,
+            COALESCE(wp.radius_meters, 50),
+            COALESCE(wp.enforce_geofence, false)
+        INTO
+            v_wp_name,
+            v_wp_lat,
+            v_wp_lon,
+            v_wp_radius,
+            v_wp_enforce
+        FROM public.workplaces wp
+        WHERE wp.id = v_workplace_id;
+
+        IF v_wp_lat IS NOT NULL AND v_wp_lon IS NOT NULL THEN
+            IF v_user_lat IS NOT NULL AND v_user_lon IS NOT NULL THEN
+                v_distance_meters := calculate_haversine_distance_meters(v_wp_lat, v_wp_lon, v_user_lat, v_user_lon);
+                
+                IF v_distance_meters <= v_wp_radius THEN
+                    v_geofence_status := 'INSIDE';
+                ELSE
+                    v_geofence_status := 'OUTSIDE';
+                    IF v_wp_enforce THEN
+                        RAISE EXCEPTION 'Registro bloqueado: você está a % metros de %, fora do raio autorizado de % metros.', 
+                            ROUND(v_distance_meters), COALESCE(v_wp_name, 'Sede'), v_wp_radius;
+                    END IF;
+                END IF;
+            ELSE
+                v_geofence_status := 'NO_GPS';
+                IF v_wp_enforce THEN
+                    RAISE EXCEPTION 'Registro bloqueado: a empresa exige localização GPS ativa para marcação presencial em %.', 
+                        COALESCE(v_wp_name, 'Sede');
+                END IF;
+            END IF;
+        END IF;
+    END IF;
+
+    -- 4. Localizar ou instanciar o dispositivo REP_P_MOBILE da empresa
+    SELECT id INTO v_device_id
+    FROM public.time_devices
+    WHERE tenant_id = v_tenant_id 
+      AND company_id = v_company_id 
+      AND kind = 'REP_P_MOBILE'
+      AND status = 'ACTIVE'
+    LIMIT 1;
+
+    IF v_device_id IS NULL THEN
+        INSERT INTO public.time_devices (
+            tenant_id,
+            company_id,
+            name,
+            kind,
+            vendor,
+            model,
+            status,
+            last_nsr
+        ) VALUES (
+            v_tenant_id,
+            v_company_id,
+            'App Mobile REP-P',
+            'REP_P_MOBILE',
+            'CoupleRH Mobile',
+            'PWA REP-P Portaria 671',
+            'ACTIVE',
+            0
+        ) RETURNING id INTO v_device_id;
+    END IF;
+
+    -- 5. Obter próximo NSR sequencial de forma atômica
+    UPDATE public.time_devices
+    SET 
+        last_nsr = last_nsr + 1,
+        last_sync_at = v_punched_at
+    WHERE id = v_device_id
+    RETURNING last_nsr INTO v_nsr;
+
+    -- 6. Gerar hash do comprovante se não fornecido
+    IF p_receipt_code IS NULL OR p_receipt_code = '' THEN
+        v_receipt_code := encode(digest(v_nsr::text || '|' || v_punched_at::text || '|' || v_cpf, 'sha256'), 'hex');
+    ELSE
+        v_receipt_code := p_receipt_code;
+    END IF;
+
+    -- 7. Inserir na trilha imutável (time_punch_records) com auditoria geodésica
+    INSERT INTO public.time_punch_records (
+        tenant_id,
+        company_id,
+        device_id,
+        nsr,
+        record_type,
+        punched_at,
+        cpf,
+        pis,
+        worker_id,
+        contract_id,
+        source,
+        geo,
+        ip,
+        device_fingerprint,
+        receipt_code,
+        distance_meters,
+        geofence_status,
+        crc_ok
+    ) VALUES (
+        v_tenant_id,
+        v_company_id,
+        v_device_id,
+        v_nsr,
+        3,
+        v_punched_at,
+        v_cpf,
+        v_pis,
+        v_worker_id,
+        p_contract_id,
+        'MOBILE',
+        p_geo,
+        p_ip,
+        p_device_fingerprint,
+        v_receipt_code,
+        v_distance_meters,
+        v_geofence_status,
+        true
+    ) RETURNING id INTO v_punch_id;
+
+    -- 8. Espelhar na tabela de marcações de jornada (time_entries)
+    INSERT INTO public.time_entries (
+        tenant_id,
+        contract_id,
+        original_timestamp,
+        entry_type,
+        punch_record_id,
+        device_info
+    ) VALUES (
+        v_tenant_id,
+        p_contract_id,
+        v_punched_at,
+        p_entry_type,
+        v_punch_id,
+        p_device_fingerprint
+    );
+
+    RETURN QUERY SELECT 
+        v_punch_id,
+        v_device_id,
+        v_nsr,
+        v_punched_at,
+        v_receipt_code;
+END;
+$$ LANGUAGE plpgsql;
+
+GRANT EXECUTE ON FUNCTION public.register_mobile_punch TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION public.calculate_haversine_distance_meters TO authenticated, anon;
+
+NOTIFY pgrst, 'reload schema';
+```
+
+---
+
+## Migration 00096 — Sincronização de company_id e Políticas RLS em time_bank_accounts
+
+Garante a presença estrutural da coluna `company_id` em `time_bank_accounts` com integridade referencial para `companies(id)`, backfill retroativo a partir de `employment_contracts`, índices de performance compostos (`company_id, status` e `tenant_id, status`), políticas RLS multitenant explícitas para usuários autenticados e concessão de privilégios para roles authenticated/service_role.
+
+```sql
+-- 1. ADICIONAR COLUNA company_id EM time_bank_accounts
+ALTER TABLE public.time_bank_accounts
+    ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE;
+
+-- 2. BACKFILL DE company_id A PARTIR DE employment_contracts
+UPDATE public.time_bank_accounts tba
+SET company_id = ec.company_id
+FROM public.employment_contracts ec
+WHERE ec.id = tba.contract_id 
+  AND tba.company_id IS NULL;
+
+-- 3. ÍNDICES DE ALTA PERFORMANCE PARA FILTROS POR EMPRESA E STATUS
+CREATE INDEX IF NOT EXISTS idx_time_bank_accounts_company_status 
+    ON public.time_bank_accounts(company_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_time_bank_accounts_tenant_status 
+    ON public.time_bank_accounts(tenant_id, status);
+
+-- 4. POLÍTICAS RLS ROBUSTAS PARA time_bank_accounts
+ALTER TABLE public.time_bank_accounts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Tenant users can manage time_bank_accounts" ON public.time_bank_accounts;
+CREATE POLICY "Tenant users can manage time_bank_accounts" 
+    ON public.time_bank_accounts FOR ALL 
+    TO authenticated
+    USING (tenant_id = ANY (public.user_tenant_ids()))
+    WITH CHECK (tenant_id = ANY (public.user_tenant_ids()));
+
+-- 5. POLÍTICAS RLS ROBUSTAS PARA time_bank_transactions
+ALTER TABLE public.time_bank_transactions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Tenant users can manage time_bank_transactions" ON public.time_bank_transactions;
+CREATE POLICY "Tenant users can manage time_bank_transactions" 
+    ON public.time_bank_transactions FOR ALL 
+    TO authenticated
+    USING (tenant_id = ANY (public.user_tenant_ids()))
+    WITH CHECK (tenant_id = ANY (public.user_tenant_ids()));
+
+-- 6. PERMISSÕES DE ACESSO
+GRANT ALL ON public.time_bank_accounts TO authenticated, service_role;
+GRANT ALL ON public.time_bank_transactions TO authenticated, service_role;
+GRANT SELECT ON public.time_bank_accounts TO anon;
+GRANT SELECT ON public.time_bank_transactions TO anon;
+
+-- 7. RECARREGAR O SCHEMA CACHE DO POSTGREST IMEDIATAMENTE
+NOTIFY pgrst, 'reload schema';
+```
+
+

@@ -4,12 +4,17 @@ import {
   ArrowLeft,
   Loader2,
   AlertCircle,
-  MapPin
+  MapPin,
+  Navigation,
+  ShieldCheck,
+  ShieldAlert,
+  Info
 } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useCompany } from "../../../contexts/CompanyContext";
+import { toast } from "sonner";
 
 export default function WorkplaceForm() {
   const { id } = useParams();
@@ -18,6 +23,7 @@ export default function WorkplaceForm() {
   const { selectedCompanyId, companies } = useCompany();
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(!!id);
+  const [capturingGps, setCapturingGps] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [costCenters, setCostCenters] = useState<any[]>([]);
   
@@ -26,7 +32,11 @@ export default function WorkplaceForm() {
     cost_center_id: "",
     name: "",
     address: "",
-    status: "ACTIVE"
+    status: "ACTIVE",
+    latitude: "",
+    longitude: "",
+    radius_meters: 50,
+    enforce_geofence: false
   });
 
   useEffect(() => {
@@ -62,7 +72,11 @@ export default function WorkplaceForm() {
           cost_center_id: data.cost_center_id || "",
           name: data.name,
           address: data.address || "",
-          status: data.status
+          status: data.status,
+          latitude: data.latitude !== null && data.latitude !== undefined ? String(data.latitude) : "",
+          longitude: data.longitude !== null && data.longitude !== undefined ? String(data.longitude) : "",
+          radius_meters: data.radius_meters ? Number(data.radius_meters) : 50,
+          enforce_geofence: Boolean(data.enforce_geofence)
         });
       }
     } catch (err) {
@@ -71,6 +85,32 @@ export default function WorkplaceForm() {
     } finally {
       setFetching(false);
     }
+  };
+
+  const handleCaptureCurrentGps = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocalização não é suportada pelo seu navegador.");
+      return;
+    }
+
+    setCapturingGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setFormData((prev) => ({
+          ...prev,
+          latitude: String(pos.coords.latitude.toFixed(7)),
+          longitude: String(pos.coords.longitude.toFixed(7))
+        }));
+        toast.success(`Coordenadas capturadas com sucesso! (Precisão: ±${Math.round(pos.coords.accuracy)}m)`);
+        setCapturingGps(false);
+      },
+      (err) => {
+        console.warn("Erro ao obter geolocalização:", err);
+        toast.error("Não foi possível obter sua localização. Verifique as permissões de GPS.");
+        setCapturingGps(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   };
 
   const fetchCostCenters = async (companyId: string) => {
@@ -118,6 +158,10 @@ export default function WorkplaceForm() {
         name: formData.name,
         address: formData.address || null,
         status: formData.status,
+        latitude: formData.latitude ? parseFloat(formData.latitude) : null,
+        longitude: formData.longitude ? parseFloat(formData.longitude) : null,
+        radius_meters: formData.radius_meters ? parseInt(String(formData.radius_meters), 10) : 50,
+        enforce_geofence: formData.enforce_geofence
       };
 
       if (id) {
@@ -277,6 +321,119 @@ export default function WorkplaceForm() {
                 value={formData.address}
                 onChange={(e) => setFormData({ ...formData, address: e.target.value })}
               />
+            </div>
+          </div>
+        </div>
+
+        {/* Seção de Geolocalização e Geofencing (TB-05) */}
+        <div className="pt-2 border-t border-slate-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-2 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Navigation className="text-primary-600" size={18} />
+              <div>
+                <h2 className="text-base font-semibold text-slate-800">
+                  Perímetro de Ponto Digital & Geofencing (REP-P)
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Delimite as coordenadas geográficas da unidade para controle de presença no ponto mobile.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCaptureCurrentGps}
+              disabled={capturingGps}
+              className="px-3 py-1.5 rounded-lg border border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 self-start sm:self-auto"
+            >
+              {capturingGps ? (
+                <Loader2 size={14} className="animate-spin text-primary-600" />
+              ) : (
+                <Navigation size={14} />
+              )}
+              <span>{capturingGps ? "Capturando..." : "Obter Meu GPS Atual"}</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">Latitude Decimal</label>
+              <input
+                type="number"
+                step="any"
+                placeholder="Ex: -23.5505200"
+                className="input font-mono text-sm"
+                value={formData.latitude}
+                onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+              />
+              <p className="text-[11px] text-slate-400">Coordenada norte-sul do estabelecimento.</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">Longitude Decimal</label>
+              <input
+                type="number"
+                step="any"
+                placeholder="Ex: -46.6333080"
+                className="input font-mono text-sm"
+                value={formData.longitude}
+                onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+              />
+              <p className="text-[11px] text-slate-400">Coordenada leste-oeste do estabelecimento.</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">
+                Raio de Tolerância em Metros
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="5"
+                  max="5000"
+                  step="5"
+                  placeholder="50"
+                  className="input font-semibold pr-16"
+                  value={formData.radius_meters}
+                  onChange={(e) =>
+                    setFormData({ ...formData, radius_meters: Number(e.target.value) })
+                  }
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                  metros
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Distância máxima aceita a partir do centro da unidade (padrão sugerido: 50m a 100m).
+              </p>
+            </div>
+
+            <div className="space-y-1.5 flex flex-col justify-center">
+              <label className="text-sm font-medium text-slate-700 mb-1">
+                Política de Validação de Presença
+              </label>
+              <label className="relative flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-slate-50 cursor-pointer transition-colors">
+                <input
+                  type="checkbox"
+                  checked={formData.enforce_geofence}
+                  onChange={(e) =>
+                    setFormData({ ...formData, enforce_geofence: e.target.checked })
+                  }
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                />
+                <div className="text-xs">
+                  <span className="font-bold text-slate-900 block">
+                    {formData.enforce_geofence
+                      ? "⛔ Geofencing Restritivo Ativado"
+                      : "📍 Apenas Auditoria (Não Bloqueia)"}
+                  </span>
+                  <span className="text-slate-500 text-[11px] block mt-0.5">
+                    {formData.enforce_geofence
+                      ? "Colaboradores presenciais fora do raio ou sem GPS serão estritamente impedidos de bater ponto."
+                      : "Registra a distância do colaborador na auditoria, permitindo a marcação mesmo fora do raio."}
+                  </span>
+                </div>
+              </label>
             </div>
           </div>
         </div>

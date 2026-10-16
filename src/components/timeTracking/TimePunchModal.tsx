@@ -4,15 +4,25 @@ import {
   MapPin,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Loader2,
   X,
   FileText,
   ShieldCheck,
+  ShieldAlert,
   QrCode,
-  Download
+  Download,
+  Home,
+  Navigation
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
+import {
+  fetchContractWorkplaceGeofence,
+  validateGeofence,
+  type WorkplaceGeofenceConfig,
+  type GeofenceValidationResult
+} from '../../services/timeTracking/timeTrackingGeoService';
 
 interface TimePunchModalProps {
   isOpen: boolean;
@@ -67,12 +77,47 @@ export const TimePunchModal: React.FC<TimePunchModalProps> = ({
   });
   const [receipt, setReceipt] = useState<PunchReceipt | null>(null);
 
+  // Estados de Geofencing (TB-05)
+  const [workplaceConfig, setWorkplaceConfig] = useState<WorkplaceGeofenceConfig | null>(null);
+  const [isTelework, setIsTelework] = useState<boolean>(false);
+  const [geofenceResult, setGeofenceResult] = useState<GeofenceValidationResult | null>(null);
+  const [geofenceLoading, setGeofenceLoading] = useState<boolean>(true);
+
   // Relógio em tempo real
   useEffect(() => {
     if (!isOpen) return;
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, [isOpen]);
+
+  // Carrega configuração de geofence da lotação vinculada ao contrato
+  useEffect(() => {
+    if (!isOpen || !contractId) {
+      setWorkplaceConfig(null);
+      setGeofenceResult(null);
+      return;
+    }
+
+    let isMounted = true;
+    setGeofenceLoading(true);
+
+    fetchContractWorkplaceGeofence(contractId)
+      .then((cfg) => {
+        if (!isMounted) return;
+        setWorkplaceConfig(cfg.workplace);
+        setIsTelework(cfg.isTelework);
+      })
+      .catch((err) => {
+        console.error('Erro ao consultar perímetro da lotação:', err);
+      })
+      .finally(() => {
+        if (isMounted) setGeofenceLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, contractId]);
 
   // Captura geolocalização ao abrir o modal
   useEffect(() => {
@@ -117,6 +162,21 @@ export const TimePunchModal: React.FC<TimePunchModalProps> = ({
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   }, [isOpen]);
+
+  // Calcula a validação de Geofence sempre que GPS ou workplaceConfig forem atualizados
+  useEffect(() => {
+    if (geofenceLoading || geoState.loading) return;
+
+    const result = validateGeofence({
+      userLat: geoState.latitude,
+      userLon: geoState.longitude,
+      userAccuracy: geoState.accuracy,
+      workplace: workplaceConfig,
+      isTelework
+    });
+
+    setGeofenceResult(result);
+  }, [geoState, workplaceConfig, isTelework, geofenceLoading]);
 
   if (!isOpen) return null;
 
@@ -243,23 +303,94 @@ export const TimePunchModal: React.FC<TimePunchModalProps> = ({
                 </p>
               </div>
 
-              {/* Status do GPS */}
-              <div className="flex items-center justify-between text-xs px-3 py-2.5 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="text-slate-500 flex items-center gap-1.5 font-medium">
-                  <MapPin size={15} className={geoState.latitude ? 'text-emerald-500' : 'text-amber-500'} />
-                  Localização GPS
-                </span>
-                {geoState.loading ? (
-                  <span className="text-slate-400 flex items-center gap-1">
-                    <Loader2 size={12} className="animate-spin" /> Localizando...
+              {/* Painel de Localização e Geofencing (TB-05) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs px-3 py-2 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-slate-500 flex items-center gap-1.5 font-medium">
+                    <Navigation size={14} className={geoState.latitude ? 'text-primary-600' : 'text-slate-400'} />
+                    Sinal GPS do Dispositivo
                   </span>
-                ) : geoState.latitude ? (
-                  <span className="text-emerald-600 font-semibold flex items-center gap-1">
-                    <CheckCircle2 size={14} /> Ativo (~{geoState.accuracy}m)
-                  </span>
-                ) : (
-                  <span className="text-amber-600 font-medium">Teletrabalho / Sem GPS</span>
-                )}
+                  {geoState.loading ? (
+                    <span className="text-slate-400 flex items-center gap-1 text-[11px]">
+                      <Loader2 size={12} className="animate-spin text-primary-500" /> Sintonizando...
+                    </span>
+                  ) : geoState.latitude ? (
+                    <span className="text-emerald-600 font-semibold flex items-center gap-1 text-[11px]">
+                      <CheckCircle2 size={13} /> Conectado (±{geoState.accuracy}m)
+                    </span>
+                  ) : (
+                    <span className="text-amber-600 font-medium text-[11px]">Indisponível</span>
+                  )}
+                </div>
+
+                {/* Card de Proximidade e Perímetro */}
+                {geofenceLoading || geoState.loading ? (
+                  <div className="p-3 bg-slate-50 border border-slate-100 rounded-2xl flex items-center gap-2.5 text-xs text-slate-500">
+                    <Loader2 size={16} className="animate-spin text-primary-500 shrink-0" />
+                    <span>Verificando perímetro da unidade de trabalho...</span>
+                  </div>
+                ) : geofenceResult ? (
+                  <div
+                    className={`p-3.5 rounded-2xl border transition-all text-xs space-y-1.5 ${
+                      geofenceResult.status === 'INSIDE'
+                        ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                        : geofenceResult.status === 'OUTSIDE'
+                        ? 'bg-rose-50 border-rose-200 text-rose-900 shadow-sm'
+                        : geofenceResult.status === 'TELEWORK'
+                        ? 'bg-sky-50 border-sky-200 text-sky-900'
+                        : geofenceResult.status === 'NO_GPS'
+                        ? 'bg-amber-50 border-amber-200 text-amber-900'
+                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        {geofenceResult.status === 'INSIDE' ? (
+                          <>
+                            <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                            <span>Perímetro Autorizado</span>
+                          </>
+                        ) : geofenceResult.status === 'OUTSIDE' ? (
+                          <>
+                            <ShieldAlert size={16} className="text-rose-600 shrink-0" />
+                            <span className="text-rose-700 font-extrabold">Fora do Perímetro</span>
+                          </>
+                        ) : geofenceResult.status === 'TELEWORK' ? (
+                          <>
+                            <Home size={16} className="text-sky-600 shrink-0" />
+                            <span>Regime de Teletrabalho</span>
+                          </>
+                        ) : geofenceResult.status === 'NO_GPS' ? (
+                          <>
+                            <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+                            <span className="text-amber-700">GPS Não Detectado</span>
+                          </>
+                        ) : (
+                          <>
+                            <MapPin size={16} className="text-slate-500 shrink-0" />
+                            <span>Auditoria de Localização</span>
+                          </>
+                        )}
+                      </div>
+
+                      {geofenceResult.distanceMeters !== null && (
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                            geofenceResult.isAllowed
+                              ? 'bg-emerald-200/60 text-emerald-800'
+                              : 'bg-rose-200/80 text-rose-800'
+                          }`}
+                        >
+                          {geofenceResult.distanceMeters}m de distância
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-[11px] leading-relaxed opacity-90">
+                      {geofenceResult.message}
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
               {/* Tipo de Marcação */}
@@ -290,24 +421,49 @@ export const TimePunchModal: React.FC<TimePunchModalProps> = ({
                 </div>
               </div>
 
-              {/* Botão de Registro */}
-              <button
-                onClick={handleRegisterPunch}
-                disabled={loading}
-                className="w-full py-4 rounded-2xl bg-gradient-to-r from-primary-600 to-indigo-600 text-white font-extrabold text-base shadow-lg shadow-primary-500/30 hover:shadow-primary-500/50 hover:brightness-105 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 size={20} className="animate-spin" />
-                    <span>Registrando e Autenticando...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 size={20} />
-                    <span>Confirmar Registro ({getEntryLabel(entryType)})</span>
-                  </>
-                )}
-              </button>
+              {/* Botão de Registro com Bloqueio Geodésico */}
+              {(() => {
+                const isBlockedByGeofence = geofenceResult ? !geofenceResult.isAllowed : false;
+                const isWaitingGps = geoState.loading || geofenceLoading;
+
+                return (
+                  <button
+                    onClick={handleRegisterPunch}
+                    disabled={loading || isBlockedByGeofence || isWaitingGps}
+                    className={`w-full py-4 rounded-2xl font-extrabold text-base transition-all flex items-center justify-center gap-2 ${
+                      isBlockedByGeofence
+                        ? 'bg-rose-100 text-rose-600 border border-rose-200 cursor-not-allowed opacity-90'
+                        : 'bg-gradient-to-r from-primary-600 to-indigo-600 text-white shadow-lg shadow-primary-500/30 hover:shadow-primary-500/50 hover:brightness-105 active:scale-[0.98] disabled:opacity-50'
+                    }`}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 size={20} className="animate-spin" />
+                        <span>Registrando e Autenticando...</span>
+                      </>
+                    ) : isWaitingGps ? (
+                      <>
+                        <Loader2 size={20} className="animate-spin" />
+                        <span>Validando Localização...</span>
+                      </>
+                    ) : isBlockedByGeofence ? (
+                      <>
+                        <ShieldAlert size={20} className="text-rose-600" />
+                        <span>
+                          {geofenceResult?.status === 'OUTSIDE'
+                            ? `Fora do Perímetro (${geofenceResult.distanceMeters}m) — Bloqueado`
+                            : 'GPS Obrigatório — Bloqueado'}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={20} />
+                        <span>Confirmar Registro ({getEntryLabel(entryType)})</span>
+                      </>
+                    )}
+                  </button>
+                );
+              })()}
             </>
           ) : (
             /* ━━━━ COMPROVANTE DE PONTO OFICIAL (PORTARIA 671) ━━━━ */
