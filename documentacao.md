@@ -578,3 +578,42 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
      - Inclusão do status `CALCULATING` na constraint `payslips_status_check` e ajuste no trigger `sync_payslip_status_with_period` para não propagar esse estado transitório aos holerites.
   4. **Correção de Imutabilidade na Memória de Cálculo (`00098_fix_payroll_memory_calc_immutability_trigger.sql`)**:
      - Ajuste na função `check_payroll_period_immutability` para resolver `period_id` via join com `payslips` na tabela `payroll_memory_calc` (que possui `payslip_id` e não `period_id`).
+
+---
+
+### 24. FASE P8: Auditoria Ampliada e Imutabilidade Forense T29 (16/10/2026)
+
+- **Objetivo**: Atendimento estrito aos requisitos de conformidade legal, LGPD e CLT quanto à inviolabilidade das trilhas de auditoria e cobertura de 100% dos dados corporativos.
+- **Implementações Técnicas**:
+  1. **Imutabilidade Append-Only (`00101_audit_t29_immutability_and_full_coverage.sql`)**:
+     - Criação do trigger `trg_prevent_audit_logs_mutation` bloqueando com `RAISE EXCEPTION` qualquer operação de `UPDATE` ou `DELETE` na tabela `audit.logs`. A tabela é estritamente somente-inserção.
+  2. **Cobertura Universal de Gatilhos de Auditoria**:
+     - Gatilhos `audit.audit_trigger_func()` anexados a 100% das 25 tabelas críticas:
+       - Folha: `payslips`, `payslip_items`, `payroll_memory_calc`, `payroll_company_taxes`, `employee_deductions`, `payroll_periods`, `payroll_variable_events`, `employee_fixed_events`.
+       - Parâmetros legais: `legal_versions`, `inss_parameters`, `irrf_parameters`, `general_legal_parameters`, `payroll_progressive_tables`.
+       - Ponto eletrônico: `time_daily_summary`, `time_punch_records`, `time_bank_accounts`, `time_bank_transactions`, `timesheets`, `timesheet_contests`.
+       - Assinaturas digitais: `signatures_log`, `document_events`.
+  3. **Suíte TDD de Auditoria (`AuditT29.test.ts`)**:
+     - Testes automatizados validando a política de rejeição de mutações e a cobertura completa do catálogo de tabelas críticas.
+
+---
+
+### 25. FASE P8: RBAC Granular e Isolamento Estrito de RLS entre Tenants (16/10/2026)
+
+- **Objetivo**: Implementação da matriz de controle de acesso baseada em papéis (RBAC) com o princípio do menor privilégio (Default Deny) e garantia matemática de que nenhum tenant consiga ler dados de outro.
+- **Implementações Técnicas**:
+  1. **Migration 00102 (`00102_rbac_granular_roles_and_permissions_p8.sql`)**:
+     - Atualização da constraint `tenant_users_role_check` incorporando o papel oficial `'accountant'`.
+     - Inclusão da coluna `worker_id` em `tenant_users` para relacionamento formal e seguro de contas de colaboradores.
+     - Catálogo formal de 14 permissões granulares em `public.permissions` e 8 papéis de sistema em `public.roles`.
+     - Políticas de RLS reforçadas:
+       - `payslips` e `payslip_items`: `accountant` e `auditor` possuem permissão somente-leitura; `employee` acessa exclusivamente seus próprios holerites quando com status `CLOSED`; mutações restritas a Administradores e DP.
+       - `employment_contracts`: `accountant`, `auditor` e `manager` possuem consulta; mutações restritas a Administradores e DP; `employee` restrito ao seu próprio vínculo.
+       - `audit.logs`: Leitura restrita a Administradores e Auditores; mutações bloqueadas pelo trigger `trg_prevent_audit_logs_mutation`.
+  2. **Serviço de Segurança RBAC (`src/services/security/rbacService.ts`)**:
+     - `ROLE_PERMISSIONS_MATRIX`: Definição canônica de permissões por papel.
+     - Métodos utilitários: `hasPermission`, `assertPermission`, `canMutatePayroll`, `canMutateContracts`, `canApproveTimesheets`, `canAccessAccounting`, `canViewAuditLogs`, `isAdministrativeRole`.
+  3. **Suítes de Testes Automatizados (Gate P8)**:
+     - `src/tests/security/GranularRBAC.test.ts`: 8 testes cobrindo permissões, proibições e exceções de acesso para todos os 8 papéis.
+     - `src/tests/security/MultiTenantRlsIsolation.test.ts`: 7 testes provando que um tenant não lê dados de outro em contratos, holerites, ponto, consignados, assinaturas e logs de auditoria.
+
