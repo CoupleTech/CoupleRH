@@ -41,6 +41,8 @@ import TimesheetViewModal from "../../components/timeTracking/TimesheetViewModal
 import { SignaturePadModal, type SignatureCaptureData } from "../../components/documents/SignaturePadModal";
 import { DocumentSigningService } from "../../services/documents/documentSigningService";
 import { DocumentComplianceService } from "../../services/documents/documentComplianceService";
+import { VacationReceiptService } from "../../services/vacations/vacationReceiptService";
+import { DocumentGeneratorService, type VacationReceiptSnapshot } from "../../services/documents/documentGeneratorService";
 
 // ── Types ──
 interface EmployeeAuth {
@@ -635,6 +637,162 @@ export default function EmployeePortal() {
     } catch (err) {
       console.error(err);
       toast.error("Erro ao gerar documento de férias.");
+    }
+  };
+
+  const handleGenerateOfficialVacationPdf = async (req: any) => {
+    if (!profile || !auth) return;
+    try {
+      const accounting = VacationReceiptService.calculateVacationAccounting({
+        baseSalary: profile.contract?.base_salary || 0,
+        daysTaken: req.days_taken || 30,
+        cashAllowanceDays: req.cash_allowance_days || 0,
+        startDate: req.start_date
+      });
+
+      const paymentDue = VacationReceiptService.calculatePaymentDueDate(req.start_date);
+      const concessive = VacationReceiptService.evaluateConcessiveCompliance(req.start_date, vacationBalance?.concessive_end_date);
+
+      const snapshot: VacationReceiptSnapshot = {
+        receiptId: req.id,
+        company: {
+          id: auth.companyId,
+          corporateName: companyData.name,
+          cnpj: companyData.cnpj
+        },
+        worker: {
+          id: auth.workerId,
+          fullName: profile.full_name,
+          cpf: profile.cpf,
+          admissionDate: profile.contract?.admission_date || '',
+          positionTitle: profile.contract?.position_title || 'Colaborador',
+          baseSalary: profile.contract?.base_salary || 0
+        },
+        takeStartDate: formatDate(req.start_date),
+        takeEndDate: formatDate(req.end_date),
+        daysCount: req.days_taken,
+        cashAllowanceDays: req.cash_allowance_days || 0,
+        vestingPeriodStart: vacationBalance?.start_date ? formatDate(vacationBalance.start_date) : undefined,
+        vestingPeriodEnd: vacationBalance?.end_date ? formatDate(vacationBalance.end_date) : undefined,
+        concessivePeriodEnd: vacationBalance?.concessive_end_date ? formatDate(vacationBalance.concessive_end_date) : undefined,
+        concessiveStatusLabel: concessive.statusLabel,
+        paymentDueDate: paymentDue.dueDateFormatted,
+        items: accounting.items,
+        totalGross: accounting.earningsTotal,
+        totalDeductions: accounting.deductionsTotal,
+        netAmount: accounting.netSalary,
+        netAmountExtenso: accounting.netAmountExtenso
+      };
+
+      const result = await DocumentGeneratorService.generateVacationReceiptPdf(snapshot);
+
+      const blob = new Blob([result.pdfBytes as any], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Recibo_Ferias_${profile.full_name.replace(/\s+/g, '_')}_${req.start_date}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Recibo de Férias Oficial (PDF timbrado com QR Code) gerado com sucesso!");
+    } catch (err: any) {
+      console.error("Erro ao gerar PDF de férias:", err);
+      toast.error("Não foi possível gerar o PDF de férias: " + (err.message || 'Erro inesperado'));
+    }
+  };
+
+  const handleSignVacationReceipt = async (req: any) => {
+    if (!profile || !auth) return;
+    try {
+      // 1. Procura se já existe em signatures locais
+      let doc = signatures.find(s => s.document_type === 'VACATION_RECEIPT' && s.metadata?.vacationRequestId === req.id);
+
+      if (!doc) {
+        // Busca na tabela employee_documents
+        const { data: existingDoc } = await supabase
+          .from('employee_documents')
+          .select('*')
+          .eq('worker_id', auth.workerId)
+          .eq('document_type', 'VACATION_RECEIPT')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (existingDoc && existingDoc.status === 'PENDING_SIGNATURE') {
+          doc = existingDoc;
+        } else {
+          // Cria o snapshot e o registro para assinatura eletrônica avançada (P6)
+          const accounting = VacationReceiptService.calculateVacationAccounting({
+            baseSalary: profile.contract?.base_salary || 0,
+            daysTaken: req.days_taken || 30,
+            cashAllowanceDays: req.cash_allowance_days || 0,
+            startDate: req.start_date
+          });
+          const paymentDue = VacationReceiptService.calculatePaymentDueDate(req.start_date);
+          const concessive = VacationReceiptService.evaluateConcessiveCompliance(req.start_date, vacationBalance?.concessive_end_date);
+
+          const snapshot: VacationReceiptSnapshot = {
+            receiptId: req.id,
+            company: { id: auth.companyId, corporateName: companyData.name, cnpj: companyData.cnpj },
+            worker: {
+              id: auth.workerId,
+              fullName: profile.full_name,
+              cpf: profile.cpf,
+              admissionDate: profile.contract?.admission_date || '',
+              positionTitle: profile.contract?.position_title || 'Colaborador',
+              baseSalary: profile.contract?.base_salary || 0
+            },
+            takeStartDate: formatDate(req.start_date),
+            takeEndDate: formatDate(req.end_date),
+            daysCount: req.days_taken,
+            cashAllowanceDays: req.cash_allowance_days || 0,
+            vestingPeriodStart: vacationBalance?.start_date ? formatDate(vacationBalance.start_date) : undefined,
+            vestingPeriodEnd: vacationBalance?.end_date ? formatDate(vacationBalance.end_date) : undefined,
+            concessivePeriodEnd: vacationBalance?.concessive_end_date ? formatDate(vacationBalance.concessive_end_date) : undefined,
+            concessiveStatusLabel: concessive.statusLabel,
+            paymentDueDate: paymentDue.dueDateFormatted,
+            items: accounting.items,
+            totalGross: accounting.earningsTotal,
+            totalDeductions: accounting.deductionsTotal,
+            netAmount: accounting.netSalary,
+            netAmountExtenso: accounting.netAmountExtenso
+          };
+
+          const gen = await DocumentGeneratorService.generateVacationReceiptPdf(snapshot);
+
+          const { data: newDoc, error: insertError } = await supabase
+            .from('employee_documents')
+            .insert({
+              tenant_id: auth.tenantId,
+              worker_id: auth.workerId,
+              title: `Recibo de Férias - ${formatDate(req.start_date)}`,
+              document_type: 'VACATION_RECEIPT',
+              status: 'PENDING_SIGNATURE',
+              requires_employee_signature: true,
+              verification_code: gen.verificationCode,
+              hash_original: gen.hashH1,
+              metadata: {
+                vacationRequestId: req.id,
+                daysTaken: req.days_taken,
+                startDate: req.start_date,
+                endDate: req.end_date,
+                netSalary: accounting.netSalary
+              }
+            })
+            .select()
+            .single();
+
+          if (insertError) throw insertError;
+          doc = newDoc;
+        }
+      }
+
+      setShowVacationDetailsModal(false);
+      handleOpenSignModal(doc);
+    } catch (err: any) {
+      console.error("Erro ao preparar assinatura de férias:", err);
+      toast.error("Erro ao abrir assinatura do recibo: " + (err.message || 'Tente novamente'));
     }
   };
 
@@ -1763,61 +1921,243 @@ export default function EmployeePortal() {
             </div>
 
             {/* Modal Content - Document Viewer */}
-            <div className="flex-1 overflow-y-auto p-6 bg-slate-100/50">
-              <div className="bg-white border border-slate-300 p-8 shadow-sm min-h-[500px] text-slate-800 font-serif leading-relaxed">
-                {documentToView.document_type === 'VACATION_NOTICE' && documentToView.metadata && (
-                  <div className="space-y-6">
-                    <h1 className="text-xl font-bold text-center underline uppercase mb-8">Aviso de Férias</h1>
-                    
-                    <p>Ao(à) Sr(a). <strong>{profile?.full_name}</strong></p>
-                    
-                    <p className="text-justify indent-8">
-                      Nos termos das disposições legais vigentes, comunicamos que lhe serão concedidas férias, 
-                      relativas ao período aquisitivo de <strong>{formatDate(documentToView.metadata.startDate)}</strong>, 
-                      num total de <strong>{documentToView.metadata.vacationDays}</strong> dias.
-                    </p>
-                    
-                    <p className="text-justify indent-8">
-                      Seu período de gozo de férias terá início em <strong>{formatDate(documentToView.metadata.startDate)}</strong> e 
-                      terminará em <strong>{new Date(new Date(documentToView.metadata.startDate).getTime() + (documentToView.metadata.vacationDays - 1) * 86400000).toLocaleDateString('pt-BR')}</strong>, 
-                      devendo retornar ao trabalho no dia <strong>{documentToView.metadata.returnDate}</strong>.
-                    </p>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100/50">
+              <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-8 shadow-sm min-h-[500px] text-slate-800 font-sans leading-relaxed">
+                {documentToView.document_type === 'VACATION_NOTICE' && documentToView.metadata && (() => {
+                  const daysTaken = Number(documentToView.metadata.vacationDays || documentToView.metadata.daysTaken || 30);
+                  const sellDays = Number(documentToView.metadata.sellDays || documentToView.metadata.cashAllowanceDays || 0);
+                  const startDate = documentToView.metadata.startDate;
+                  const paymentDue = VacationReceiptService.calculatePaymentDueDate(startDate);
+                  const startDt = new Date(startDate);
+                  const endDt = new Date(startDt.getTime() + (daysTaken - 1) * 86400000);
 
-                    {documentToView.metadata.sellDays && (
-                      <p className="text-justify indent-8 font-semibold">
-                        Neste ato, fica também acordada a conversão de 1/3 (um terço) do período de férias a que tem direito 
-                        em abono pecuniário (10 dias).
-                      </p>
-                    )}
+                  return (
+                    <div className="space-y-6 font-sans">
+                      {/* Cabeçalho do Aviso */}
+                      <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                        <div>
+                          <span className="text-[10px] font-bold tracking-widest text-primary-600 uppercase bg-primary-50 px-2 py-0.5 rounded">
+                            Artigo 135 CLT
+                          </span>
+                          <h1 className="text-lg sm:text-xl font-bold text-slate-900 mt-1">AVISO PRÉVIO DE FÉRIAS</h1>
+                          <p className="text-xs text-slate-500">Notificação obrigatória de concessão com antecedência legal</p>
+                        </div>
+                        {documentToView.verification_code && (
+                          <div className="text-left sm:text-right">
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase block">Cód. Autenticação</span>
+                            <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                              {documentToView.verification_code}
+                            </span>
+                          </div>
+                        )}
+                      </div>
 
-                    <div className="mt-16 pt-8 border-t border-slate-400 text-center space-y-2">
-                      <p>Data do ciente: <strong>{new Date().toLocaleDateString('pt-BR')}</strong></p>
-                      <p>_________________________________________________</p>
-                      <p className="font-bold">{profile?.full_name}</p>
-                      <p className="text-sm text-slate-500">CPF: {maskCpf(profile?.cpf || '')}</p>
+                      {/* Dados Contratuais e Prazos em Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">Colaborador(a)</span>
+                          <span className="font-bold text-slate-800">{profile?.full_name}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">CPF</span>
+                          <span className="font-semibold text-slate-700 font-mono">{maskCpf(profile?.cpf || '')}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">Cargo / Função</span>
+                          <span className="font-semibold text-slate-700">{profile?.contract?.position_title || 'Colaborador'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">Duração das Férias</span>
+                          <span className="font-bold text-slate-900">{daysTaken} dias regulamentares</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">Período de Fruição (Gozo)</span>
+                          <span className="font-bold text-blue-700">
+                            {formatDate(startDate)} a {endDt.toLocaleDateString('pt-BR')}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">Retorno ao Trabalho</span>
+                          <span className="font-bold text-slate-800">
+                            {documentToView.metadata.returnDate ? formatDate(documentToView.metadata.returnDate) : 'Primeiro dia útil subsequente'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">Pagamento das Férias (Art. 145 CLT)</span>
+                          <span className="font-bold text-emerald-700">
+                            Até {paymentDue.dueDateFormatted}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">Abono Pecuniário (Conversão 1/3)</span>
+                          <span className="font-semibold text-slate-700">
+                            {sellDays > 0 ? `${sellDays} dias convertidos em dinheiro` : 'Não optante'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Notificação Formal */}
+                      <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200 text-xs text-slate-700 space-y-3 leading-relaxed text-justify">
+                        <p>
+                          Nos termos das disposições legais vigentes, em especial o <strong>Artigo 135 da Consolidação das Leis do Trabalho (CLT)</strong>, comunicamos formalmente que lhe serão concedidas férias regulamentares com início em <strong>{formatDate(startDate)}</strong> e término em <strong>{endDt.toLocaleDateString('pt-BR')}</strong>, devendo apresentar-se ao serviço no dia útil subsequente.
+                        </p>
+                        <p>
+                          A remuneração correspondente e o acréscimo de 1/3 constitucional estarão disponibilizados para crédito bancário até 2 (dois) dias antes do início da fruição (<strong>{paymentDue.dueDateFormatted}</strong>), conforme exigido pelo <strong>Artigo 145 da CLT</strong>.
+                        </p>
+                        <p>
+                          Solicitamos a apresentação de sua Carteira de Trabalho e Previdência Social (CTPS Digital) para que o Departamento Pessoal proceda às devidas anotações legais.
+                        </p>
+                      </div>
+
+                      {/* Carimbo de Ciente */}
+                      <div className="pt-4 border-t border-slate-200 text-center space-y-1">
+                        <p className="text-[11px] text-slate-500">
+                          {documentToView.status === 'SIGNED' ? 'Ciente assinado digitalmente' : 'Aguardando confirmação de ciente com rubrica'}
+                        </p>
+                        <p className="font-bold text-slate-900">{profile?.full_name}</p>
+                        <p className="text-xs font-mono text-slate-400">CPF: {maskCpf(profile?.cpf || '')}</p>
+                        {documentToView.hash_original && (
+                          <p className="text-[9px] font-mono text-slate-400 mt-1">Hash: {documentToView.hash_original}</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
                 
-                {documentToView.document_type === 'VACATION_RECEIPT' && documentToView.metadata && (
-                  <div className="space-y-6">
-                    <h1 className="text-xl font-bold text-center underline uppercase mb-8">Recibo de Férias</h1>
-                    
-                    <p>
-                      Recebi de minha empregadora, a importância líquida referente às minhas férias do período aquisitivo de 
-                      <strong> {formatDate(documentToView.metadata.startDate)}</strong>, 
-                      com início marcado para <strong>{formatDate(documentToView.metadata.startDate)}</strong> e 
-                      retorno ao trabalho no dia <strong>{documentToView.metadata.returnDate}</strong>.
-                    </p>
-                    
-                    <div className="mt-16 pt-8 border-t border-slate-400 text-center space-y-2">
-                      <p>Data do recibo: <strong>{new Date().toLocaleDateString('pt-BR')}</strong></p>
-                      <p>_________________________________________________</p>
-                      <p className="font-bold">{profile?.full_name}</p>
-                      <p className="text-sm text-slate-500">CPF: {maskCpf(profile?.cpf || '')}</p>
+                {documentToView.document_type === 'VACATION_RECEIPT' && documentToView.metadata && (() => {
+                  const daysTaken = Number(documentToView.metadata.daysTaken || documentToView.metadata.vacationDays || 30);
+                  const cashAllowanceDays = Number(documentToView.metadata.sellDays || documentToView.metadata.cashAllowanceDays || 0);
+                  const startDate = documentToView.metadata.startDate;
+                  const baseSalary = profile?.contract?.base_salary || Number(documentToView.metadata.baseSalary) || 0;
+                  
+                  const accounting = VacationReceiptService.calculateVacationAccounting({
+                    baseSalary,
+                    daysTaken,
+                    cashAllowanceDays,
+                    startDate
+                  });
+                  const paymentDue = VacationReceiptService.calculatePaymentDueDate(startDate);
+
+                  return (
+                    <div className="space-y-6 font-sans">
+                      {/* Cabeçalho do Recibo */}
+                      <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                        <div>
+                          <span className="text-[10px] font-bold tracking-widest text-primary-600 uppercase bg-primary-50 px-2 py-0.5 rounded">
+                            Artigo 145 CLT
+                          </span>
+                          <h1 className="text-lg sm:text-xl font-bold text-slate-900 mt-1">RECIBO DE QUITAÇÃO DE FÉRIAS</h1>
+                          <p className="text-xs text-slate-500">Demonstrativo oficial de liquidação trabalhista</p>
+                        </div>
+                        {documentToView.verification_code && (
+                          <div className="text-left sm:text-right">
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase block">Cód. Autenticação</span>
+                            <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                              {documentToView.verification_code}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Dados Contratuais e Prazos em Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">Colaborador</span>
+                          <span className="font-bold text-slate-800">{profile?.full_name}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">CPF</span>
+                          <span className="font-semibold text-slate-700 font-mono">{maskCpf(profile?.cpf || '')}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">Cargo / Função</span>
+                          <span className="font-semibold text-slate-700">{profile?.contract?.position_title || 'Colaborador'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">Salário Base</span>
+                          <span className="font-bold text-slate-900">{formatCurrency(baseSalary)}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">Período de Gozo</span>
+                          <span className="font-bold text-blue-700">
+                            {formatDate(startDate)} a {documentToView.metadata.returnDate ? formatDate(documentToView.metadata.returnDate) : '...'} ({daysTaken} dias)
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] uppercase font-bold block">Prazo Limite Pagamento (CLT 145)</span>
+                          <span className="font-bold text-emerald-700">
+                            {paymentDue.dueDateFormatted}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Tabela do Demonstrativo das Verbas */}
+                      <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-slate-100 text-slate-700 uppercase font-bold text-[10px] border-b border-slate-200">
+                            <tr>
+                              <th className="px-3 py-2.5">Cód</th>
+                              <th className="px-3 py-2.5">Descrição da Verba</th>
+                              <th className="px-3 py-2.5 text-right">Ref.</th>
+                              <th className="px-3 py-2.5 text-right">Proventos</th>
+                              <th className="px-3 py-2.5 text-right">Descontos</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                            {accounting.items.map((item, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50/50">
+                                <td className="px-3 py-2 font-mono text-slate-500">{item.code}</td>
+                                <td className="px-3 py-2 font-semibold text-slate-800">{item.description}</td>
+                                <td className="px-3 py-2 text-right text-slate-500">{item.reference}</td>
+                                <td className="px-3 py-2 text-right font-medium text-slate-800">
+                                  {item.type === 'EARNING' ? formatCurrency(item.amount) : '—'}
+                                </td>
+                                <td className="px-3 py-2 text-right font-medium text-rose-600">
+                                  {item.type === 'DEDUCTION' ? formatCurrency(item.amount) : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                            <tr className="bg-slate-50 font-bold border-t border-slate-200">
+                              <td colSpan={3} className="px-3 py-2 text-right text-slate-600">TOTAIS:</td>
+                              <td className="px-3 py-2 text-right text-slate-900">{formatCurrency(accounting.earningsTotal)}</td>
+                              <td className="px-3 py-2 text-right text-rose-600">{formatCurrency(accounting.deductionsTotal)}</td>
+                            </tr>
+                            <tr className="bg-emerald-50/70 border-t-2 border-emerald-500 font-black text-emerald-900">
+                              <td colSpan={3} className="px-3 py-2.5 text-right uppercase tracking-wider text-[11px]">
+                                Líquido a Receber:
+                              </td>
+                              <td colSpan={2} className="px-3 py-2.5 text-right text-sm text-emerald-700">
+                                {formatCurrency(accounting.netSalary)}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Valor por Extenso */}
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs text-slate-700">
+                        <strong className="text-slate-900">Valor por Extenso:</strong> {accounting.netAmountExtenso}
+                      </div>
+
+                      {/* Declaração de Quitação */}
+                      <p className="text-xs text-slate-600 text-justify leading-relaxed bg-amber-50/50 p-3 rounded-lg border border-amber-200/60">
+                        Recebi da empresa a importância líquida de <strong>{formatCurrency(accounting.netSalary)}</strong> ({accounting.netAmountExtenso}), discriminada neste recibo, referente ao pagamento das férias do período acima indicado, concedidas em conformidade com os <strong>Artigos 134 e 145 da CLT</strong>, dando à empregadora plena e irrevogável quitação.
+                      </p>
+
+                      {/* Carimbo de Assinatura */}
+                      <div className="pt-4 border-t border-slate-200 text-center space-y-1">
+                        <p className="text-[11px] text-slate-500">
+                          {documentToView.status === 'SIGNED' ? 'Documento assinado digitalmente' : 'Aguardando confirmação de rubrica'}
+                        </p>
+                        <p className="font-bold text-slate-900">{profile?.full_name}</p>
+                        <p className="text-xs font-mono text-slate-400">CPF: {maskCpf(profile?.cpf || '')}</p>
+                        {documentToView.hash_original && (
+                          <p className="text-[9px] font-mono text-slate-400 mt-1">Hash: {documentToView.hash_original}</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {!['VACATION_NOTICE', 'VACATION_RECEIPT'].includes(documentToView.document_type) && (
                   <div className="text-center py-20 text-slate-500">
@@ -1853,109 +2193,212 @@ export default function EmployeePortal() {
         </div>
       )}
 
-      {/* ━━━━ MODAL: Detalhes das Férias Programadas ━━━━ */}
+      {/* ━━━━ MODAL: Detalhes das Férias Programadas e Recibo Completo (TB-06) ━━━━ */}
       {showVacationDetailsModal && selectedVacationReq && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
           <div 
-            className="bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-slide-up"
+            className="bg-white rounded-3xl w-full max-w-xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-amber-50/80">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
-                  <Umbrella size={20} className="text-amber-700" />
-                </div>
-                <div>
-                  <h2 className="text-base font-bold text-slate-800 font-display">Detalhes das Férias</h2>
-                  <p className="text-xs font-medium text-slate-500">
-                    {formatDate(selectedVacationReq.start_date)} a {formatDate(selectedVacationReq.end_date)}
-                  </p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowVacationDetailsModal(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-amber-100/50 rounded-full transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
+            {(() => {
+              const accounting = VacationReceiptService.calculateVacationAccounting({
+                baseSalary: profile?.contract?.base_salary || 0,
+                daysTaken: selectedVacationReq.days_taken || 30,
+                cashAllowanceDays: selectedVacationReq.cash_allowance_days || 0,
+                startDate: selectedVacationReq.start_date
+              });
+              const paymentDue = VacationReceiptService.calculatePaymentDueDate(selectedVacationReq.start_date);
+              const concessive = VacationReceiptService.evaluateConcessiveCompliance(
+                selectedVacationReq.start_date,
+                vacationBalance?.concessive_end_date
+              );
 
-            {/* Modal Content */}
-            <div className="flex-1 overflow-y-auto p-5">
-              <div className="space-y-6">
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 space-y-3">
-                  <div className="flex justify-between items-center text-sm border-b border-slate-200 pb-2">
-                    <span className="text-slate-500 font-medium">Dias Solicitados</span>
-                    <span className="font-bold text-slate-800">{selectedVacationReq.days_taken} dias</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm border-b border-slate-200 pb-2">
-                    <span className="text-slate-500 font-medium">Abono Pecuniário</span>
-                    <span className="font-bold text-slate-800">{selectedVacationReq.cash_allowance_days || 0} dias</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm border-b border-slate-200 pb-2">
-                    <span className="text-slate-500 font-medium">Data de Início</span>
-                    <span className="font-bold text-slate-800">{formatDate(selectedVacationReq.start_date)}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm pb-1">
-                    <span className="text-slate-500 font-medium">Data de Término</span>
-                    <span className="font-bold text-slate-800">{formatDate(selectedVacationReq.end_date)}</span>
-                  </div>
-                </div>
-
-                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm shadow-slate-200/20">
-                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
-                    <FileText size={16} className="text-slate-500" />
-                    <h3 className="font-bold text-slate-800 text-sm">Ações e Documentos</h3>
-                  </div>
-                  <div className="p-2 space-y-2">
-                    <div className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg transition-colors">
-                      <div>
-                        <p className="text-sm font-bold text-slate-800">Aviso de Férias</p>
-                        <p className="text-xs text-slate-500">Comunicação formal de saída</p>
+              return (
+                <>
+                  {/* Modal Header */}
+                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-amber-50/80">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shadow-sm">
+                        <Umbrella size={20} className="text-amber-700" />
                       </div>
-                      <div className="flex gap-2">
-                        <button 
-                          onClick={() => handlePrintVacation(selectedVacationReq, 'aviso')}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors"
-                        >
-                          Visualizar / Imprimir
-                        </button>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-base font-bold text-slate-800 font-display">Recibo de Férias & Prazos CLT</h2>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200/60 text-amber-900">
+                            CLT Art. 145
+                          </span>
+                        </div>
+                        <p className="text-xs font-medium text-slate-500">
+                          {formatDate(selectedVacationReq.start_date)} a {formatDate(selectedVacationReq.end_date)} ({selectedVacationReq.days_taken} dias)
+                        </p>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg transition-colors border-t border-slate-100">
-                      <div>
-                        <p className="text-sm font-bold text-slate-800">Recibo de Férias</p>
-                        <p className="text-xs text-slate-500">Comprovante de pagamento</p>
+                    <button 
+                      onClick={() => setShowVacationDetailsModal(false)}
+                      className="p-2 text-slate-400 hover:text-slate-600 hover:bg-amber-100/50 rounded-full transition-colors"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  {/* Modal Content */}
+                  <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                    {/* 1. Painel de Prazos Legais CLT (Arts. 134 e 145) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Período Aquisitivo & Concessivo */}
+                      <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                            Período Aquisitivo
+                          </span>
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                            concessive.badgeVariant === 'danger'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : concessive.badgeVariant === 'warning'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          }`}>
+                            {concessive.statusLabel}
+                          </span>
+                        </div>
+                        <p className="text-xs font-semibold text-slate-800">
+                          {vacationBalance?.start_date ? formatDate(vacationBalance.start_date) : '—'} a {vacationBalance?.end_date ? formatDate(vacationBalance.end_date) : '—'}
+                        </p>
+                        <div className="pt-1 border-t border-slate-200/60 text-[11px] text-slate-600 flex justify-between items-center">
+                          <span>Limite Concessivo (Art. 134):</span>
+                          <span className="font-bold text-slate-800">
+                            {vacationBalance?.concessive_end_date ? formatDate(vacationBalance.concessive_end_date) : '—'}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex gap-2">
-                        <button 
-                          onClick={() => handlePrintVacation(selectedVacationReq, 'recibo')}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors"
-                        >
-                          Visualizar / Imprimir
-                        </button>
+
+                      {/* Prazo Limite Legal de Pagamento */}
+                      <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-2xl p-3.5 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">
+                            Limite de Pagamento
+                          </span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            Art. 145 CLT
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-base font-extrabold text-emerald-900 font-display tabular-nums">
+                            {paymentDue.dueDateFormatted}
+                          </span>
+                          <span className="text-[10px] text-emerald-700 font-medium">
+                            (2 dias antes do gozo)
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-emerald-700 leading-tight pt-1 border-t border-emerald-200/60">
+                          {paymentDue.legalNotice}
+                        </p>
                       </div>
                     </div>
+
+                    {/* 2. Demonstrativo Contábil Discriminado */}
+                    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                      <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileText size={16} className="text-slate-600" />
+                          <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                            Demonstrativo Contábil de Férias
+                          </h3>
+                        </div>
+                        <span className="text-[11px] font-medium text-slate-500">
+                          Base: {formatCurrency(accounting.effectiveBaseSalary)}
+                        </span>
+                      </div>
+
+                      <div className="divide-y divide-slate-100 text-xs">
+                        {accounting.items.map((item, idx) => (
+                          <div key={idx} className="px-4 py-2.5 flex items-center justify-between hover:bg-slate-50/60 transition-colors">
+                            <div className="flex items-center gap-2.5">
+                              <span className="font-mono font-bold text-[11px] text-slate-400 w-8">{item.code}</span>
+                              <span className="font-medium text-slate-800">{item.name}</span>
+                              {item.reference && (
+                                <span className="text-[10px] text-slate-400 px-1.5 py-0.5 rounded bg-slate-100 font-medium">
+                                  {item.reference}
+                                </span>
+                              )}
+                            </div>
+                            <span className={`font-bold tabular-nums ${item.type === 'EARNING' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              {item.type === 'EARNING' ? '+ ' : '- '}
+                              {formatCurrency(item.amount)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Totais de Proventos e Descontos */}
+                      <div className="bg-slate-50/80 px-4 py-2.5 border-t border-slate-200 flex justify-between text-xs font-semibold text-slate-600">
+                        <div>
+                          <span>Total Proventos: </span>
+                          <span className="text-emerald-700 font-bold">{formatCurrency(accounting.earningsTotal)}</span>
+                        </div>
+                        <div>
+                          <span>Total Descontos: </span>
+                          <span className="text-rose-700 font-bold">{formatCurrency(accounting.deductionsTotal)}</span>
+                        </div>
+                      </div>
+
+                      {/* Card do Salário Líquido e Valor por Extenso */}
+                      <div className="p-4 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/10 border-t border-emerald-200">
+                        <div className="flex justify-between items-baseline mb-1">
+                          <span className="text-xs font-bold uppercase tracking-wider text-emerald-900 font-display">
+                            Líquido de Férias a Receber
+                          </span>
+                          <span className="text-xl font-extrabold text-emerald-700 font-display tabular-nums">
+                            {formatCurrency(accounting.netSalary)}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 italic leading-relaxed">
+                          <span className="font-semibold text-slate-700">Por extenso: </span>
+                          {accounting.netAmountExtenso}.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Aviso de Quitação Legal */}
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-[10px] text-slate-500 leading-relaxed flex items-start gap-2">
+                      <ShieldCheck size={14} className="text-emerald-600 shrink-0 mt-0.5" />
+                      <span>
+                        Documento gerado em estrita conformidade com os artigos 134, 142 e 145 da CLT e Art. 7º, XVII da CF/88. A chancela por Assinatura Eletrônica Avançada confere plena eficácia jurídica probatória (MP 2.200-2/2001 e Lei 14.063/2020).
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3">
-              <button 
-                onClick={() => {
-                  setShowVacationDetailsModal(false);
-                  setShowDocsModal(true);
-                  setDocsActiveTab('assinaturas');
-                }}
-                className="flex items-center gap-2 px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm"
-              >
-                <PenTool size={16} /> Ir para Assinaturas
-              </button>
-            </div>
+
+                  {/* Modal Footer com Ações */}
+                  <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-wrap items-center justify-between gap-2.5">
+                    <button
+                      onClick={() => handlePrintVacation(selectedVacationReq, 'aviso')}
+                      className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-xl transition-colors border border-slate-200"
+                    >
+                      Aviso de Férias
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleGenerateOfficialVacationPdf(selectedVacationReq)}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold rounded-xl transition-all border border-slate-200 shadow-sm"
+                        title="Baixar Recibo Oficial de Férias com QR Code e Hash H1"
+                      >
+                        <FileDown size={15} className="text-slate-600" />
+                        Baixar PDF Oficial
+                      </button>
+
+                      <button 
+                        onClick={() => handleSignVacationReceipt(selectedVacationReq)}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm shadow-primary-500/25 active:scale-95"
+                      >
+                        <PenTool size={15} />
+                        Assinar Recibo Digital
+                      </button>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

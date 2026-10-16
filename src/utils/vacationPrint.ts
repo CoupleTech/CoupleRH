@@ -1,4 +1,5 @@
 import { round2, sumMoney, subtractMoney } from './money';
+import { numberToWordsPtBr } from './numberToWordsPtBr';
 
 export const calculateVacationReceipt = (
   baseSalary: number,
@@ -113,105 +114,320 @@ export const calculateVacationReceipt = (
   };
 };
 
+const commonStyles = `
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #0f172a;
+    background: #f8fafc;
+    padding: 12px;
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  .doc-container {
+    max-width: 820px;
+    margin: 0 auto;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .header-card {
+    background: #0f172a;
+    color: #ffffff;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .header-title {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .header-sub {
+    font-size: 11px;
+    color: #94a3b8;
+    font-weight: 500;
+  }
+  .card-section {
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #475569;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 16px;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px 16px;
+  }
+  .data-item {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .data-lbl {
+    font-size: 10px;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 1px;
+  }
+  .data-val {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #0f172a;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .data-val.nowrap {
+    white-space: nowrap;
+  }
+  .table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 6px;
+    border: 1px solid #cbd5e1;
+    margin-bottom: 12px;
+  }
+  table.formal-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    min-width: 520px;
+  }
+  table.formal-table th {
+    background: #f1f5f9;
+    color: #334155;
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #cbd5e1;
+    text-align: left;
+  }
+  table.formal-table th.num, table.formal-table td.num {
+    text-align: right;
+    white-space: nowrap;
+  }
+  table.formal-table td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    color: #1e293b;
+  }
+  table.formal-table tr:last-child td {
+    border-bottom: none;
+  }
+  table.formal-table tr.total-row td {
+    background: #f8fafc;
+    font-weight: 700;
+    border-top: 1px solid #cbd5e1;
+    color: #0f172a;
+  }
+  table.formal-table tr.net-row td {
+    background: #ecfdf5;
+    font-weight: 800;
+    font-size: 13px;
+    color: #065f46;
+    border-top: 2px solid #10b981;
+  }
+  .legal-box {
+    background: #f8fafc;
+    border-left: 3px solid #3b82f6;
+    padding: 10px 12px;
+    font-size: 11.5px;
+    color: #334155;
+    line-height: 1.5;
+    margin-bottom: 14px;
+    border-radius: 0 4px 4px 0;
+  }
+  .extenso-box {
+    background: #f1f5f9;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #0f172a;
+    margin-bottom: 14px;
+  }
+  .signatures-area {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+    margin-top: 24px;
+    padding-top: 12px;
+  }
+  .sig-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .sig-line {
+    width: 100%;
+    max-width: 280px;
+    border-top: 1px solid #475569;
+    padding-top: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #1e293b;
+  }
+  .sig-sub {
+    font-size: 10px;
+    color: #64748b;
+  }
+
+  @media screen and (max-width: 640px) {
+    body { padding: 6px; font-size: 12px; }
+    .doc-container { padding: 10px; border-radius: 6px; }
+    .header-card { padding: 10px 12px; flex-direction: column; align-items: flex-start; }
+    .header-title { font-size: 14px; }
+    .grid-2, .grid-3 { grid-template-columns: 1fr; gap: 8px; }
+    .signatures-area { grid-template-columns: 1fr; gap: 20px; }
+    .sig-line { max-width: 100%; }
+  }
+
+  @media print {
+    @page { size: A4 portrait; margin: 10mm; }
+    body { background: #ffffff !important; padding: 0 !important; color: #000000 !important; }
+    .doc-container { border: none !important; box-shadow: none !important; padding: 0 !important; max-width: 100% !important; }
+    .header-card { background: #0f172a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    table.formal-table th { background: #f1f5f9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    table.formal-table tr.net-row td { background: #ecfdf5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+`;
+
 export const generateAvisoHTML = (data: any, autoPrint: boolean = true) => {
   return `
     <!DOCTYPE html>
     <html lang="pt-BR">
     <head>
       <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Aviso de Férias</title>
-      <style>
-        @media print {
-          @page { size: A4; margin: 15mm; }
-          body { padding: 0 !important; margin: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .box, .header-box { break-inside: avoid; page-break-inside: avoid; }
-        }
-        * { box-sizing: border-box; }
-        body { font-family: 'Arial', sans-serif; padding: 10px; font-size: 12px; color: #000; }
-        .box { border: 2px solid #333; margin-bottom: 8px; border-radius: 4px; overflow: hidden; }
-        .header-box { display: flex; align-items: stretch; border: 2px solid #333; border-radius: 8px; margin-bottom: 8px; background: #e5e7eb; overflow: hidden; }
-        .logo-area { width: 150px; background: #fff; padding: 10px; border-right: 2px solid #333; display: flex; align-items: center; justify-content: center; }
-        .title-area { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: bold; text-transform: uppercase; }
-        .section { padding: 6px 10px; display: flex; flex-wrap: wrap; }
-        .row { width: 100%; display: flex; margin-bottom: 4px; }
-        .col-left { width: 65%; padding-right: 10px; }
-        .col-right { width: 35%; }
-        .col-full { width: 100%; }
-        .lbl { font-weight: normal; color: #333; display: inline-block; width: 130px; flex-shrink: 0; }
-        .val { font-weight: bold; flex: 1; word-break: break-word; }
-        .table-box { width: 100%; border-collapse: collapse; text-align: center; margin-top: 10px; }
-        .table-box th { border: 1px solid #333; background: #e5e7eb; padding: 6px; font-weight: normal; }
-        .table-box td { border: 1px solid #333; padding: 6px; }
-        .text-content { margin-top: 10px; text-align: justify; line-height: 1.4; padding: 8px; }
-        .signatures { display: flex; justify-content: space-between; margin-top: 40px; padding: 0 40px; }
-        .sig-line { width: 45%; border-top: 1px solid #000; text-align: center; padding-top: 5px; font-weight: bold; }
-      </style>
+      <style>${commonStyles}</style>
     </head>
     <body>
-      <div class="header-box">
-        <div class="logo-area">
-          <!-- Logo empty as requested -->
-        </div>
-        <div class="title-area">Aviso de Férias</div>
-      </div>
-      
-      <div class="box section">
-        <div class="col-left">
-          <div class="row"><span class="lbl">Empregador:</span><span class="val">${data.empresa}</span></div>
-          <div class="row"><span class="lbl">C.N.P.J.:</span><span class="val">${data.cnpj}</span></div>
-          <div class="row"><span class="lbl">Endereço:</span><span class="val">${data.endereco}</span></div>
-          <div class="row"><span class="lbl">Cidade:</span><span class="val">${data.cidade}</span></div>
-        </div>
-        <div class="col-right">
-          <div class="row"><span class="lbl">&nbsp;</span></div>
-          <div class="row"><span class="lbl">&nbsp;</span></div>
-          <div class="row"><span class="lbl" style="width:70px;">Bairro:</span><span class="val">${data.bairro}</span></div>
-          <div class="row"><span class="lbl" style="width:70px;">CEP:</span><span class="val">${data.cep}</span></div>
-        </div>
-      </div>
-
-      <div class="box section">
-        <div class="col-full" style="margin-bottom:10px;">
-          <strong>${data.cidade}, ${data.dataEmissao}</strong>
-        </div>
-        <div class="col-full" style="margin-bottom:4px;">Sr.(a)</div>
-        <div class="col-left">
-          <div class="row"><span class="val" style="font-size:14px; text-transform:uppercase;">${data.empregado}</span></div>
-          <div class="row"><span class="lbl">CTPS Nº/Série/UF:</span><span class="val">${data.ctps}</span></div>
-        </div>
-        <div class="col-right">
-          <div class="row"><span class="lbl" style="width:110px;">Filial/Registro:</span><span class="val">${data.registro}</span></div>
-          <div class="row"><span class="lbl" style="width:110px;">Centro de Custo:</span><span class="val">${data.centroCusto}</span></div>
-        </div>
-        
-        <div class="col-full" style="margin-top:20px;">
-          Nos termos das disposições legais vigentes, suas férias serão concedidas conforme o demonstrativo abaixo:
+      <div class="doc-container">
+        <div class="header-card">
+          <div>
+            <div class="header-title">Aviso Prévio de Férias</div>
+            <div class="header-sub">Concessão e Notificação Legal — Art. 135 da CLT</div>
+          </div>
+          <div style="font-size:11px; font-weight:600; color:#cbd5e1;">
+            Emissão: ${data.dataEmissao || new Date().toLocaleDateString('pt-BR')}
+          </div>
         </div>
 
-        <table class="table-box">
-          <tr>
-            <th>Período aquisitivo</th>
-            <th>Período de gozo</th>
-          </tr>
-          <tr>
-            <td>${data.paInicio} à ${data.paFim}</td>
-            <td>${data.gozoInicio} à ${data.gozoFim}</td>
-          </tr>
-          <tr>
-            <td>Licença Remunerada.</td>
-            <td></td>
-          </tr>
-        </table>
-
-        <div class="text-content">
-          A remuneração correspondente as férias encontra-se-a disposição em ${data.dataPagamento}, devendo retornar ao trabalho no primeiro dia útil após o término do período de gozo.<br/>
-          Favor apresentar a sua Carteira de Trabalho e Previdência Social ao Recursos Humanos, para as anotações necessárias.
+        <div class="card-section">
+          <div class="section-title">Dados do Empregador</div>
+          <div class="grid-2">
+            <div class="data-item">
+              <span class="data-lbl">Razão Social / Nome</span>
+              <span class="data-val">${data.empresa || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">C.N.P.J.</span>
+              <span class="data-val nowrap">${data.cnpj || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Endereço</span>
+              <span class="data-val">${data.endereco || '-'} - ${data.bairro || ''}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Cidade / UF / CEP</span>
+              <span class="data-val">${data.cidade || '-'} ${data.cep ? '• CEP: ' + data.cep : ''}</span>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div class="signatures">
-        <div class="sig-line">${data.empresa}</div>
-        <div class="sig-line">${data.empregado}</div>
+        <div class="card-section">
+          <div class="section-title">Dados do Colaborador</div>
+          <div class="grid-3">
+            <div class="data-item">
+              <span class="data-lbl">Nome Completo</span>
+              <span class="data-val">${data.empregado || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">CPF / CTPS</span>
+              <span class="data-val nowrap">${data.ctps || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Função / Cargo</span>
+              <span class="data-val">${data.funcao || 'Colaborador'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Registro / Filial</span>
+              <span class="data-val">${data.registro || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Centro de Custo</span>
+              <span class="data-val">${data.centroCusto || '-'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-section">
+          <div class="section-title">Período de Férias e Prazos</div>
+          <div class="grid-2">
+            <div class="data-item">
+              <span class="data-lbl">Período Aquisitivo</span>
+              <span class="data-val">${data.paInicio || '-'} à ${data.paFim || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Período de Gozo</span>
+              <span class="data-val nowrap" style="color:#0284c7;">${data.gozoInicio || '-'} à ${data.gozoFim || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Disponibilidade de Pagamento</span>
+              <span class="data-val nowrap" style="color:#16a34a;">${data.dataPagamento || '-'} (Art. 145 CLT)</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Retorno ao Trabalho</span>
+              <span class="data-val nowrap">Primeiro dia útil após ${data.gozoFim || '-'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="legal-box">
+          Em cumprimento ao disposto no <strong>Artigo 135 da Consolidação das Leis do Trabalho (CLT)</strong>, comunicamos que lhe serão concedidas férias regulamentares relativas ao período aquisitivo discriminado acima. A remuneração das férias com o acréscimo de 1/3 constitucional será colocada à sua disposição até 2 (dois) dias antes do início do respectivo período de fruição (Art. 145 da CLT). Solicitamos a apresentação de sua Carteira de Trabalho e Previdência Social para as devidas anotações no Departamento Pessoal.
+        </div>
+
+        <div class="signatures-area">
+          <div class="sig-col">
+            <div class="sig-line">${data.empresa || 'Empregador'}</div>
+            <div class="sig-sub">Assinatura do Empregador</div>
+          </div>
+          <div class="sig-col">
+            <div class="sig-line">${data.empregado || 'Colaborador'}</div>
+            <div class="sig-sub">Ciente do Empregado em: ${data.dataEmissao || new Date().toLocaleDateString('pt-BR')}</div>
+          </div>
+        </div>
       </div>
       ${autoPrint ? `<script>window.onload = () => window.print();</script>` : ''}
     </body>
@@ -221,141 +437,210 @@ export const generateAvisoHTML = (data: any, autoPrint: boolean = true) => {
 
 export const generateReciboHTML = (data: any, autoPrint: boolean = true) => {
   const c = calculateVacationReceipt(data.salarioBase, data.diasGozo, data.diasAbono, data.gozoStartDateRaw);
-  
-  const formatMoney = (val: number) => val.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-  
+  const formatMoney = (val: number) => val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const valorExtenso = numberToWordsPtBr(c.liquido);
+
   return `
     <!DOCTYPE html>
     <html lang="pt-BR">
     <head>
       <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Recibo de Férias</title>
-      <style>
-        @media print {
-          @page { size: A4; margin: 15mm; }
-          body { padding: 0 !important; margin: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .box, .header-box { break-inside: avoid; page-break-inside: avoid; }
-        }
-        * { box-sizing: border-box; }
-        body { font-family: 'Arial', sans-serif; padding: 10px; font-size: 12px; color: #000; }
-        .box { border: 2px solid #333; margin-bottom: 5px; border-radius: 4px; overflow: hidden; }
-        .header-box { display: flex; align-items: stretch; border: 2px solid #333; border-radius: 8px; margin-bottom: 5px; background: #e5e7eb; overflow: hidden; }
-        .logo-area { width: 150px; background: #fff; padding: 10px; border-right: 2px solid #333; display: flex; align-items: center; justify-content: center; }
-        .title-area { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: bold; text-transform: uppercase; }
-        .section { padding: 4px 10px; display: flex; flex-wrap: wrap; }
-        .row { width: 100%; display: flex; margin-bottom: 2px; }
-        .col-left { width: 65%; padding-right: 10px; }
-        .col-right { width: 35%; }
-        .col-full { width: 100%; }
-        .lbl { font-weight: normal; color: #333; display: inline-block; width: 130px; flex-shrink: 0; }
-        .lbl-sm { width: 110px; display: inline-block; flex-shrink: 0; }
-        .val { font-weight: bold; flex: 1; word-break: break-word; }
-        
-        .table-header { text-align: center; background: #e5e7eb; font-weight: bold; padding: 4px; border-bottom: 2px solid #333; text-transform: uppercase; }
-        .verbas-table { width: 100%; border-collapse: collapse; }
-        .verbas-table th, .verbas-table td { border-right: 1px solid #333; padding: 2px 8px; }
-        .verbas-table th:last-child, .verbas-table td:last-child { border-right: none; }
-        .verbas-table th { border-bottom: 1px solid #333; font-weight: normal; }
-        .verbas-table td:nth-child(2), .verbas-table td:nth-child(3), .verbas-table td:nth-child(4) { text-align: right; }
-        .totals-row { border-top: 1px solid #333; font-weight: bold; }
-        .liquido-row { background: #e5e7eb; font-weight: bold; font-size: 14px; border-top: 2px solid #333;}
-        
-        .footer-text { margin-top: 15px; margin-bottom: 30px; padding: 0 10px; text-align: justify; }
-        .signature-line { width: 300px; border-top: 1px solid #000; text-align: center; padding-top: 5px; font-weight: bold; margin-left: 10px; }
-      </style>
+      <style>${commonStyles}</style>
     </head>
     <body>
-      <div class="header-box">
-        <div class="logo-area">
-          <!-- Logo empty as requested -->
+      <div class="doc-container">
+        <div class="header-card">
+          <div>
+            <div class="header-title">Recibo de Quitação de Férias</div>
+            <div class="header-sub">Demonstrativo de Pagamento Trabalhista — Art. 145 da CLT</div>
+          </div>
+          <div style="font-size:11px; font-weight:600; color:#cbd5e1;">
+            Emissão: ${data.dataEmissao || new Date().toLocaleDateString('pt-BR')}
+          </div>
         </div>
-        <div class="title-area">RECIBO DE FÉRIAS</div>
-      </div>
-      
-      <div class="box section">
-        <div class="col-left">
-          <div class="row"><span class="lbl">Empregador:</span><span class="val">${data.empresa}</span></div>
-        </div>
-        <div class="col-right">
-          <div class="row"><span class="lbl lbl-sm">C.N.P.J.:</span><span class="val">${data.cnpj}</span></div>
-        </div>
-      </div>
 
-      <div class="box section">
-        <div class="col-left">
-          <div class="row"><span class="lbl">Empregado:</span><span class="val" style="text-transform:uppercase;">${data.empregado}</span></div>
-          <div class="row"><span class="lbl">CTPS Nº/Série:</span><span class="val">${data.ctps}</span></div>
-          <div class="row"><span class="lbl">Função:</span><span class="val">${data.funcao}</span></div>
-          <div class="row"><span class="lbl">Banco/Agência:</span><span class="val">${data.bancoAgencia}</span></div>
-          <div class="row"><span class="lbl">Centro de Custo:</span><span class="val">${data.centroCusto}</span></div>
+        <div class="card-section">
+          <div class="section-title">Dados Cadastrais</div>
+          <div class="grid-2">
+            <div class="data-item">
+              <span class="data-lbl">Empregador</span>
+              <span class="data-val">${data.empresa || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">C.N.P.J.</span>
+              <span class="data-val nowrap">${data.cnpj || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Colaborador</span>
+              <span class="data-val" style="text-transform:uppercase;">${data.empregado || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">CPF / CTPS</span>
+              <span class="data-val nowrap">${data.ctps || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Função / Cargo</span>
+              <span class="data-val">${data.funcao || 'Colaborador'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Salário Base Contratual</span>
+              <span class="data-val nowrap" style="color:#0f172a;">R$ ${formatMoney(data.salarioBase || 0)}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Centro de Custo</span>
+              <span class="data-val">${data.centroCusto || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Dados Bancários</span>
+              <span class="data-val">${data.bancoAgencia ? data.bancoAgencia + (data.contaCorrente ? ' • CC: ' + data.contaCorrente : '') : 'Crédito em Conta'}</span>
+            </div>
+          </div>
         </div>
-        <div class="col-right">
-          <div class="row"><span class="lbl lbl-sm">Filial/Registro:</span><span class="val">${data.registro}</span></div>
-          <div class="row"><span class="lbl lbl-sm">Dependentes IR:</span><span class="val">00</span></div>
-          <div class="row"><span class="lbl lbl-sm">Salário base:</span><span class="val">${formatMoney(data.salarioBase)}</span></div>
-          <div class="row"><span class="lbl lbl-sm">Conta Corrente:</span><span class="val">${data.contaCorrente}</span></div>
+
+        <div class="card-section">
+          <div class="section-title">Período de Fruição e Concessão</div>
+          <div class="grid-2">
+            <div class="data-item">
+              <span class="data-lbl">Período Aquisitivo</span>
+              <span class="data-val">${data.paInicio || '-'} à ${data.paFim || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Período de Gozo</span>
+              <span class="data-val nowrap" style="color:#0284c7;">${data.gozoInicio || '-'} à ${data.gozoFim || '-'} (${data.diasGozo} dias)</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Data Limite de Pagamento (CLT 145)</span>
+              <span class="data-val nowrap" style="color:#16a34a;">${data.dataPagamento || '-'}</span>
+            </div>
+            <div class="data-item">
+              <span class="data-lbl">Abono Pecuniário (Conversão 1/3)</span>
+              <span class="data-val">${data.diasAbono > 0 ? data.diasAbono + ' dias convertidos' : 'Não optante'}</span>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div class="box section">
-        <div class="col-left">
-          <div class="row"><span class="lbl" style="width:180px;">Período aquisitivo de:</span><span class="val">${data.paInicio} à ${data.paFim}</span></div>
-          <div class="row"><span class="lbl" style="width:180px;">Período de gozo de:</span><span class="val">${data.gozoInicio} à ${data.gozoFim}</span></div>
+        <div class="table-wrapper">
+          <table class="formal-table">
+            <thead>
+              <tr>
+                <th style="width:10%;">Cód.</th>
+                <th style="width:45%;">Descrição da Verba</th>
+                <th class="num" style="width:15%;">Referência</th>
+                <th class="num" style="width:15%;">Proventos (R$)</th>
+                <th class="num" style="width:15%;">Descontos (R$)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${c.m1Ferias > 0 ? `
+              <tr>
+                <td>501</td>
+                <td>Férias - ${c.m1Str}</td>
+                <td class="num">${c.m1Days}d</td>
+                <td class="num">${formatMoney(c.m1Ferias)}</td>
+                <td class="num">-</td>
+              </tr>` : ''}
+              ${c.m1Ferias13 > 0 ? `
+              <tr>
+                <td>502</td>
+                <td>1/3 Constitucional de Férias - ${c.m1Str}</td>
+                <td class="num">33,33%</td>
+                <td class="num">${formatMoney(c.m1Ferias13)}</td>
+                <td class="num">-</td>
+              </tr>` : ''}
+              ${c.m2Ferias > 0 ? `
+              <tr>
+                <td>501</td>
+                <td>Férias - ${c.m2Str}</td>
+                <td class="num">${c.m2Days}d</td>
+                <td class="num">${formatMoney(c.m2Ferias)}</td>
+                <td class="num">-</td>
+              </tr>` : ''}
+              ${c.m2Ferias13 > 0 ? `
+              <tr>
+                <td>502</td>
+                <td>1/3 Constitucional de Férias - ${c.m2Str}</td>
+                <td class="num">33,33%</td>
+                <td class="num">${formatMoney(c.m2Ferias13)}</td>
+                <td class="num">-</td>
+              </tr>` : ''}
+              ${c.abono > 0 ? `
+              <tr>
+                <td>503</td>
+                <td>Abono Pecuniário (Venda de Férias)</td>
+                <td class="num">${data.diasAbono}d</td>
+                <td class="num">${formatMoney(c.abono)}</td>
+                <td class="num">-</td>
+              </tr>` : ''}
+              ${c.abono13 > 0 ? `
+              <tr>
+                <td>504</td>
+                <td>1/3 Constitucional sobre Abono</td>
+                <td class="num">33,33%</td>
+                <td class="num">${formatMoney(c.abono13)}</td>
+                <td class="num">-</td>
+              </tr>` : ''}
+              ${c.m1Inss > 0 ? `
+              <tr>
+                <td>901</td>
+                <td>INSS sobre Férias - ${c.m1Str}</td>
+                <td class="num">Tab. Of.</td>
+                <td class="num">-</td>
+                <td class="num">${formatMoney(c.m1Inss)}</td>
+              </tr>` : ''}
+              ${c.m2Inss > 0 ? `
+              <tr>
+                <td>901</td>
+                <td>INSS sobre Férias - ${c.m2Str}</td>
+                <td class="num">Tab. Of.</td>
+                <td class="num">-</td>
+                <td class="num">${formatMoney(c.m2Inss)}</td>
+              </tr>` : ''}
+              ${c.irrf > 0 ? `
+              <tr>
+                <td>902</td>
+                <td>IRRF sobre Férias</td>
+                <td class="num">Tab. Prog.</td>
+                <td class="num">-</td>
+                <td class="num">${formatMoney(c.irrf)}</td>
+              </tr>` : ''}
+              
+              <tr class="total-row">
+                <td colspan="3" style="text-align:right; font-weight:700;">TOTAIS:</td>
+                <td class="num" style="font-weight:700;">${formatMoney(c.totalProventos)}</td>
+                <td class="num" style="font-weight:700;">${formatMoney(c.totalDescontos)}</td>
+              </tr>
+              <tr class="net-row">
+                <td colspan="3" style="text-align:right; font-weight:800; font-size:13px; text-transform:uppercase;">VALOR LÍQUIDO A RECEBER:</td>
+                <td colspan="2" class="num" style="font-weight:800; font-size:14px; text-align:right;">R$ ${formatMoney(c.liquido)}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <div class="col-right">
-          <div class="row"><span class="lbl" style="width:180px;">Quantidade de dias de férias:</span><span class="val">${data.diasGozo} dias</span></div>
-          <div class="row"><span class="lbl" style="width:180px;">Quantidade de Dias de Abono:</span><span class="val">${data.diasAbono} dias</span></div>
+
+        <div class="extenso-box">
+          <strong>Valor por Extenso:</strong> ${valorExtenso}
         </div>
-      </div>
 
-      <div class="box">
-        <div class="table-header">DEMONSTRATIVO DAS VerbasView</div>
-        <table class="verbas-table">
-          <tr>
-            <th style="text-align:left;">Descrição das VerbasView</th>
-            <th style="width:80px;">Quantidade</th>
-            <th style="width:100px;">Vencimentos</th>
-            <th style="width:100px;">Descontos</th>
-          </tr>
-          ${c.m1Ferias > 0 ? `<tr><td>501 - Férias - ${c.m1Str}</td><td>${c.m1Days},00</td><td>${formatMoney(c.m1Ferias)}</td><td></td></tr>` : ''}
-          ${c.m1Ferias13 > 0 ? `<tr><td>502 - Férias 1/3 - ${c.m1Str}</td><td>0,00</td><td>${formatMoney(c.m1Ferias13)}</td><td></td></tr>` : ''}
-          
-          ${c.m2Ferias > 0 ? `<tr><td>501 - Férias - ${c.m2Str}</td><td>${c.m2Days},00</td><td>${formatMoney(c.m2Ferias)}</td><td></td></tr>` : ''}
-          ${c.m2Ferias13 > 0 ? `<tr><td>502 - Férias 1/3 - ${c.m2Str}</td><td>0,00</td><td>${formatMoney(c.m2Ferias13)}</td><td></td></tr>` : ''}
+        <div class="legal-box">
+          Recebi de <strong>${data.empresa || 'Empregador'}</strong> a importância líquida de <strong>R$ ${formatMoney(c.liquido)}</strong> (${valorExtenso}), referente ao pagamento das férias e adicional de 1/3 constitucional descritos neste demonstrativo, nos estritos termos do <strong>Artigo 145 da CLT</strong>, dando à empresa plena, geral e irrevogável quitação dos valores aqui discriminados.
+        </div>
 
-          ${c.abono > 0 ? `<tr><td>503 - Abono Pecuniário</td><td>${data.diasAbono},00</td><td>${formatMoney(c.abono)}</td><td></td></tr>` : ''}
-          ${c.abono13 > 0 ? `<tr><td>504 - Abono Pecuniário 1/3</td><td>0,00</td><td>${formatMoney(c.abono13)}</td><td></td></tr>` : ''}
-          
-          ${c.m1Inss > 0 ? `<tr><td>901 - INSS Férias - ${c.m1Str}</td><td>0,00</td><td></td><td>${formatMoney(c.m1Inss)}</td></tr>` : ''}
-          ${c.m2Inss > 0 ? `<tr><td>901 - INSS Férias - ${c.m2Str}</td><td>0,00</td><td></td><td>${formatMoney(c.m2Inss)}</td></tr>` : ''}
-          ${c.irrf > 0 ? `<tr><td>902 - IRRF Férias Recibo</td><td>0,00</td><td></td><td>${formatMoney(c.irrf)}</td></tr>` : ''}
-          
-          <tr class="totals-row">
-            <td></td>
-            <td style="text-align:center;">TOTAL</td>
-            <td>${formatMoney(c.totalProventos)}</td>
-            <td>${formatMoney(c.totalDescontos)}</td>
-          </tr>
-          <tr class="liquido-row">
-            <td></td>
-            <td colspan="2" style="text-align:center;">LÍQUIDO A RECEBER</td>
-            <td style="background:#fff;">${formatMoney(c.liquido)}</td>
-          </tr>
-        </table>
-      </div>
-
-      <div class="footer-text">
-        Recebi a importância líquida, referente os lançamentos acima discriminados, em virtude do gozo de minhas férias.<br/>
-        Para maior clareza, firmo o presente recibo.
-        <br/><br/><br/>
-        ${data.cidade}, ${data.dataPagamento}
-      </div>
-
-      <div class="signature-line">
-        ${data.empregado}
+        <div class="signatures-area">
+          <div class="sig-col">
+            <div class="sig-line">${data.empresa || 'Empregador'}</div>
+            <div class="sig-sub">Assinatura da Empresa</div>
+          </div>
+          <div class="sig-col">
+            <div class="sig-line">${data.empregado || 'Colaborador'}</div>
+            <div class="sig-sub">Assinatura do Empregado • Data: ${data.dataEmissao || new Date().toLocaleDateString('pt-BR')}</div>
+          </div>
+        </div>
       </div>
       ${autoPrint ? `<script>window.onload = () => window.print();</script>` : ''}
     </body>
     </html>
   `;
 };
+

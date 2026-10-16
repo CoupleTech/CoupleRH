@@ -91,6 +91,11 @@ export interface VacationReceiptSnapshot {
   netAmount: number;
   paymentDueDate: string;     // Até 2 dias antes do início (Art. 145 CLT)
   paymentDate?: string;
+  vestingPeriodStart?: string;
+  vestingPeriodEnd?: string;
+  concessivePeriodEnd?: string;
+  concessiveStatusLabel?: string;
+  netAmountExtenso?: string;
 }
 
 export interface TimesheetSnapshot {
@@ -384,16 +389,27 @@ export class DocumentGeneratorService {
     doc.setTextColor(71, 85, 105);
     doc.text('(Art. 145 da CLT e Art. 7º, Inciso XVII da Constituição Federal)', 105, 26, { align: 'center' });
 
-    // Empregador e Empregado
+    // Empregador, Empregado e Prazos Legais CLT
     doc.setFillColor(248, 250, 252);
-    doc.rect(14, 32, 182, 22, 'FD');
+    doc.rect(14, 30, 182, 32, 'FD');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
-    doc.setTextColor(51, 65, 85);
-    doc.text(`Empresa: ${snapshot.company.corporateName} (CNPJ: ${snapshot.company.cnpj})`, 18, 38);
-    doc.text(`Colaborador: ${snapshot.worker.fullName} (CPF: ${maskCpfForManifest(snapshot.worker.cpf)})`, 18, 44);
+    doc.setTextColor(30, 41, 59);
+    doc.text(`Empresa: ${snapshot.company.corporateName} (CNPJ: ${snapshot.company.cnpj})`, 18, 36);
+    doc.text(`Colaborador: ${snapshot.worker.fullName} (CPF: ${maskCpfForManifest(snapshot.worker.cpf)})`, 18, 42);
+    
     doc.setFont('helvetica', 'normal');
-    doc.text(`Período de Gozo: ${snapshot.takeStartDate} a ${snapshot.takeEndDate} (${snapshot.daysCount} dias) · Prazo Legal Pgto: ${snapshot.paymentDueDate}`, 18, 50);
+    doc.setFontSize(8);
+    doc.setTextColor(51, 65, 85);
+    const paText = snapshot.vestingPeriodStart && snapshot.vestingPeriodEnd
+      ? `${snapshot.vestingPeriodStart} a ${snapshot.vestingPeriodEnd}`
+      : 'Conforme Livro de Registro';
+    const concText = snapshot.concessivePeriodEnd
+      ? `${snapshot.concessivePeriodEnd} ${snapshot.concessiveStatusLabel ? '(' + snapshot.concessiveStatusLabel + ')' : ''}`
+      : 'Art. 134 CLT';
+
+    doc.text(`Período Aquisitivo: ${paText}  ·  Limite Concessivo: ${concText}`, 18, 48);
+    doc.text(`Período de Gozo: ${snapshot.takeStartDate} a ${snapshot.takeEndDate} (${snapshot.daysCount} dias)  ·  Data Limite Pgto: ${snapshot.paymentDueDate} (Art. 145 CLT)`, 18, 54);
 
     const tableRows = snapshot.items.map(item => [
       item.code,
@@ -403,27 +419,53 @@ export class DocumentGeneratorService {
       item.type === 'DEDUCTION' ? item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''
     ]);
 
+    // Linha de totais na tabela
+    tableRows.push([
+      '—',
+      'TOTAL CONSOLIDADO',
+      '—',
+      snapshot.totalGross.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
+      snapshot.totalDeductions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+    ]);
+
     autoTable(doc, {
-      startY: 58,
+      startY: 65,
       head: [['Cód.', 'Verba de Férias', 'Ref.', 'Proventos (R$)', 'Descontos (R$)']],
       body: tableRows,
       theme: 'grid',
       headStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontSize: 8.5 },
-      styles: { fontSize: 8 }
+      styles: { fontSize: 8 },
+      footStyles: { fillColor: [248, 250, 252], textColor: [30, 41, 59], fontStyle: 'bold' }
     });
 
-    const finalY = (doc as any).lastAutoTable.finalY + 5;
+    const finalY = (doc as any).lastAutoTable.finalY + 4;
 
+    // Bloco de Líquido e Quitação por Extenso
     doc.setFillColor(248, 250, 252);
-    doc.rect(14, finalY, 182, 16, 'FD');
+    doc.rect(14, finalY, 182, 34, 'FD');
+
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
+    doc.setFontSize(9.5);
     doc.setTextColor(30, 41, 59);
-    doc.text(`LÍQUIDO DE FÉRIAS A PAGAR: R$ ${snapshot.netAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 18, finalY + 10);
+    doc.text(`VALOR LÍQUIDO A RECEBER: R$ ${snapshot.netAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 18, finalY + 8);
+    
     doc.setFontSize(8);
     doc.setFont('courier', 'bold');
     doc.setTextColor(37, 99, 235);
-    doc.text(`Cód: ${verificationCode}`, 145, finalY + 10);
+    doc.text(`Autenticação: ${verificationCode}`, 135, finalY + 8);
+
+    if (snapshot.netAmountExtenso) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`Valor por extenso: (${snapshot.netAmountExtenso})`, 18, finalY + 14, { maxWidth: 174 });
+    }
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    const declaracaoQuitacao = 'Recebi da empresa empregadora supra qualificada a importância líquida discriminada neste recibo, referente à remuneração das minhas férias regulamentares com o acréscimo de um terço constitucional (Art. 7º, XVII da CF/88), para os devidos fins de direito.';
+    doc.text(declaracaoQuitacao, 18, finalY + 22, { maxWidth: 174 });
 
     const pdfBytes = new Uint8Array(doc.output('arraybuffer'));
     const hashH1 = await computeCanonicalHash(pdfBytes);
