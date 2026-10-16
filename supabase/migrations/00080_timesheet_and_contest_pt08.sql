@@ -26,7 +26,7 @@ ALTER TABLE public.timesheets
 
 -- 3. CRIAR TABELA DE CONTESTAÇÕES DO ESPELHO DE PONTO (timesheet_contests)
 CREATE TABLE IF NOT EXISTS public.timesheet_contests (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     timesheet_id UUID NOT NULL REFERENCES public.timesheets(id) ON DELETE CASCADE,
     contract_id UUID NOT NULL REFERENCES public.employment_contracts(id) ON DELETE CASCADE,
@@ -66,15 +66,8 @@ CREATE POLICY "Tenant multitenant access for timesheet_contests"
     USING (tenant_id = ANY (public.user_tenant_ids()));
 
 -- Permitir que o próprio colaborador crie e consulte suas contestações
-DROP POLICY IF EXISTS "Workers can read and create their own timesheet contests" ON public.timesheet_contests;
-CREATE POLICY "Workers can read and create their own timesheet contests"
-    ON public.timesheet_contests
-    FOR ALL
-    USING (
-        worker_id IN (
-            SELECT id FROM public.workers WHERE user_id = auth.uid()
-        )
-    );
+-- DROP POLICY IF EXISTS "Workers can read and create their own timesheet contests" ON public.timesheet_contests;
+-- Note: Acesso administrativo e multi-tenant já coberto pela política 'Manage timesheet_contests' acima.
 
 -- 6. GATILHO DE AUDITORIA (T29)
 DROP TRIGGER IF EXISTS audit_timesheet_contests_trigger ON public.timesheet_contests;

@@ -13674,4 +13674,129 @@ GRANT SELECT ON public.time_bank_transactions TO anon;
 NOTIFY pgrst, 'reload schema';
 ```
 
+---
+
+### Migration `00097_fix_sync_payslip_status_calculating.sql` (15/10/2026)
+- **Objetivo**: Ajustar a constraint de status da tabela `public.payslips` para aceitar `CALCULATING` e atualizar a função do trigger `sync_payslip_status_with_period()` para ignorar o status intermediário efêmero `CALCULATING`, evitando que o processamento concorrente do motor de folha dispare erro de violação de constraint nos holerites existentes.
+- **SQL Aplicado**:
+```sql
+ALTER TABLE public.payslips DROP CONSTRAINT IF EXISTS payslips_status_check;
+ALTER TABLE public.payslips ADD CONSTRAINT payslips_status_check 
+    CHECK (status IN ('DRAFT', 'CALCULATING', 'CALCULATED', 'CONFERENCE', 'CLOSED', 'REOPENED', 'CANCELED'));
+
+CREATE OR REPLACE FUNCTION public.sync_payslip_status_with_period()
+RETURNS TRIGGER
+SECURITY DEFINER
+AS $$
+BEGIN
+    IF NEW.status IS DISTINCT FROM OLD.status AND NEW.status <> 'CALCULATING' THEN
+        UPDATE public.payslips
+        SET status = NEW.status
+        WHERE period_id = NEW.id;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+NOTIFY pgrst, 'reload schema';
+```
+
+---
+
+### Migration `00098_fix_payroll_memory_calc_immutability_trigger.sql` (15/10/2026)
+- **Objetivo**: Corrigir a verificação de imutabilidade de folha fechada (`check_payroll_period_immutability()`) para a tabela `public.payroll_memory_calc`. Como `payroll_memory_calc` referencia `payslip_id` e não possui a coluna direta `period_id`, a função gerava o erro PostgreSQL `record "old" has no field "period_id"` ao tentar limpar a memória de cálculo anterior durante o recálculo atômico da folha.
+- **SQL Aplicado**:
+```sql
+CREATE OR REPLACE FUNCTION public.check_payroll_period_immutability()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_period_id UUID;
+    v_status TEXT;
+BEGIN
+    IF TG_TABLE_NAME = 'payslips' THEN
+        v_period_id := COALESCE(OLD.period_id, NEW.period_id);
+    ELSIF TG_TABLE_NAME = 'payslip_items' THEN
+        SELECT period_id INTO v_period_id FROM public.payslips WHERE id = COALESCE(OLD.payslip_id, NEW.payslip_id);
+    ELSIF TG_TABLE_NAME = 'payroll_company_taxes' THEN
+        v_period_id := COALESCE(OLD.period_id, NEW.period_id);
+    ELSIF TG_TABLE_NAME = 'payroll_memory_calc' THEN
+        SELECT period_id INTO v_period_id FROM public.payslips WHERE id = COALESCE(OLD.payslip_id, NEW.payslip_id);
+    END IF;
+
+    IF v_period_id IS NOT NULL THEN
+        SELECT status INTO v_status FROM public.payroll_periods WHERE id = v_period_id;
+        IF v_status = 'CLOSED' THEN
+            RAISE EXCEPTION 'Operação bloqueada (Imutabilidade Legal CLT): O período de folha % está FECHADO (CLOSED). Nenhum holerite, item ou imposto pode ser alterado ou excluído sem reabertura formal autorizada.', v_period_id;
+        END IF;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+NOTIFY pgrst, 'reload schema';
+```
+
+---
+
+## 🏛️ TABELA: employee_loans (Empréstimos Consignados & FGTS Digital)
+*Criada na Migration 00099 (16/10/2026)*
+
+```sql
+CREATE TABLE IF NOT EXISTS public.employee_loans (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+    contract_id UUID NOT NULL REFERENCES public.employment_contracts(id) ON DELETE CASCADE,
+    bank_name TEXT NOT NULL,
+    contract_number TEXT,
+    installment_amount NUMERIC(12, 2) NOT NULL CHECK (installment_amount > 0),
+    total_installments INT NOT NULL CHECK (total_installments > 0),
+    current_installment INT NOT NULL DEFAULT 1 CHECK (current_installment >= 1),
+    start_date DATE NOT NULL,
+    end_date DATE,
+    provision_on_advance BOOLEAN NOT NULL DEFAULT true,
+    advance_provision_percentage NUMERIC(5, 2) NOT NULL DEFAULT 40.00 CHECK (advance_provision_percentage >= 0 AND advance_provision_percentage <= 100),
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'PAUSED', 'SETTLED', 'CANCELLED')),
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- RLS
+ALTER TABLE public.employee_loans ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "View employee_loans" ON public.employee_loans
+    FOR SELECT USING (tenant_id = ANY (public.user_tenant_ids()));
+
+CREATE POLICY "Manage employee_loans" ON public.employee_loans
+    FOR ALL USING (
+        tenant_id = ANY (public.user_tenant_ids())
+        AND EXISTS (
+            SELECT 1 FROM public.tenant_users 
+            WHERE user_id = auth.uid() 
+              AND tenant_id = employee_loans.tenant_id 
+              AND role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        )
+    );
+
+-- Gatilho de Auditoria do Sistema
+CREATE TRIGGER audit_employee_loans_trigger
+AFTER INSERT OR UPDATE OR DELETE ON public.employee_loans
+FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+
+-- Rubricas Oficiais de Suporte:
+-- 807: Provisão Consignado Adiantamento (DEDUCTION no Vale - Provisão proporcional)
+-- 407: Estorno Provisão Consignado (EARNING na Folha Mensal - Devolução da retenção)
+-- 805: Empréstimo Consignado (DEDUCTION na Folha Mensal - Parcela integral)
+```
+
+
 

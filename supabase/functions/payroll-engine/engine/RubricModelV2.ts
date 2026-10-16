@@ -132,7 +132,8 @@ export function isRubricEligibleForCalculation(
   status: RubricStatus,
   competenceDate?: string,
   validFrom?: string | null,
-  validTo?: string | null
+  validTo?: string | null,
+  competenceStartDate?: string
 ): boolean {
   if (status !== "ACTIVE") {
     return false;
@@ -142,11 +143,15 @@ export function isRubricEligibleForCalculation(
     return true;
   }
 
+  // Se competenceStartDate for fornecida, competenceDate atua como o fim da competência (competenceEndDate)
+  // A rubrica só é inelegível por validFrom se passar a valer estritamente após o fim da competência
   if (validFrom && competenceDate < validFrom) {
     return false;
   }
 
-  if (validTo && competenceDate > validTo) {
+  // A rubrica só é inelegível por validTo se tiver expirado antes do início da competência
+  const effectiveStart = competenceStartDate || competenceDate;
+  if (validTo && effectiveStart > validTo) {
     return false;
   }
 

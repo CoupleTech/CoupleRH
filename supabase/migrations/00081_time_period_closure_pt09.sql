@@ -6,7 +6,7 @@
 
 -- 1. TABELA DE FECHAMENTO DO PERÍODO DE PONTO (time_period_closures)
 CREATE TABLE IF NOT EXISTS public.time_period_closures (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
     payroll_period_id UUID NOT NULL REFERENCES public.payroll_periods(id) ON DELETE CASCADE,

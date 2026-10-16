@@ -14,12 +14,14 @@ import {
   TrendingUp,
   Gift,
   Receipt,
+  Landmark,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { formatDate } from "../lib/dateUtils";
 import EmployeeBenefitsTab from "./EmployeeBenefitsTab";
 import EmployeeDeductionsTab from "./EmployeeDeductionsTab";
 import EmployeeFixedEventsTab from "./EmployeeFixedEventsTab";
+import EmployeeLoansTab from "./EmployeeLoansTab";
 import { toast } from 'sonner';
 
 export default function EmployeeDetails() {
@@ -28,7 +30,7 @@ export default function EmployeeDetails() {
   const [employee, setEmployee] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<
-    "civis" | "contrato" | "prontuario" | "historico" | "beneficios" | "descontos" | "adicionais"
+    "civis" | "contrato" | "prontuario" | "historico" | "beneficios" | "descontos" | "adicionais" | "consignados"
   >("civis");
   const [historyEvents, setHistoryEvents] = useState<any[]>([]);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -175,6 +177,12 @@ export default function EmployeeDetails() {
           className={`flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-lg transition-colors ${activeTab === "descontos" ? "bg-white shadow-sm text-primary-700 border border-slate-200" : "text-slate-600 hover:bg-slate-200/50"}`}
         >
           <Receipt size={16} /> Descontos / Retenções
+        </button>
+        <button
+          onClick={() => setActiveTab("consignados")}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-lg transition-colors ${activeTab === "consignados" ? "bg-white shadow-sm text-primary-700 border border-slate-200" : "text-slate-600 hover:bg-slate-200/50"}`}
+        >
+          <Landmark size={16} /> Consignados (FGTS)
         </button>
         <button
           onClick={() => setActiveTab("prontuario")}
@@ -419,6 +427,16 @@ export default function EmployeeDetails() {
           {activeTab === "descontos" && (
             <div className="animate-in fade-in">
               <EmployeeDeductionsTab contractId={employee.id} />
+            </div>
+          )}
+
+          {activeTab === "consignados" && (
+            <div className="animate-in fade-in">
+              <EmployeeLoansTab 
+                contractId={employee.id} 
+                companyId={employee.company_id} 
+                baseSalary={employee.base_salary} 
+              />
             </div>
           )}
 

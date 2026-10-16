@@ -43,9 +43,39 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 8. Migrations novas numeradas a partir de `00066_`. Toda tabela nova: **RLS habilitada + política por tenant + gatilho de auditoria** (T29).
 
 ## Estado da produção
-**Status Atual:** `[Em Progresso]` · **Fase corrente:** P6 · **Go-live folha:** bloqueado até Gate de P9 · **Go-live ponto/assinatura:** bloqueado até Gate de P6 (Ponto Eletrônico P5 Concluído e Homologado).
+**Status Atual:** `[Em Progresso]` · **Fase corrente:** P6 / Manutenção Motor Folha · **Go-live folha:** bloqueado até Gate de P9 · **Go-live ponto/assinatura:** bloqueado até Gate de P6 (Ponto Eletrônico P5 Concluído e Homologado).
 
-## Quadro de reabertura (fases históricas que NÃO devem ser consideradas concluídas)
+---
+
+## 📌 REGISTRO DE TRANSIÇÃO E CONTINUIDADE (15/10/2026 -> 16/10/2026)
+### Incidente & Entrega: Gestão Nativa de Empréstimos Consignados (Crédito do Trabalhador / FGTS Digital) com Provisão no Adiantamento e Estorno na Folha Mensal
+
+#### 1. DIAGNÓSTICO E CORREÇÃO SISTÊMICA (15/10/2026)
+- **Diagnóstico Completo da Causa Raiz:**
+  1. **Injeção de Eventos Variáveis Restrita à Folha Mensal:** No motor `supabase/functions/payroll-engine/index.ts`, a leitura de `variableEvents` estava localizada exclusivamente dentro do bloco `else` (folha mensal). Quando o período era do tipo `ADVANCE`, as rubricas eram forçadas estritamente para `applicableRubrics = rubricas.filter(r => r.code === '250')` e nenhum evento variável era injetado no cálculo.
+  2. **Validação de Vigência da Rubrica (Bug de Data):** A função `isRubricEligibleForCalculation` em `RubricModelV2.ts` descartava a rubrica `805 (Empréstimo Consignado)` porque a rubrica foi criada no dia 13/10/2026 (`valid_from = '2026-10-13'`) e o motor comparava com o primeiro dia da competência `periodStartDate = '2026-10-01'`. Como `'2026-10-01' < '2026-10-13'`, a rubrica era classificada como inelegível para o mês de outubro de 2026! A função foi corrigida para comparar contra o fim da competência (`endDate = '2026-10-31'`), tornando rubricas criadas no decorrer do mês elegíveis para a sua folha.
+  3. **Trava de Concorrência & Status CALCULATING no Banco:** O motor atualiza `status = 'CALCULATING'`, mas a constraint remota `payroll_periods_status_check` não continha `'CALCULATING'`. Foram sincronizadas todas as migrations pendentes (00069 até 00096) com `npx supabase db push`.
+  4. **Trigger de Sincronização de Status (Payslips):** O trigger `sync_payslip_status_with_period()` propagava o status `'CALCULATING'` para `payslips`, violando `payslips_status_check`. Foi criada e aplicada a migration `00097_fix_sync_payslip_status_calculating.sql` permitindo `'CALCULATING'` e ignorando esse status efêmero no trigger.
+  5. **Trigger de Imutabilidade e Memory Calc:** O trigger `check_payroll_period_immutability()` buscava `OLD.period_id` em `payroll_memory_calc` (tabela que usa `payslip_id`). Foi criada e aplicada a migration `00098_fix_payroll_memory_calc_immutability_trigger.sql` corrigindo a busca via join com `payslips`.
+  6. **Fallback Defensivo de Catálogo:** Adicionado fallback em `index.ts` para que, se uma rubrica de lançamento variável não estiver no subset filtrado de `rubricas`, ela seja resolvida e incorporada diretamente de `dbRubrics`.
+
+#### 2. RESOLUÇÃO DEFINITIVA & IMPLEMENTAÇÃO DO MÓDULO DE CONSIGNADOS (16/10/2026)
+- [x] **Passo 1 — Migration 00099:** Criada e aplicada a migration `00099_employee_loans_and_consignments.sql` criando a tabela `employee_loans` com RLS multitenant, trigger de auditoria (`audit.audit_trigger_func`), e seed oficial das rubricas `807 (Provisão Consignado Adiantamento)` e `407 (Estorno Provisão Consignado)` com incidências zeradas.
+- [x] **Passo 2 — Inteligência do Motor (payroll-engine):**
+  - **No Adiantamento (ADVANCE):** Busca empréstimos consignados ativos com `provision_on_advance = true`, calcula a reserva proporcional da parcela (ex: 40%) e injeta automaticamente a dedução na rubrica `807`.
+  - **Na Folha Mensal (MONTHLY):** Injeta o desconto oficial e integral da parcela na rubrica `805 (Empréstimo Consignado)`. Concomitantemente, consulta se houve retenção de provisão na folha de adiantamento daquela mesma competência (`payslip_items` com cód 807/805) e injeta automaticamente a devolução integral como crédito na rubrica `407 (Estorno Provisão Consignado)`, zerando o impacto duplo e protegendo o saldo final do trabalhador.
+- [x] **Passo 3 — Deploy da Edge Function:** Executado `npx supabase functions deploy payroll-engine` com sucesso para o projeto de produção (`wcvgpnmaryumfcfwyrrj`).
+- [x] **Passo 4 — Validação em Produção (Thais Santos do Nascimento França):**
+  - Removido o lançamento manual de teste temporário.
+  - Cadastrado o contrato oficial de consignado na tabela `employee_loans` (Caixa Econômica Federal, parcela R$ 450,00, provisão 40% = R$ 180,00).
+  - Recálculo executado com 100% de sucesso: Proventos R$ 1.600,00 (cód 250), Descontos R$ 180,00 (cód 807), Líquido R$ 1.420,00.
+- [x] **Passo 5 — Interface do Usuário (Frontend):**
+  - Criado o componente [EmployeeLoansTab.tsx](file:///d:/Repositorios/coupleRH/src/pages/EmployeeLoansTab.tsx) com painel analítico da Margem Consignável Legal de 35% (CLT), total comprometido, margem livre, barra de progresso visual, explicação didática do mecanismo de provisão/estorno, lista de contratos com status e modal completo para novos empréstimos.
+  - Integrado no perfil do colaborador em [Profile.tsx](file:///d:/Repositorios/coupleRH/src/pages/Employees/Profile.tsx) e [EmployeeDetails.tsx](file:///d:/Repositorios/coupleRH/src/pages/EmployeeDetails.tsx) sob a aba destacada **"Consignados (FGTS)"**.
+- [x] **Passo 6 — Bateria de Testes Automatizados:** Suíte TDD `ConsignmentLoan.test.ts` implementada cobrindo o ciclo de adiantamento e fechamento mensal. Suíte global de 492 testes executada com 100% de aprovação (77 test files verdes).
+- [x] **Passo 7 — Limpeza:** Scripts temporários de scratch removidos.
+
+---
 | Fase histórica | Motivo | Tratada em |
 |---|---|---|
 | 8 Rubricas / 9 Eventos | Catálogo sem incidências; regras por nome | P2, P3 |

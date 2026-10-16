@@ -5,7 +5,7 @@
 
 -- 1. TABELA DE DISPOSITIVOS E FONTES DE PONTO (REP-C, REP-P, IMPORT)
 CREATE TABLE IF NOT EXISTS public.time_devices (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS public.time_devices (
 
 -- 2. TABELA DE ARQUIVOS AFD (ARQUIVO-FONTE DE DADOS - PORTARIA 671)
 CREATE TABLE IF NOT EXISTS public.afd_files (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
     device_id UUID REFERENCES public.time_devices(id) ON DELETE SET NULL,
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS public.afd_files (
 
 -- 3. TRILHA IMUTÁVEL DE REGISTROS DE PONTO (time_punch_records)
 CREATE TABLE IF NOT EXISTS public.time_punch_records (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
     device_id UUID REFERENCES public.time_devices(id) ON DELETE SET NULL,
@@ -99,7 +99,7 @@ ALTER TABLE public.time_bank_accounts
 
 -- 6. TABELA DE RESUMO DIÁRIO DE JORNADA (time_daily_summary)
 CREATE TABLE IF NOT EXISTS public.time_daily_summary (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
     contract_id UUID NOT NULL REFERENCES public.employment_contracts(id) ON DELETE CASCADE,
@@ -193,21 +193,8 @@ CREATE POLICY "Tenant Admins and DP can manage time_punch_records"
         )
     );
 
--- Colaboradores podem consultar seus próprios registros de ponto
-DROP POLICY IF EXISTS "Employees can view their own punch records" ON public.time_punch_records;
-CREATE POLICY "Employees can view their own punch records"
-    ON public.time_punch_records FOR SELECT
-    USING (
-        tenant_id = ANY (public.user_tenant_ids())
-        AND (
-            worker_id IN (SELECT id FROM public.workers WHERE user_id = auth.uid())
-            OR contract_id IN (
-                SELECT ec.id FROM public.employment_contracts ec
-                JOIN public.workers w ON w.id = ec.worker_id
-                WHERE w.user_id = auth.uid()
-            )
-        )
-    );
+-- Colaboradores consultam seus próprios registros de ponto via RPC get_employee_today_punches (SECURITY DEFINER)
+-- DROP POLICY IF EXISTS "Employees can view their own punch records" ON public.time_punch_records;
 
 -- Políticas para time_daily_summary
 DROP POLICY IF EXISTS "Tenant Admins and DP can manage time_daily_summary" ON public.time_daily_summary;
@@ -220,18 +207,6 @@ CREATE POLICY "Tenant Admins and DP can manage time_daily_summary"
             WHERE user_id = auth.uid() 
             AND tenant_users.tenant_id = time_daily_summary.tenant_id 
             AND role IN ('system_admin', 'tenant_admin', 'dp_analyst')
-        )
-    );
-
-DROP POLICY IF EXISTS "Employees can view their own daily summary" ON public.time_daily_summary;
-CREATE POLICY "Employees can view their own daily summary"
-    ON public.time_daily_summary FOR SELECT
-    USING (
-        tenant_id = ANY (public.user_tenant_ids())
-        AND contract_id IN (
-            SELECT ec.id FROM public.employment_contracts ec
-            JOIN public.workers w ON w.id = ec.worker_id
-            WHERE w.user_id = auth.uid()
         )
     );
 

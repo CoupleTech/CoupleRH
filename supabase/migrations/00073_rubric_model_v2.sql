@@ -26,7 +26,7 @@ WHERE code IN (
 
 -- 2. Tabela de incidências por contexto (MONTHLY, VACATION, THIRTEENTH, TERMINATION, ALL)
 CREATE TABLE IF NOT EXISTS public.rubric_incidences (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     rubric_id UUID NOT NULL REFERENCES public.payroll_rubrics(id) ON DELETE CASCADE,
     context TEXT NOT NULL CHECK (context IN ('MONTHLY', 'VACATION', 'THIRTEENTH', 'TERMINATION', 'ALL')),
@@ -99,7 +99,7 @@ END $$;
 
 -- 4. Tabela de membros componentes das bases de cálculo dinâmicas
 CREATE TABLE IF NOT EXISTS public.calculation_base_members (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     base_code TEXT NOT NULL REFERENCES public.calculation_bases(code) ON DELETE CASCADE,
     rubric_id UUID REFERENCES public.payroll_rubrics(id) ON DELETE CASCADE,
     kind TEXT,

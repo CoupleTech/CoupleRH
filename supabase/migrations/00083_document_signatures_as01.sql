@@ -128,7 +128,7 @@ EXECUTE FUNCTION public.protect_signatures_log_immutability();
 
 -- 4. Criação da tabela document_events (Ciclo de Vida e Trilha de Auditoria do Documento)
 CREATE TABLE IF NOT EXISTS public.document_events (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
     document_id UUID NOT NULL REFERENCES public.employee_documents(id) ON DELETE CASCADE,
     event TEXT NOT NULL CHECK (event IN (
@@ -187,15 +187,6 @@ CREATE POLICY "Users can view document events in their tenants"
 ON public.document_events FOR SELECT
 USING (
     tenant_id = ANY (public.user_tenant_ids())
-    OR EXISTS (
-        SELECT 1 FROM public.employee_documents ed
-        JOIN public.workers w ON w.id = ed.worker_id
-        WHERE ed.id = document_events.document_id
-          AND w.person_id IN (
-              SELECT p.id FROM public.people p
-              JOIN public.users u ON u.email = p.email OR u.id = auth.uid()
-          )
-    )
 );
 
 -- Inserção de eventos permitida para service role ou usuários autenticados do tenant

@@ -31,8 +31,9 @@ import DocumentsTab from "./components/DocumentsTab";
 import EmployeeBenefitsTab from "../EmployeeBenefitsTab";
 import EmployeeDeductionsTab from "../EmployeeDeductionsTab";
 import EmployeeFixedEventsTab from "../EmployeeFixedEventsTab";
+import EmployeeLoansTab from "../EmployeeLoansTab";
 import SalaryAdjustmentsTab from "./components/SalaryAdjustmentsTab";
-import { Receipt, Gift, TrendingUp, DollarSign, Phone, Building, FileText, Save, Check } from "lucide-react";
+import { Receipt, Gift, TrendingUp, DollarSign, Phone, Building, FileText, Save, Check, Landmark } from "lucide-react";
 
 const TABS = [
   { id: 'personal', label: 'Dados Pessoais', icon: User },
@@ -46,6 +47,7 @@ const TABS = [
   { id: 'benefits', label: 'Benefícios', icon: Gift },
   { id: 'fixed_events', label: 'Adicionais / Fixos', icon: TrendingUp },
   { id: 'deductions', label: 'Descontos / Retenções', icon: Receipt },
+  { id: 'loans', label: 'Consignados (FGTS)', icon: Landmark },
   { id: 'banking', label: 'Dados Bancários', icon: Building },
   { id: 'vacations', label: 'Férias', icon: Calendar },
   { id: 'leaves', label: 'Afastamentos', icon: Activity },
@@ -281,6 +283,14 @@ export default function EmployeeProfile() {
 
         <div id="tab-content-deductions" className={activeTab === 'deductions' ? 'block' : 'hidden'}>
           <EmployeeDeductionsTab contractId={workerData?.employment_contracts?.[0]?.id} />
+        </div>
+
+        <div id="tab-content-loans" className={activeTab === 'loans' ? 'block' : 'hidden'}>
+          <EmployeeLoansTab 
+            contractId={workerData?.employment_contracts?.[0]?.id} 
+            companyId={workerData?.employment_contracts?.[0]?.company_id}
+            baseSalary={workerData?.employment_contracts?.[0]?.base_salary}
+          />
         </div>
 
         <div id="tab-content-banking" className={activeTab === 'banking' ? 'block' : 'hidden'}>

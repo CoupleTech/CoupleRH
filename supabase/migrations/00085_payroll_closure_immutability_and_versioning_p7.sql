@@ -76,7 +76,7 @@ BEGIN
     ELSIF TG_TABLE_NAME = 'payroll_company_taxes' THEN
         v_period_id := COALESCE(OLD.period_id, NEW.period_id);
     ELSIF TG_TABLE_NAME = 'payroll_memory_calc' THEN
-        v_period_id := COALESCE(OLD.period_id, NEW.period_id);
+        SELECT period_id INTO v_period_id FROM public.payslips WHERE id = COALESCE(OLD.payslip_id, NEW.payslip_id);
     END IF;
 
     IF v_period_id IS NOT NULL THEN
@@ -105,6 +105,23 @@ CREATE TRIGGER trg_immutable_closed_payslip_items
     BEFORE UPDATE OR DELETE ON public.payslip_items
     FOR EACH ROW
     EXECUTE FUNCTION public.check_payroll_period_immutability();
+
+CREATE TABLE IF NOT EXISTS public.payroll_company_taxes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    period_id UUID NOT NULL REFERENCES public.payroll_periods(id) ON DELETE CASCADE,
+    company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+    total_base_inss NUMERIC(15, 2) DEFAULT 0,
+    total_base_fgts NUMERIC(15, 2) DEFAULT 0,
+    inss_patronal NUMERIC(15, 2) DEFAULT 0,
+    rat_adjusted NUMERIC(15, 2) DEFAULT 0,
+    terceiros NUMERIC(15, 2) DEFAULT 0,
+    fgts_patronal NUMERIC(15, 2) DEFAULT 0,
+    total_taxes NUMERIC(15, 2) DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(period_id, company_id)
+);
+ALTER TABLE public.payroll_company_taxes ENABLE ROW LEVEL SECURITY;
 
 DROP TRIGGER IF EXISTS trg_immutable_closed_company_taxes ON public.payroll_company_taxes;
 CREATE TRIGGER trg_immutable_closed_company_taxes

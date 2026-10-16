@@ -67,8 +67,8 @@ BEGIN
     ) THEN
         CREATE POLICY tenant_isolation_document_events ON public.document_events
             FOR ALL
-            USING (tenant_id = auth.jwt() ->> 'tenant_id' OR auth.role() = 'service_role')
-            WITH CHECK (tenant_id = auth.jwt() ->> 'tenant_id' OR auth.role() = 'service_role');
+            USING (tenant_id = ANY (public.user_tenant_ids()) OR auth.role() = 'service_role')
+            WITH CHECK (tenant_id = ANY (public.user_tenant_ids()) OR auth.role() = 'service_role');
     END IF;
 END $$;
 

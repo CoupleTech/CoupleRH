@@ -389,7 +389,7 @@ serve(async (req) => {
       period.type === 'TERMINATION' ? 'TERMINATION' : 'MONTHLY';
 
     const activeDbRubrics = (dbRubrics || []).filter((r: any) =>
-      isRubricEligibleForCalculation(r.status || 'ACTIVE', periodStartDate, r.valid_from, r.valid_to)
+      isRubricEligibleForCalculation(r.status || 'ACTIVE', endDate, r.valid_from, r.valid_to, periodStartDate)
     );
 
     const rubricas = activeDbRubrics.map((r: any) => {
@@ -448,7 +448,17 @@ serve(async (req) => {
         
         const { data: advData, error: advErr } = await supabase
           .from('payslips')
-          .select('contract_id, total_earnings')
+          .select(`
+            contract_id,
+            total_earnings,
+            payslip_items (
+              amount,
+              type,
+              payroll_rubrics!payslip_items_rubric_id_fkey (
+                code
+              )
+            )
+          `)
           .eq('tenant_id', tenant_id)
           .in('period_id', advPeriodIds);
           
@@ -460,6 +470,25 @@ serve(async (req) => {
       } else {
         debugLogs.push({ step: 'advData fetch - no periods', periodMonth: period.month, periodYear: period.year });
       }
+    }
+
+    // 3.6 Busca Empréstimos Consignados Ativos (Crédito do Trabalhador / FGTS Digital)
+    let employeeLoans: any[] = [];
+    let loansQuery = supabase
+      .from('employee_loans')
+      .select('*')
+      .eq('tenant_id', tenant_id)
+      .eq('status', 'ACTIVE');
+
+    if (contractIds.length > 0) {
+      loansQuery = loansQuery.in('contract_id', contractIds);
+    }
+
+    const { data: loansData, error: loansErr } = await loansQuery;
+    if (loansErr) {
+      debugLogs.push({ step: 'loans fetch error', loansErr });
+    } else if (loansData) {
+      employeeLoans = loansData;
     }
 
     // T15: Busca solicitações de férias que cruzam com a competência (start_date <= endOfMonth AND end_date >= startOfMonth)
@@ -562,6 +591,31 @@ serve(async (req) => {
             manual_value: contract.base_salary * ((rubricAdvEarning.percentage || 40) / 100),
             quantity: 1
           });
+        }
+
+        // Provisão Proporcional de Empréstimos Consignados no Vale (reserva para proteger saldo final)
+        const contractLoans = employeeLoans.filter((l: any) => l.contract_id === contract.id);
+        for (const loan of contractLoans) {
+          if (loan.provision_on_advance) {
+            const provPct = loan.advance_provision_percentage !== null && loan.advance_provision_percentage !== undefined
+              ? Number(loan.advance_provision_percentage)
+              : 40;
+            const provisionVal = round2(Number(loan.installment_amount) * (provPct / 100));
+            if (provisionVal > 0) {
+              let r807 = applicableRubrics.find((r: any) => r.code === '807');
+              if (!r807) {
+                r807 = rubricas.find((r: any) => r.code === '807');
+                if (r807) applicableRubrics.push(r807);
+              }
+              if (r807) {
+                eventos.push({
+                  rubric_id: r807.id,
+                  manual_value: provisionVal,
+                  quantity: 1
+                });
+              }
+            }
+          }
         }
       } else if (period.type === 'VACATION') {
         const contractVacations = vacations.filter((v: any) => v.contract_id === contract.id);
@@ -710,17 +764,7 @@ serve(async (req) => {
           }
         }
 
-      // Injeta Eventos Variáveis (lançamentos manuais do mês)
-      const contractVars = variableEvents?.filter(v => v.contract_id === contract.id) || [];
-      for (const v of contractVars) {
-        eventos.push({
-          rubric_id: v.rubric_id,
-          manual_value: v.amount,
-          quantity: v.quantity || 1
-        });
-      }
-
-      // Injeta Adicionais e Proventos Fixos (Insalubridade, Periculosidade, etc)
+        // Injeta Adicionais e Proventos Fixos (Insalubridade, Periculosidade, etc)
       const contractFixedEvents = employeeFixedEvents?.filter(fe => {
          if (fe.contract_id !== contract.id) return false;
          if (!fe.is_active) return false;
@@ -767,9 +811,110 @@ serve(async (req) => {
             manual_value: contractAdvance.total_earnings,
             quantity: 1
           });
+
+          // Estorno / Devolução da Provisão retida no Adiantamento (rubrica 407 - Provento)
+          let totalProvisionRetained = 0;
+          if (Array.isArray(contractAdvance.payslip_items)) {
+            for (const item of contractAdvance.payslip_items) {
+              const rCode = item.payroll_rubrics?.code;
+              if (rCode === '807' || rCode === '805') {
+                totalProvisionRetained = round2(totalProvisionRetained + Number(item.amount || 0));
+              }
+            }
+          }
+
+          if (totalProvisionRetained > 0) {
+            let r407 = applicableRubrics.find((r: any) => r.code === '407');
+            if (!r407) {
+              r407 = rubricas.find((r: any) => r.code === '407');
+              if (r407) applicableRubrics.push(r407);
+            }
+            if (r407) {
+              eventos.push({
+                rubric_id: r407.id,
+                manual_value: totalProvisionRetained,
+                quantity: 1
+              });
+            }
+          }
+        }
+
+        // Injeta Desconto Oficial Integral do Empréstimo Consignado (rubrica 805 - Desconto)
+        const contractLoans = employeeLoans.filter((l: any) => l.contract_id === contract.id);
+        for (const loan of contractLoans) {
+          const installmentVal = round2(Number(loan.installment_amount));
+          if (installmentVal > 0) {
+            let r805 = applicableRubrics.find((r: any) => r.code === '805');
+            if (!r805) {
+              r805 = rubricas.find((r: any) => r.code === '805');
+              if (r805) applicableRubrics.push(r805);
+            }
+            if (r805) {
+              eventos.push({
+                rubric_id: r805.id,
+                manual_value: installmentVal,
+                quantity: 1
+              });
+            }
+          }
         }
       }
     } // End of else (period.type !== 'ADVANCE')
+
+    // ==========================================
+    // EVENTOS VARIÁVEIS DA COMPETÊNCIA (Lançamentos manuais específicos cadastrados para o período)
+    // ==========================================
+    const contractVars = variableEvents?.filter((v: any) => v.contract_id === contract.id) || [];
+    for (const v of contractVars) {
+      eventos.push({
+        rubric_id: v.rubric_id,
+        manual_value: v.amount,
+        quantity: v.quantity || 1
+      });
+
+      if (!applicableRubrics.find((r: any) => r.id === v.rubric_id)) {
+        let rub = rubricas.find((r: any) => r.id === v.rubric_id);
+        if (!rub) {
+          const raw = dbRubrics?.find((r: any) => r.id === v.rubric_id);
+          if (raw) {
+            const inc = resolveRubricIncidence(raw, rubricContext, dbIncidences || []);
+            rub = {
+              id: raw.id,
+              code: raw.code,
+              name: raw.name,
+              type: raw.type,
+              category: raw.category,
+              rubric_kind: raw.rubric_kind || undefined,
+              status: raw.status || 'ACTIVE',
+              is_system: raw.is_system || false,
+              esocial_nature: raw.esocial_nature || undefined,
+              legal_basis: raw.legal_basis || undefined,
+              version: raw.version || 1,
+              calculation_form: normalizeCalcForm(raw.calculation_form || raw.calculation_type || 'FIXED'),
+              calculation_base: raw.calculation_base,
+              percentage: raw.percentage,
+              quantity: raw.quantity,
+              divisor: raw.divisor,
+              factor: raw.factor,
+              formula: raw.formula,
+              calculation_order: raw.calculation_order ?? 100,
+              incidencias: {
+                inss: inc.inss,
+                irrf: inc.irrf,
+                fgts: inc.fgts,
+                inss_patronal: inc.inss_patronal,
+                rat: inc.rat,
+                terceiros: inc.terceiros,
+                gera_base_inss: inc.inss,
+                gera_base_irrf: inc.irrf,
+                gera_base_fgts: inc.fgts,
+              }
+            } as Rubric;
+          }
+        }
+        if (rub) applicableRubrics.push(rub);
+      }
+    }
 
     // ==========================================
     // DEDUÇÕES FIXAS (T17: Filtradas por elegibilidade do período e apply_on_types)
