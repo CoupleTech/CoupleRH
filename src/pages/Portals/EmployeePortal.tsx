@@ -43,6 +43,7 @@ import { DocumentSigningService } from "../../services/documents/documentSigning
 import { DocumentComplianceService } from "../../services/documents/documentComplianceService";
 import { VacationReceiptService } from "../../services/vacations/vacationReceiptService";
 import { DocumentGeneratorService, type VacationReceiptSnapshot } from "../../services/documents/documentGeneratorService";
+import { LgpdPrivacyModal } from "../../components/security/LgpdPrivacyModal";
 
 // ── Types ──
 interface EmployeeAuth {
@@ -321,6 +322,7 @@ export default function EmployeePortal() {
   const [showPunchModal, setShowPunchModal] = useState(false);
   const [showTimeBankModal, setShowTimeBankModal] = useState(false);
   const [showTimesheetModal, setShowTimesheetModal] = useState(false);
+  const [showLgpdModal, setShowLgpdModal] = useState(false);
   const [todayPunches, setTodayPunches] = useState<any[]>([]);
   const [timeBankSummary, setTimeBankSummary] = useState<any>(null);
   const [companyData, setCompanyData] = useState<{ name: string; cnpj: string }>({
@@ -1264,7 +1266,7 @@ export default function EmployeePortal() {
             </div>
 
             {/* ━━━━ Quick Actions Grid ━━━━ */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 animate-fade-up stagger-1">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 animate-fade-up stagger-1">
               {/* Holerite */}
               <button 
                 onClick={() => payslips.length > 0 && handleOpenPayslipModal(activePayslip.id)}
@@ -1342,6 +1344,20 @@ export default function EmployeePortal() {
                 <h3 className="text-xs font-bold text-slate-800 leading-tight">Documentos</h3>
                 <p className="text-[11px] text-slate-500 mt-0.5">
                   {totalPendingDocs > 0 ? `${totalPendingDocs} pendência${totalPendingDocs > 1 ? 's' : ''}` : 'Tudo certo'}
+                </p>
+              </button>
+
+              {/* Privacidade & LGPD */}
+              <button 
+                onClick={() => setShowLgpdModal(true)}
+                className="group bg-white rounded-2xl border border-slate-100 hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-500/5 p-4 text-left transition-all duration-200 active:scale-[0.97]"
+              >
+                <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform duration-200">
+                  <ShieldCheck size={20} className="text-indigo-600" />
+                </div>
+                <h3 className="text-xs font-bold text-slate-800 leading-tight">Privacidade</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  LGPD Art. 18
                 </p>
               </button>
             </div>
@@ -2557,6 +2573,18 @@ export default function EmployeePortal() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ━━━━ Modal de Privacidade e Meus Dados (LGPD Art. 18) ━━━━ */}
+      {auth && (
+        <LgpdPrivacyModal
+          isOpen={showLgpdModal}
+          onClose={() => setShowLgpdModal(false)}
+          workerId={auth.workerId}
+          tenantId={auth.tenantId || (profile as any)?.tenant_id || ''}
+          employeeName={profile?.full_name || auth.fullName}
+          employeeCpf={profile?.cpf || ''}
+        />
       )}
     </div>
   );

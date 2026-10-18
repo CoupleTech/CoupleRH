@@ -14258,3 +14258,1225 @@ BEGIN
 END $$;
 ```
 
+### Script 103: `00103_lgpd_subject_rights_and_data_governance_p8`
+```sql
+-- 1. Função Auxiliar: user_worker_ids()
+CREATE OR REPLACE FUNCTION public.user_worker_ids()
+RETURNS UUID[]
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT COALESCE(array_agg(worker_id), '{}')
+    FROM public.tenant_users
+    WHERE user_id = auth.uid() AND worker_id IS NOT NULL;
+$$;
+
+-- 2. Tabela de Solicitações do Titular (LGPD Art. 18)
+CREATE TABLE IF NOT EXISTS public.lgpd_subject_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    worker_id UUID NOT NULL REFERENCES public.workers(id) ON DELETE CASCADE,
+    request_type TEXT NOT NULL CHECK (request_type IN ('ACCESS_DATA', 'PORTABILITY', 'ANONYMIZATION', 'REVOCATION_CONSENT', 'CONFIRMATION', 'CORRECTION')),
+    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'REJECTED')),
+    justification TEXT NOT NULL,
+    response_notes TEXT,
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    responded_at TIMESTAMPTZ,
+    responded_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- RLS para lgpd_subject_requests
+ALTER TABLE public.lgpd_subject_requests ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Admins and DP can manage all subject requests" ON public.lgpd_subject_requests
+    FOR ALL
+    USING (
+        tenant_id = ANY(public.user_tenant_ids()) 
+        AND EXISTS (
+            SELECT 1 FROM public.tenant_users tu 
+            WHERE tu.user_id = auth.uid() 
+            AND tu.tenant_id = lgpd_subject_requests.tenant_id 
+            AND tu.role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        )
+    );
+
+CREATE POLICY "Workers can view own subject requests" ON public.lgpd_subject_requests
+    FOR SELECT
+    USING (
+        tenant_id = ANY(public.user_tenant_ids()) 
+        AND worker_id = ANY(public.user_worker_ids())
+    );
+
+CREATE POLICY "Workers can create own subject requests" ON public.lgpd_subject_requests
+    FOR INSERT
+    WITH CHECK (
+        tenant_id = ANY(public.user_tenant_ids()) 
+        AND worker_id = ANY(public.user_worker_ids())
+    );
+
+CREATE TRIGGER audit_lgpd_subject_requests_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON public.lgpd_subject_requests
+    FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+
+-- 3. Tabela de Registro de Compartilhamento com Terceiros (LGPD Art. 18, VII)
+CREATE TABLE IF NOT EXISTS public.lgpd_data_sharing_registry (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES public.tenants(id) ON DELETE CASCADE,
+    recipient_name TEXT NOT NULL,
+    recipient_type TEXT NOT NULL CHECK (recipient_type IN ('PUBLIC_AGENCY', 'FINANCIAL_INSTITUTION', 'HEALTH_CLINIC', 'INSURANCE', 'OTHER')),
+    purpose TEXT NOT NULL,
+    legal_basis TEXT NOT NULL CHECK (legal_basis IN ('LEGAL_OBLIGATION', 'CONTRACT_EXECUTION', 'CONSENT', 'LEGITIMATE_INTEREST')),
+    data_shared TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.lgpd_data_sharing_registry ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users can read data sharing registry" ON public.lgpd_data_sharing_registry
+    FOR SELECT
+    USING (tenant_id IS NULL OR tenant_id = ANY(public.user_tenant_ids()));
+
+CREATE TRIGGER audit_lgpd_data_sharing_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON public.lgpd_data_sharing_registry
+    FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+
+-- 4. RPC Segura: Exportação do Dossiê do Titular (Art. 18, II e V LGPD)
+CREATE OR REPLACE FUNCTION public.get_my_lgpd_dossier()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_worker_id UUID;
+    v_tenant_id UUID;
+    v_person_id UUID;
+    v_result JSONB;
+BEGIN
+    SELECT worker_id, tenant_id INTO v_worker_id, v_tenant_id
+    FROM public.tenant_users
+    WHERE user_id = auth.uid() AND worker_id IS NOT NULL
+    LIMIT 1;
+
+    IF v_worker_id IS NULL THEN
+        RAISE EXCEPTION 'Nenhum cadastro de trabalhador vinculado a esta conta de usuário.';
+    END IF;
+
+    SELECT person_id INTO v_person_id
+    FROM public.workers
+    WHERE id = v_worker_id;
+
+    SELECT jsonb_build_object(
+        'generated_at', NOW(),
+        'legal_notice', 'Dossiê emitido em conformidade com o Art. 18 da Lei nº 13.709/2018 (LGPD).',
+        'titular', (
+            SELECT jsonb_build_object(
+                'full_name', p.full_name,
+                'cpf_masked', '***.' || SUBSTRING(REPLACE(REPLACE(p.cpf, '.', ''), '-', ''), 4, 3) || '.' || SUBSTRING(REPLACE(REPLACE(p.cpf, '.', ''), '-', ''), 7, 3) || '-**',
+                'birth_date', p.birth_date,
+                'email', p.email,
+                'phone', p.phone
+            )
+            FROM public.people p
+            WHERE p.id = v_person_id
+        ),
+        'contratos', (
+            SELECT COALESCE(jsonb_agg(
+                jsonb_build_object(
+                    'id', ec.id,
+                    'registration_number', ec.registration_number,
+                    'admission_date', ec.admission_date,
+                    'status', ec.status,
+                    'position', (SELECT name FROM public.positions WHERE id = ec.position_id),
+                    'department', (SELECT name FROM public.departments WHERE id = ec.department_id),
+                    'salary', ec.salary
+                )
+            ), '[]'::jsonb)
+            FROM public.employment_contracts ec
+            WHERE ec.worker_id = v_worker_id
+        ),
+        'consentimentos', (
+            SELECT COALESCE(jsonb_agg(
+                jsonb_build_object(
+                    'category', lc.data_category,
+                    'purpose', lc.processing_purpose,
+                    'legal_basis', lc.legal_basis,
+                    'granted_at', lc.granted_at,
+                    'revoked_at', lc.revoked_at
+                )
+            ), '[]'::jsonb)
+            FROM public.lgpd_consents lc
+            WHERE lc.person_id = v_person_id
+        ),
+        'solicitacoes_titular', (
+            SELECT COALESCE(jsonb_agg(
+                jsonb_build_object(
+                    'id', sr.id,
+                    'type', sr.request_type,
+                    'status', sr.status,
+                    'justification', sr.justification,
+                    'requested_at', sr.requested_at,
+                    'responded_at', sr.responded_at
+                )
+            ), '[]'::jsonb)
+            FROM public.lgpd_subject_requests sr
+            WHERE sr.worker_id = v_worker_id
+        )
+    ) INTO v_result;
+
+    RETURN v_result;
+END;
+$$;
+```
+
+---
+
+### Script 104: `00104_tenant_general_settings_conf01`
+Parametrização global e governança de configurações do tenant (`timezone`, `timesheet_cutoff_day`, `esocial_environment`) com RLS e auditoria T29.
+
+```sql
+CREATE TABLE IF NOT EXISTS public.tenant_settings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo',
+    timesheet_cutoff_day INTEGER NOT NULL DEFAULT 25 CHECK (timesheet_cutoff_day BETWEEN 1 AND 31),
+    esocial_environment TEXT NOT NULL DEFAULT 'producao' CHECK (esocial_environment IN ('producao', 'restrita')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(tenant_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_settings_tenant_id ON public.tenant_settings(tenant_id);
+
+ALTER TABLE public.tenant_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "tenant_settings_select_policy" ON public.tenant_settings;
+CREATE POLICY "tenant_settings_select_policy" ON public.tenant_settings
+    FOR SELECT
+    USING (tenant_id = ANY(public.user_tenant_ids()));
+
+DROP POLICY IF EXISTS "tenant_settings_insert_policy" ON public.tenant_settings;
+CREATE POLICY "tenant_settings_insert_policy" ON public.tenant_settings
+    FOR INSERT
+    WITH CHECK (
+        tenant_id = ANY(public.user_tenant_ids())
+        AND EXISTS (
+            SELECT 1 FROM public.tenant_users
+            WHERE user_id = auth.uid()
+            AND tenant_id = tenant_settings.tenant_id
+            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        )
+    );
+
+DROP POLICY IF EXISTS "tenant_settings_update_policy" ON public.tenant_settings;
+CREATE POLICY "tenant_settings_update_policy" ON public.tenant_settings
+    FOR UPDATE
+    USING (
+        tenant_id = ANY(public.user_tenant_ids())
+        AND EXISTS (
+            SELECT 1 FROM public.tenant_users
+            WHERE user_id = auth.uid()
+            AND tenant_id = tenant_settings.tenant_id
+            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        )
+    );
+
+DROP TRIGGER IF EXISTS audit_tenant_settings_trigger ON public.tenant_settings;
+CREATE TRIGGER audit_tenant_settings_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON public.tenant_settings
+    FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+
+INSERT INTO public.tenant_settings (tenant_id, timezone, timesheet_cutoff_day, esocial_environment)
+SELECT id, 'America/Sao_Paulo', 25, 'producao'
+FROM public.tenants
+ON CONFLICT (tenant_id) DO NOTHING;
+```
+
+---
+
+### Script 105: `00105_user_management_and_profiles_conf02`
+Governança completa de usuários e acessos (CONF-02), listagem enriquecida com e-mail real e dados de colaboradores, status ativo/inativo, vinculação com worker_id e RPC de atualização.
+
+```sql
+-- 1. Adicionar status is_active em tenant_users
+ALTER TABLE public.tenant_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+CREATE INDEX IF NOT EXISTS idx_tenant_users_tenant_active ON public.tenant_users(tenant_id, is_active);
+
+-- 2. Garantir sincronização de perfis existentes em user_profiles a partir de auth.users
+INSERT INTO public.user_profiles (id, email, full_name)
+SELECT 
+    u.id, 
+    u.email, 
+    COALESCE(u.raw_user_meta_data->>'full_name', split_part(u.email, '@', 1))
+FROM auth.users u
+ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = COALESCE(public.user_profiles.full_name, EXCLUDED.full_name);
+
+-- 3. Função/RPC segura para listagem completa de usuários do tenant com perfis, e-mails reais e trabalhadores vinculados
+CREATE OR REPLACE FUNCTION public.list_tenant_users_with_profiles()
+RETURNS TABLE (
+    tenant_user_id UUID,
+    user_id UUID,
+    tenant_id UUID,
+    role TEXT,
+    role_id UUID,
+    role_name TEXT,
+    worker_id UUID,
+    worker_name TEXT,
+    worker_cpf TEXT,
+    full_name TEXT,
+    email TEXT,
+    is_active BOOLEAN,
+    created_at TIMESTAMPTZ
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_caller_id UUID := auth.uid();
+    v_has_access BOOLEAN;
+BEGIN
+    IF v_caller_id IS NULL THEN
+        RAISE EXCEPTION 'Acesso não autorizado: usuário não autenticado.' USING ERRCODE = '42501';
+    END IF;
+
+    -- Validação de permissão: o usuário deve pertencer a ao menos um tenant com perfil administrativo ou analista
+    SELECT EXISTS (
+        SELECT 1 FROM public.tenant_users tu
+        WHERE tu.user_id = v_caller_id
+        AND tu.role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        AND tu.is_active = TRUE
+    ) INTO v_has_access;
+
+    IF NOT v_has_access THEN
+        RAISE EXCEPTION 'Acesso negado: permissão de gestão de usuários necessária.' USING ERRCODE = '42501';
+    END IF;
+
+    RETURN QUERY
+    SELECT 
+        tu.id AS tenant_user_id,
+        tu.user_id,
+        tu.tenant_id,
+        tu.role,
+        tu.role_id,
+        COALESCE(r.name, tu.role) AS role_name,
+        tu.worker_id,
+        w_p.full_name AS worker_name,
+        w_p.cpf AS worker_cpf,
+        COALESCE(up.full_name, w_p.full_name, u.raw_user_meta_data->>'full_name', 'Usuário Registrado')::TEXT AS full_name,
+        COALESCE(up.email, u.email, 'email_nao_disponivel')::TEXT AS email,
+        tu.is_active,
+        tu.created_at
+    FROM public.tenant_users tu
+    LEFT JOIN auth.users u ON u.id = tu.user_id
+    LEFT JOIN public.user_profiles up ON up.id = tu.user_id
+    LEFT JOIN public.roles r ON r.id = tu.role_id
+    LEFT JOIN public.workers w ON w.id = tu.worker_id
+    LEFT JOIN public.people w_p ON w_p.id = w.person_id
+    WHERE tu.tenant_id = ANY(public.user_tenant_ids())
+    ORDER BY tu.created_at DESC;
+END;
+$$;
+
+-- 4. RPC segura para atualização de dados de acesso do usuário no tenant
+CREATE OR REPLACE FUNCTION public.update_tenant_user_access(
+    p_tenant_user_id UUID,
+    p_role TEXT,
+    p_role_id UUID DEFAULT NULL,
+    p_worker_id UUID DEFAULT NULL,
+    p_is_active BOOLEAN DEFAULT TRUE
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_caller_id UUID := auth.uid();
+    v_tenant_id UUID;
+    v_effective_role_id UUID := p_role_id;
+    v_has_access BOOLEAN;
+BEGIN
+    IF v_caller_id IS NULL THEN
+        RAISE EXCEPTION 'Acesso não autorizado: usuário não autenticado.' USING ERRCODE = '42501';
+    END IF;
+
+    -- Localizar o tenant_user a ser editado
+    SELECT tenant_id INTO v_tenant_id
+    FROM public.tenant_users
+    WHERE id = p_tenant_user_id;
+
+    IF v_tenant_id IS NULL THEN
+        RAISE EXCEPTION 'Usuário do tenant não encontrado.' USING ERRCODE = 'P0002';
+    END IF;
+
+    -- Validar que o executor tem privilégio no mesmo tenant
+    SELECT EXISTS (
+        SELECT 1 FROM public.tenant_users tu
+        WHERE tu.user_id = v_caller_id
+        AND tu.tenant_id = v_tenant_id
+        AND tu.role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        AND tu.is_active = TRUE
+    ) INTO v_has_access;
+
+    IF NOT v_has_access THEN
+        RAISE EXCEPTION 'Acesso negado: você não possui permissão para gerenciar usuários neste tenant.' USING ERRCODE = '42501';
+    END IF;
+
+    -- Validação do enum de role
+    IF p_role NOT IN ('system_admin', 'tenant_admin', 'dp_analyst', 'manager', 'accountant', 'auditor', 'employee', 'sst_specialist') THEN
+        RAISE EXCEPTION 'Papel de usuário inválido: %', p_role USING ERRCODE = '22023';
+    END IF;
+
+    -- Se role_id não for informado, tentar inferir do perfil de sistema correspondente
+    IF v_effective_role_id IS NULL THEN
+        SELECT id INTO v_effective_role_id
+        FROM public.roles
+        WHERE (tenant_id IS NULL OR tenant_id = v_tenant_id)
+        AND (
+            (p_role = 'system_admin' AND name ILIKE '%Administrador%') OR
+            (p_role = 'dp_analyst' AND name ILIKE '%Analista de DP%') OR
+            (p_role = 'sst_specialist' AND name ILIKE '%SST%') OR
+            (p_role = 'manager' AND name ILIKE '%Gestor%') OR
+            (p_role = 'accountant' AND name ILIKE '%Contador%') OR
+            (p_role = 'auditor' AND name ILIKE '%Auditor%') OR
+            (p_role = 'employee' AND name ILIKE '%Colaborador%')
+        )
+        LIMIT 1;
+    END IF;
+
+    -- Validação de worker_id se fornecido: deve pertencer ao mesmo tenant
+    IF p_worker_id IS NOT NULL THEN
+        IF NOT EXISTS (SELECT 1 FROM public.workers WHERE id = p_worker_id AND tenant_id = v_tenant_id) THEN
+            RAISE EXCEPTION 'Colaborador selecionado não pertence a esta empresa/tenant.' USING ERRCODE = '23503';
+        END IF;
+    END IF;
+
+    -- Atualização atômica
+    UPDATE public.tenant_users
+    SET 
+        role = p_role,
+        role_id = v_effective_role_id,
+        worker_id = p_worker_id,
+        is_active = COALESCE(p_is_active, TRUE)
+    WHERE id = p_tenant_user_id;
+
+    RETURN jsonb_build_object(
+        'success', TRUE,
+        'tenant_user_id', p_tenant_user_id,
+        'role', p_role,
+        'role_id', v_effective_role_id,
+        'worker_id', p_worker_id,
+        'is_active', COALESCE(p_is_active, TRUE)
+    );
+END;
+$$;
+
+-- 5. Conceder permissão de execução aos usuários autenticados
+GRANT EXECUTE ON FUNCTION public.list_tenant_users_with_profiles() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.update_tenant_user_access(UUID, TEXT, UUID, UUID, BOOLEAN) TO authenticated;
+```
+
+---
+
+### Script 106: `00106_security_mfa_and_session_settings_conf03`
+Governança de segurança corporativa, MFA nativo (TOTP), controle de timeout de inatividade da sessão e exigência de segundo fator por papel (CONF-03).
+
+```sql
+-- 1. Estender tenant_settings com políticas de segurança e MFA
+ALTER TABLE public.tenant_settings 
+ADD COLUMN IF NOT EXISTS session_timeout_minutes INTEGER NOT NULL DEFAULT 60 
+    CHECK (session_timeout_minutes IN (15, 30, 60, 120, 240, 480)),
+ADD COLUMN IF NOT EXISTS require_mfa_roles TEXT[] NOT NULL DEFAULT ARRAY['system_admin', 'tenant_admin', 'dp_analyst']::TEXT[],
+ADD COLUMN IF NOT EXISTS max_login_attempts INTEGER NOT NULL DEFAULT 5 
+    CHECK (max_login_attempts BETWEEN 3 AND 10);
+
+-- 2. Atualizar registros existentes com os valores padrão seguros caso nulos
+UPDATE public.tenant_settings
+SET 
+    session_timeout_minutes = COALESCE(session_timeout_minutes, 60),
+    require_mfa_roles = COALESCE(require_mfa_roles, ARRAY['system_admin', 'tenant_admin', 'dp_analyst']::TEXT[]),
+    max_login_attempts = COALESCE(max_login_attempts, 5)
+WHERE session_timeout_minutes IS NULL OR require_mfa_roles IS NULL OR max_login_attempts IS NULL;
+
+-- 3. RPC protegida para atualização de políticas de segurança do tenant
+CREATE OR REPLACE FUNCTION public.update_tenant_security_settings(
+    p_session_timeout INTEGER,
+    p_require_mfa_roles TEXT[],
+    p_max_login_attempts INTEGER
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_caller_id UUID := auth.uid();
+    v_tenant_id UUID;
+    v_has_access BOOLEAN;
+BEGIN
+    IF v_caller_id IS NULL THEN
+        RAISE EXCEPTION 'Acesso não autorizado: usuário não autenticado.' USING ERRCODE = '42501';
+    END IF;
+
+    -- Localizar o tenant_id ativo do chamador
+    SELECT tenant_id INTO v_tenant_id
+    FROM public.tenant_users
+    WHERE user_id = v_caller_id
+    LIMIT 1;
+
+    IF v_tenant_id IS NULL THEN
+        RAISE EXCEPTION 'Tenant não encontrado para o usuário atual.' USING ERRCODE = 'P0002';
+    END IF;
+
+    -- Validar que o usuário é administrador
+    SELECT EXISTS (
+        SELECT 1 FROM public.tenant_users tu
+        WHERE tu.user_id = v_caller_id
+        AND tu.tenant_id = v_tenant_id
+        AND tu.role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        AND tu.is_active = TRUE
+    ) INTO v_has_access;
+
+    IF NOT v_has_access THEN
+        RAISE EXCEPTION 'Acesso negado: apenas administradores podem alterar políticas de segurança.' USING ERRCODE = '42501';
+    END IF;
+
+    -- Validação de limites
+    IF p_session_timeout NOT IN (15, 30, 60, 120, 240, 480) THEN
+        RAISE EXCEPTION 'Tempo de sessão inválido: % minutos.', p_session_timeout USING ERRCODE = '22023';
+    END IF;
+
+    IF p_max_login_attempts NOT BETWEEN 3 AND 10 THEN
+        RAISE EXCEPTION 'Limite de tentativas de login deve estar entre 3 e 10.' USING ERRCODE = '22023';
+    END IF;
+
+    -- Upsert atômico em tenant_settings
+    INSERT INTO public.tenant_settings (
+        tenant_id, 
+        session_timeout_minutes, 
+        require_mfa_roles, 
+        max_login_attempts,
+        updated_at
+    )
+    VALUES (
+        v_tenant_id, 
+        p_session_timeout, 
+        p_require_mfa_roles, 
+        p_max_login_attempts,
+        NOW()
+    )
+    ON CONFLICT (tenant_id) DO UPDATE SET
+        session_timeout_minutes = EXCLUDED.session_timeout_minutes,
+        require_mfa_roles = EXCLUDED.require_mfa_roles,
+        max_login_attempts = EXCLUDED.max_login_attempts,
+        updated_at = NOW();
+
+    RETURN jsonb_build_object(
+        'success', TRUE,
+        'tenant_id', v_tenant_id,
+        'session_timeout_minutes', p_session_timeout,
+        'require_mfa_roles', p_require_mfa_roles,
+        'max_login_attempts', p_max_login_attempts
+    );
+END;
+$$;
+
+-- 4. Conceder permissão de execução aos autenticados
+GRANT EXECUTE ON FUNCTION public.update_tenant_security_settings(INTEGER, TEXT[], INTEGER) TO authenticated;
+```
+
+### Script: `00107_tenant_notification_settings_conf04.sql`
+```sql
+-- ==============================================================================
+-- Migration: 00107_tenant_notification_settings_conf04.sql
+-- Descrição: Parametrização corporativa de gatilhos de alertas e canais de 
+--            notificação do tenant (férias, fechamento de ponto, ASO, folha, 
+--            inconsistências eSocial, canais e-mail, WhatsApp e in-app) - CONF-04.
+-- ==============================================================================
+
+-- 1. Estender tenant_settings com configurações de alertas e notificações corporativas
+ALTER TABLE public.tenant_settings 
+ADD COLUMN IF NOT EXISTS notify_vacation_warning BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN IF NOT EXISTS vacation_warning_days INTEGER NOT NULL DEFAULT 30 
+    CHECK (vacation_warning_days IN (15, 30, 45, 60)),
+ADD COLUMN IF NOT EXISTS notify_timesheet_cutoff BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN IF NOT EXISTS timesheet_cutoff_warning_days INTEGER NOT NULL DEFAULT 3 
+    CHECK (timesheet_cutoff_warning_days BETWEEN 1 AND 15),
+ADD COLUMN IF NOT EXISTS notify_aso_expiration BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN IF NOT EXISTS aso_expiration_warning_days INTEGER NOT NULL DEFAULT 30 
+    CHECK (aso_expiration_warning_days IN (15, 30, 45, 60)),
+ADD COLUMN IF NOT EXISTS notify_salary_advances BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN IF NOT EXISTS notify_payroll_divergences BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN IF NOT EXISTS notify_esocial_inconsistencies BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN IF NOT EXISTS in_app_notifications_enabled BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN IF NOT EXISTS email_notifications_enabled BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN IF NOT EXISTS dp_notification_email TEXT NULL,
+ADD COLUMN IF NOT EXISTS whatsapp_notifications_enabled BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN IF NOT EXISTS dp_notification_phone TEXT NULL;
+
+-- 2. Atualizar registros existentes com valores padrão seguros
+UPDATE public.tenant_settings
+SET 
+    notify_vacation_warning = COALESCE(notify_vacation_warning, true),
+    vacation_warning_days = COALESCE(vacation_warning_days, 30),
+    notify_timesheet_cutoff = COALESCE(notify_timesheet_cutoff, true),
+    timesheet_cutoff_warning_days = COALESCE(timesheet_cutoff_warning_days, 3),
+    notify_aso_expiration = COALESCE(notify_aso_expiration, true),
+    aso_expiration_warning_days = COALESCE(aso_expiration_warning_days, 30),
+    notify_salary_advances = COALESCE(notify_salary_advances, true),
+    notify_payroll_divergences = COALESCE(notify_payroll_divergences, true),
+    notify_esocial_inconsistencies = COALESCE(notify_esocial_inconsistencies, true),
+    in_app_notifications_enabled = COALESCE(in_app_notifications_enabled, true),
+    email_notifications_enabled = COALESCE(email_notifications_enabled, true),
+    whatsapp_notifications_enabled = COALESCE(whatsapp_notifications_enabled, false)
+WHERE notify_vacation_warning IS NULL 
+   OR vacation_warning_days IS NULL 
+   OR notify_timesheet_cutoff IS NULL;
+
+-- 3. RPC protegida para atualização de preferências de alertas e notificações
+CREATE OR REPLACE FUNCTION public.update_tenant_notification_settings(
+    p_notify_vacation_warning BOOLEAN,
+    p_vacation_warning_days INTEGER,
+    p_notify_timesheet_cutoff BOOLEAN,
+    p_timesheet_cutoff_warning_days INTEGER,
+    p_notify_aso_expiration BOOLEAN,
+    p_aso_expiration_warning_days INTEGER,
+    p_notify_salary_advances BOOLEAN,
+    p_notify_payroll_divergences BOOLEAN,
+    p_notify_esocial_inconsistencies BOOLEAN,
+    p_in_app_notifications_enabled BOOLEAN,
+    p_email_notifications_enabled BOOLEAN,
+    p_dp_notification_email TEXT,
+    p_whatsapp_notifications_enabled BOOLEAN,
+    p_dp_notification_phone TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_caller_id UUID := auth.uid();
+    v_tenant_id UUID;
+    v_has_access BOOLEAN;
+    v_clean_email TEXT;
+    v_clean_phone TEXT;
+BEGIN
+    IF v_caller_id IS NULL THEN
+        RAISE EXCEPTION 'Acesso não autorizado: usuário não autenticado.' USING ERRCODE = '42501';
+    END IF;
+
+    -- Localizar o tenant_id ativo do chamador
+    SELECT tenant_id INTO v_tenant_id
+    FROM public.tenant_users
+    WHERE user_id = v_caller_id
+    LIMIT 1;
+
+    IF v_tenant_id IS NULL THEN
+        RAISE EXCEPTION 'Tenant não encontrado para o usuário atual.' USING ERRCODE = 'P0002';
+    END IF;
+
+    -- Validar que o usuário é administrador do tenant
+    SELECT EXISTS (
+        SELECT 1 FROM public.tenant_users tu
+        WHERE tu.user_id = v_caller_id
+        AND tu.tenant_id = v_tenant_id
+        AND tu.role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        AND tu.is_active = TRUE
+    ) INTO v_has_access;
+
+    IF NOT v_has_access THEN
+        RAISE EXCEPTION 'Acesso negado: apenas administradores podem alterar configurações de notificações.' USING ERRCODE = '42501';
+    END IF;
+
+    -- Validação de limites numéricos
+    IF p_vacation_warning_days NOT IN (15, 30, 45, 60) THEN
+        RAISE EXCEPTION 'Antecedência de aviso de férias inválida: % dias.', p_vacation_warning_days USING ERRCODE = '22023';
+    END IF;
+
+    IF p_timesheet_cutoff_warning_days NOT BETWEEN 1 AND 15 THEN
+        RAISE EXCEPTION 'Antecedência de fechamento do ponto deve estar entre 1 e 15 dias.' USING ERRCODE = '22023';
+    END IF;
+
+    IF p_aso_expiration_warning_days NOT IN (15, 30, 45, 60) THEN
+        RAISE EXCEPTION 'Antecedência de vencimento de ASO inválida: % dias.', p_aso_expiration_warning_days USING ERRCODE = '22023';
+    END IF;
+
+    -- Sanitização e validação de e-mail corporativo
+    v_clean_email := NULLIF(TRIM(p_dp_notification_email), '');
+    IF v_clean_email IS NOT NULL AND v_clean_email !~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+.[A-Za-z]{2,}$' THEN
+        RAISE EXCEPTION 'E-mail corporativo inválido: %', v_clean_email USING ERRCODE = '22023';
+    END IF;
+
+    -- Sanitização de telefone (apenas números ou caracteres válidos)
+    v_clean_phone := NULLIF(TRIM(p_dp_notification_phone), '');
+
+    -- Upsert atômico em tenant_settings
+    INSERT INTO public.tenant_settings (
+        tenant_id, 
+        notify_vacation_warning,
+        vacation_warning_days,
+        notify_timesheet_cutoff,
+        timesheet_cutoff_warning_days,
+        notify_aso_expiration,
+        aso_expiration_warning_days,
+        notify_salary_advances,
+        notify_payroll_divergences,
+        notify_esocial_inconsistencies,
+        in_app_notifications_enabled,
+        email_notifications_enabled,
+        dp_notification_email,
+        whatsapp_notifications_enabled,
+        dp_notification_phone,
+        updated_at
+    )
+    VALUES (
+        v_tenant_id, 
+        p_notify_vacation_warning,
+        p_vacation_warning_days,
+        p_notify_timesheet_cutoff,
+        p_timesheet_cutoff_warning_days,
+        p_notify_aso_expiration,
+        p_aso_expiration_warning_days,
+        p_notify_salary_advances,
+        p_notify_payroll_divergences,
+        p_notify_esocial_inconsistencies,
+        p_in_app_notifications_enabled,
+        p_email_notifications_enabled,
+        v_clean_email,
+        p_whatsapp_notifications_enabled,
+        v_clean_phone,
+        NOW()
+    )
+    ON CONFLICT (tenant_id) DO UPDATE SET
+        notify_vacation_warning = EXCLUDED.notify_vacation_warning,
+        vacation_warning_days = EXCLUDED.vacation_warning_days,
+        notify_timesheet_cutoff = EXCLUDED.notify_timesheet_cutoff,
+        timesheet_cutoff_warning_days = EXCLUDED.timesheet_cutoff_warning_days,
+        notify_aso_expiration = EXCLUDED.notify_aso_expiration,
+        aso_expiration_warning_days = EXCLUDED.aso_expiration_warning_days,
+        notify_salary_advances = EXCLUDED.notify_salary_advances,
+        notify_payroll_divergences = EXCLUDED.notify_payroll_divergences,
+        notify_esocial_inconsistencies = EXCLUDED.notify_esocial_inconsistencies,
+        in_app_notifications_enabled = EXCLUDED.in_app_notifications_enabled,
+        email_notifications_enabled = EXCLUDED.email_notifications_enabled,
+        dp_notification_email = EXCLUDED.dp_notification_email,
+        whatsapp_notifications_enabled = EXCLUDED.whatsapp_notifications_enabled,
+        dp_notification_phone = EXCLUDED.dp_notification_phone,
+        updated_at = NOW();
+
+    RETURN jsonb_build_object(
+        'success', TRUE,
+        'tenant_id', v_tenant_id,
+        'notify_vacation_warning', p_notify_vacation_warning,
+        'vacation_warning_days', p_vacation_warning_days,
+        'notify_timesheet_cutoff', p_notify_timesheet_cutoff,
+        'timesheet_cutoff_warning_days', p_timesheet_cutoff_warning_days,
+        'notify_aso_expiration', p_notify_aso_expiration,
+        'aso_expiration_warning_days', p_aso_expiration_warning_days,
+        'notify_salary_advances', p_notify_salary_advances,
+        'notify_payroll_divergences', p_notify_payroll_divergences,
+        'notify_esocial_inconsistencies', p_notify_esocial_inconsistencies,
+        'in_app_notifications_enabled', p_in_app_notifications_enabled,
+        'email_notifications_enabled', p_email_notifications_enabled,
+        'dp_notification_email', v_clean_email,
+        'whatsapp_notifications_enabled', p_whatsapp_notifications_enabled,
+        'dp_notification_phone', v_clean_phone
+    );
+END;
+$$;
+
+-- 4. Conceder permissão de execução aos autenticados
+GRANT EXECUTE ON FUNCTION public.update_tenant_notification_settings(
+    BOOLEAN, INTEGER, BOOLEAN, INTEGER, BOOLEAN, INTEGER, BOOLEAN, BOOLEAN, BOOLEAN, BOOLEAN, BOOLEAN, TEXT, BOOLEAN, TEXT
+) TO authenticated;
+```
+
+### Script: `00108_tenant_certificates_esocial_conf05.sql`
+```sql
+-- ==============================================================================
+-- Migration: 00108_tenant_certificates_esocial_conf05.sql
+-- Descrição: Gestão e governança de Certificados Digitais ICP-Brasil (A1 .pfx)
+--            para transmissão eSocial com monitor de vigência, isolamento RLS,
+--            auditoria forense T29 e RPCs protegidas de revogação/instalação (CONF-05).
+-- ==============================================================================
+
+-- 1. Criação da tabela de certificados digitais do tenant
+CREATE TABLE IF NOT EXISTS public.tenant_certificates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    company_id UUID REFERENCES public.companies(id) ON DELETE SET NULL,
+    filename TEXT NOT NULL,
+    subject_name TEXT NOT NULL,
+    cnpj TEXT NOT NULL,
+    issuer TEXT NOT NULL,
+    serial_number TEXT NOT NULL,
+    valid_from TIMESTAMPTZ NOT NULL,
+    valid_to TIMESTAMPTZ NOT NULL,
+    storage_path TEXT NULL,
+    fingerprint_sha256 TEXT NULL,
+    environment TEXT NOT NULL DEFAULT 'producao' CHECK (environment IN ('producao', 'restrita')),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    revoked_at TIMESTAMPTZ NULL,
+    revocation_reason TEXT NULL,
+    created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 2. Índices de consulta rápida
+CREATE INDEX IF NOT EXISTS idx_tenant_certificates_tenant_env_active 
+    ON public.tenant_certificates(tenant_id, environment, is_active);
+CREATE INDEX IF NOT EXISTS idx_tenant_certificates_cnpj 
+    ON public.tenant_certificates(cnpj);
+CREATE INDEX IF NOT EXISTS idx_tenant_certificates_valid_to 
+    ON public.tenant_certificates(valid_to);
+
+-- 3. Habilitação de Row Level Security (RLS)
+ALTER TABLE public.tenant_certificates ENABLE ROW LEVEL SECURITY;
+
+-- Política de Leitura: Usuários do tenant
+DROP POLICY IF EXISTS "tenant_certificates_select_policy" ON public.tenant_certificates;
+CREATE POLICY "tenant_certificates_select_policy" ON public.tenant_certificates
+    FOR SELECT
+    USING (tenant_id = ANY(public.user_tenant_ids()));
+
+-- Política de Inserção: Apenas administradores do tenant (system_admin, tenant_admin, dp_analyst)
+DROP POLICY IF EXISTS "tenant_certificates_insert_policy" ON public.tenant_certificates;
+CREATE POLICY "tenant_certificates_insert_policy" ON public.tenant_certificates
+    FOR INSERT
+    WITH CHECK (
+        tenant_id = ANY(public.user_tenant_ids())
+        AND EXISTS (
+            SELECT 1 FROM public.tenant_users
+            WHERE user_id = auth.uid()
+            AND tenant_id = tenant_certificates.tenant_id
+            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+            AND is_active = TRUE
+        )
+    );
+
+-- Política de Atualização: Apenas administradores do tenant
+DROP POLICY IF EXISTS "tenant_certificates_update_policy" ON public.tenant_certificates;
+CREATE POLICY "tenant_certificates_update_policy" ON public.tenant_certificates
+    FOR UPDATE
+    USING (
+        tenant_id = ANY(public.user_tenant_ids())
+        AND EXISTS (
+            SELECT 1 FROM public.tenant_users
+            WHERE user_id = auth.uid()
+            AND tenant_id = tenant_certificates.tenant_id
+            AND role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+            AND is_active = TRUE
+        )
+    );
+
+-- 4. Trigger de Auditoria Forense T29
+DROP TRIGGER IF EXISTS audit_tenant_certificates_trigger ON public.tenant_certificates;
+CREATE TRIGGER audit_tenant_certificates_trigger
+AFTER INSERT OR UPDATE OR DELETE ON public.tenant_certificates
+FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+
+-- 5. RPC Segura: Salvar/Instalar Certificado A1 do Tenant
+CREATE OR REPLACE FUNCTION public.save_tenant_certificate(
+    p_filename TEXT,
+    p_subject_name TEXT,
+    p_cnpj TEXT,
+    p_issuer TEXT,
+    p_serial_number TEXT,
+    p_valid_from TIMESTAMPTZ,
+    p_valid_to TIMESTAMPTZ,
+    p_environment TEXT DEFAULT 'producao',
+    p_storage_path TEXT DEFAULT NULL,
+    p_fingerprint_sha256 TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_caller_id UUID := auth.uid();
+    v_tenant_id UUID;
+    v_company_id UUID;
+    v_has_access BOOLEAN;
+    v_new_cert_id UUID;
+    v_clean_cnpj TEXT;
+BEGIN
+    IF v_caller_id IS NULL THEN
+        RAISE EXCEPTION 'Acesso não autorizado: usuário não autenticado.' USING ERRCODE = '42501';
+    END IF;
+
+    -- Localizar o tenant_id ativo do chamador
+    SELECT tenant_id INTO v_tenant_id
+    FROM public.tenant_users
+    WHERE user_id = v_caller_id
+    LIMIT 1;
+
+    IF v_tenant_id IS NULL THEN
+        RAISE EXCEPTION 'Tenant não encontrado para o usuário atual.' USING ERRCODE = 'P0002';
+    END IF;
+
+    -- Validar privilégios administrativos
+    SELECT EXISTS (
+        SELECT 1 FROM public.tenant_users tu
+        WHERE tu.user_id = v_caller_id
+        AND tu.tenant_id = v_tenant_id
+        AND tu.role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        AND tu.is_active = TRUE
+    ) INTO v_has_access;
+
+    IF NOT v_has_access THEN
+        RAISE EXCEPTION 'Acesso negado: apenas administradores podem instalar certificados digitais.' USING ERRCODE = '42501';
+    END IF;
+
+    -- Limpeza e validação de campos
+    v_clean_cnpj := REGEXP_REPLACE(p_cnpj, '[^0-9]', '', 'g');
+    IF LENGTH(v_clean_cnpj) NOT IN (11, 14) THEN
+        RAISE EXCEPTION 'CNPJ/CPF do certificado inválido: %', p_cnpj USING ERRCODE = '22023';
+    END IF;
+
+    IF p_valid_to <= p_valid_from THEN
+        RAISE EXCEPTION 'Data de expiração do certificado deve ser posterior à data de emissão.' USING ERRCODE = '22023';
+    END IF;
+
+    IF p_environment NOT IN ('producao', 'restrita') THEN
+        RAISE EXCEPTION 'Ambiente inválido: %. Permitidos: producao, restrita.', p_environment USING ERRCODE = '22023';
+    END IF;
+
+    -- Localizar company_id correspondente ao CNPJ se existir
+    SELECT id INTO v_company_id
+    FROM public.companies
+    WHERE tenant_id = v_tenant_id
+    AND REGEXP_REPLACE(cnpj, '[^0-9]', '', 'g') = v_clean_cnpj
+    LIMIT 1;
+
+    -- Desativar certificados anteriores ativos para o mesmo ambiente
+    UPDATE public.tenant_certificates
+    SET 
+        is_active = FALSE,
+        updated_at = NOW()
+    WHERE tenant_id = v_tenant_id
+    AND environment = p_environment
+    AND is_active = TRUE;
+
+    -- Inserir o novo certificado com status ativo
+    INSERT INTO public.tenant_certificates (
+        tenant_id,
+        company_id,
+        filename,
+        subject_name,
+        cnpj,
+        issuer,
+        serial_number,
+        valid_from,
+        valid_to,
+        storage_path,
+        fingerprint_sha256,
+        environment,
+        is_active,
+        created_by,
+        created_at,
+        updated_at
+    )
+    VALUES (
+        v_tenant_id,
+        v_company_id,
+        TRIM(p_filename),
+        TRIM(p_subject_name),
+        v_clean_cnpj,
+        TRIM(p_issuer),
+        TRIM(p_serial_number),
+        p_valid_from,
+        p_valid_to,
+        p_storage_path,
+        p_fingerprint_sha256,
+        p_environment,
+        TRUE,
+        v_caller_id,
+        NOW(),
+        NOW()
+    )
+    RETURNING id INTO v_new_cert_id;
+
+    RETURN jsonb_build_object(
+        'success', TRUE,
+        'id', v_new_cert_id,
+        'tenant_id', v_tenant_id,
+        'subject_name', p_subject_name,
+        'cnpj', v_clean_cnpj,
+        'issuer', p_issuer,
+        'serial_number', p_serial_number,
+        'valid_from', p_valid_from,
+        'valid_to', p_valid_to,
+        'environment', p_environment,
+        'is_active', TRUE
+    );
+END;
+$$;
+
+-- 6. RPC Segura: Obter Certificado Ativo com Diagnóstico de Vigência
+CREATE OR REPLACE FUNCTION public.get_tenant_active_certificate(
+    p_environment TEXT DEFAULT 'producao'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_caller_id UUID := auth.uid();
+    v_tenant_id UUID;
+    v_cert RECORD;
+    v_days_remaining NUMERIC;
+    v_status TEXT;
+BEGIN
+    IF v_caller_id IS NULL THEN
+        RAISE EXCEPTION 'Acesso não autorizado: usuário não autenticado.' USING ERRCODE = '42501';
+    END IF;
+
+    SELECT tenant_id INTO v_tenant_id
+    FROM public.tenant_users
+    WHERE user_id = v_caller_id
+    LIMIT 1;
+
+    IF v_tenant_id IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT * INTO v_cert
+    FROM public.tenant_certificates
+    WHERE tenant_id = v_tenant_id
+    AND environment = p_environment
+    AND is_active = TRUE
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    IF v_cert IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    -- Cálculo dos dias restantes
+    v_days_remaining := ROUND(EXTRACT(EPOCH FROM (v_cert.valid_to - NOW())) / 86400.0, 1);
+
+    IF v_days_remaining < 0 THEN
+        v_status := 'EXPIRED';
+    ELSIF v_days_remaining <= 30 THEN
+        v_status := 'EXPIRING_SOON';
+    ELSE
+        v_status := 'VALID';
+    END IF;
+
+    RETURN jsonb_build_object(
+        'id', v_cert.id,
+        'tenant_id', v_cert.tenant_id,
+        'company_id', v_cert.company_id,
+        'filename', v_cert.filename,
+        'subject_name', v_cert.subject_name,
+        'cnpj', v_cert.cnpj,
+        'issuer', v_cert.issuer,
+        'serial_number', v_cert.serial_number,
+        'valid_from', v_cert.valid_from,
+        'valid_to', v_cert.valid_to,
+        'environment', v_cert.environment,
+        'is_active', v_cert.is_active,
+        'days_remaining', v_days_remaining,
+        'status', v_status,
+        'created_at', v_cert.created_at
+    );
+END;
+$$;
+
+-- 7. RPC Segura: Revogar/Desativar Certificado Digital
+CREATE OR REPLACE FUNCTION public.revoke_tenant_certificate(
+    p_certificate_id UUID,
+    p_reason TEXT DEFAULT 'Revogado manualmente pelo administrador'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_caller_id UUID := auth.uid();
+    v_tenant_id UUID;
+    v_has_access BOOLEAN;
+BEGIN
+    IF v_caller_id IS NULL THEN
+        RAISE EXCEPTION 'Acesso não autorizado: usuário não autenticado.' USING ERRCODE = '42501';
+    END IF;
+
+    SELECT tenant_id INTO v_tenant_id
+    FROM public.tenant_users
+    WHERE user_id = v_caller_id
+    LIMIT 1;
+
+    IF v_tenant_id IS NULL THEN
+        RAISE EXCEPTION 'Tenant não encontrado para o usuário atual.' USING ERRCODE = 'P0002';
+    END IF;
+
+    SELECT EXISTS (
+        SELECT 1 FROM public.tenant_users tu
+        WHERE tu.user_id = v_caller_id
+        AND tu.tenant_id = v_tenant_id
+        AND tu.role IN ('system_admin', 'tenant_admin', 'dp_analyst')
+        AND tu.is_active = TRUE
+    ) INTO v_has_access;
+
+    IF NOT v_has_access THEN
+        RAISE EXCEPTION 'Acesso negado: apenas administradores podem revogar certificados digitais.' USING ERRCODE = '42501';
+    END IF;
+
+    UPDATE public.tenant_certificates
+    SET 
+        is_active = FALSE,
+        revoked_at = NOW(),
+        revocation_reason = TRIM(p_reason),
+        updated_at = NOW()
+    WHERE id = p_certificate_id
+    AND tenant_id = v_tenant_id;
+
+    RETURN jsonb_build_object(
+        'success', TRUE,
+        'certificate_id', p_certificate_id,
+        'revoked_at', NOW(),
+        'reason', p_reason
+    );
+END;
+$$;
+
+-- 8. Conceder permissões de execução aos autenticados
+GRANT EXECUTE ON FUNCTION public.save_tenant_certificate(TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_tenant_active_certificate(TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.revoke_tenant_certificate(UUID, TEXT) TO authenticated;
+```
+
+
+
+---
+
+## 43. FASE P9: Alertas Operacionais e Observabilidade do Sistema (Migration 00109)
+
+### 43.1 Tabela `public.system_operational_alerts`
+Tabela destinada ao registro, monitoramento contínuo e resolução de incidentes operacionais de alta relevância, contemplando:
+- Falhas críticas ou advertências de cálculo de folha de pagamento (líquido negativo, inconsistência de bases, teto violado, estouro de prazo).
+- Falhas e advertências de ingestão de ponto eletrônico (inconsistência de arquivo AFD/AEJ, divergência de NSR, violação de geofence, falha de comunicação com REP).
+- Incidentes de segurança, permissões e assinaturas digitais.
+
+```sql
+CREATE TABLE IF NOT EXISTS public.system_operational_alerts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    subsystem VARCHAR(50) NOT NULL CHECK (subsystem IN ('PAYROLL', 'TIME_TRACKING', 'SECURITY', 'DOCUMENT_SIGNING', 'GENERAL')),
+    severity VARCHAR(20) NOT NULL CHECK (severity IN ('INFO', 'WARNING', 'ERROR', 'CRITICAL')),
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    error_code VARCHAR(100),
+    metadata JSONB DEFAULT '{}'::jsonb,
+    resolved BOOLEAN NOT NULL DEFAULT FALSE,
+    resolved_at TIMESTAMPTZ,
+    resolved_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    resolution_notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- Índices operacionais
+CREATE INDEX IF NOT EXISTS idx_operational_alerts_tenant_unresolved 
+ON public.system_operational_alerts (tenant_id, resolved, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_operational_alerts_subsystem 
+ON public.system_operational_alerts (tenant_id, subsystem, severity);
+
+-- Row Level Security (RLS)
+ALTER TABLE public.system_operational_alerts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Usuários autorizados do tenant podem visualizar alertas operacionais"
+ON public.system_operational_alerts FOR SELECT TO authenticated
+USING (tenant_id = ANY(public.user_tenant_ids()));
+
+CREATE POLICY "Usuários autenticados podem inserir alertas em seu tenant"
+ON public.system_operational_alerts FOR INSERT TO authenticated
+WITH CHECK (tenant_id = ANY(public.user_tenant_ids()));
+
+CREATE POLICY "Usuários autorizados podem atualizar/resolver alertas"
+ON public.system_operational_alerts FOR UPDATE TO authenticated
+USING (tenant_id = ANY(public.user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(public.user_tenant_ids()));
+
+-- Gatilho de Auditoria T29
+CREATE TRIGGER audit_system_operational_alerts_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON public.system_operational_alerts
+    FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+```
+
+
+
+---
+
+## 44. FASE P9: Folha Paralela, Ata do Contador e Checklist de Go-Live (Migration 00110)
+
+### 44.1 Tabela `public.parallel_payroll_runs`
+Armazena a conciliação consolidada de 2 a 3 competências processadas em paralelo com o sistema legado (ex: Totvs, Senior, Domínio, Alterdata).
+```sql
+CREATE TABLE IF NOT EXISTS public.parallel_payroll_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    competence VARCHAR(7) NOT NULL,
+    legacy_system_name VARCHAR(100) NOT NULL,
+    total_workers INTEGER NOT NULL DEFAULT 0,
+    matching_workers INTEGER NOT NULL DEFAULT 0,
+    total_rubrics_compared INTEGER NOT NULL DEFAULT 0,
+    exact_matches INTEGER NOT NULL DEFAULT 0,
+    acceptable_cent_diffs INTEGER NOT NULL DEFAULT 0,
+    unacceptable_diffs INTEGER NOT NULL DEFAULT 0,
+    rounding_policy_applied VARCHAR(50) NOT NULL DEFAULT 'HALF_UP_CENT_TOLERANCE',
+    status VARCHAR(30) NOT NULL CHECK (status IN ('PENDING', 'APPROVED_BY_ACCOUNTANT', 'REJECTED')),
+    accountant_approval JSONB DEFAULT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+```
+
+### 44.2 Tabela `public.parallel_payroll_items`
+Detalha a comparação analítica rubrica a rubrica de cada trabalhador, identificando correspondências exatas (diferença R$ 0,00) ou desvios de arredondamento de centavos formalizados.
+```sql
+CREATE TABLE IF NOT EXISTS public.parallel_payroll_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    parallel_run_id UUID NOT NULL REFERENCES public.parallel_payroll_runs(id) ON DELETE CASCADE,
+    contract_id UUID REFERENCES public.employment_contracts(id) ON DELETE SET NULL,
+    worker_name VARCHAR(255) NOT NULL,
+    worker_cpf VARCHAR(20) NOT NULL,
+    rubric_code VARCHAR(30) NOT NULL,
+    rubric_name VARCHAR(255) NOT NULL,
+    legacy_amount NUMERIC(15,2) NOT NULL,
+    couplerh_amount NUMERIC(15,2) NOT NULL,
+    diff_amount NUMERIC(15,2) NOT NULL,
+    is_acceptable_cent_diff BOOLEAN NOT NULL DEFAULT FALSE,
+    justification TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+```
+
+### 44.3 Tabela `public.golive_checklists`
+Contém as assinaturas digitais formais da tríade de governança (Contador Responsável com CRC, Assessor Jurídico Trabalhista com OAB e Responsável Técnico de Engenharia), atestando a aprovação dos 15 critérios de aceite e autorizando o Go-Live oficial da Folha.
+```sql
+CREATE TABLE IF NOT EXISTS public.golive_checklists (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    release_version VARCHAR(50) NOT NULL,
+    accountant_signoff JSONB NOT NULL,
+    legal_signoff JSONB NOT NULL,
+    tech_lead_signoff JSONB NOT NULL,
+    gate_criteria_checklist JSONB NOT NULL,
+    status VARCHAR(30) NOT NULL CHECK (status IN ('DRAFT', 'FULLY_SIGNED_GO_LIVE_AUTHORIZED', 'BLOCKED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+```
+

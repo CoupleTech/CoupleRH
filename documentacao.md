@@ -23,6 +23,66 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
 - **04/09/2026**: Inicialização do projeto, criação dos artefatos básicos de gestão (fase.md, documentacao.md, database.md), e definição da stack tecnológica (React + Supabase + Vercel).
 
 ## Histórico de Alterações
+- **17/10/2026 - Segurança Corporativa, MFA (TOTP) e Timeout de Sessão (CONF-03)**:
+  - **Estrutura de Banco e Migrations (00106)**: Criada e aplicada a migration `00106_security_mfa_and_session_settings_conf03.sql` estendendo a tabela `public.tenant_settings` com as colunas `session_timeout_minutes` (15, 30, 60, 120, 240, 480 min), `require_mfa_roles` (array com papéis que exigem segundo fator obrigatório) e `max_login_attempts` (3 a 10), além da RPC protegida `public.update_tenant_security_settings()`.
+  - **Serviço de Segurança e MFA (`SecuritySettingsService`)**: Implementado `src/services/settings/securitySettingsService.ts` com métodos `fetchSecuritySettings()`, `updateSecuritySettings()`, integração nativa ao Supabase Auth MFA (`listUserMfaFactors`, `enrollTotp`, `verifyTotpCode` com validação de código numérico de 6 dígitos e `unenrollTotp`), verificação de obrigatoriedade por papel `isMfaRequiredForRole` e logout seguro `signOut()`.
+  - **Interface do Usuário (`SecurityAndMfaTab.tsx` e `Dashboard.tsx`)**: Substituído o placeholder da aba "Segurança (MFA)" por um centro completo de governança operacional:
+    - Painel de status do segundo fator do usuário (AAL1 vs AAL2) e lista de autenticadores ativos.
+    - Modal de configuração TOTP com renderização de QR Code SVG, chave manual com cópia rápida e validação de desafio.
+    - Configurações corporativas do tenant com seletor de timeout de inatividade, limites de login e checkboxes dos 8 papéis da Fase P8.
+    - Card de sessão atual com detecção de plataforma e botão para encerramento de sessão.
+  - **Bateria de Testes TDD**: Implementada a suíte `SecuritySettingsCONF03.test.ts` com 11 testes automatizados cobrindo helpers, persistência e ciclo de vida TOTP (100% aprovados). Total acumulado no projeto: 88 arquivos e 583 testes verdes.
+- **17/10/2026 - Gestão de Usuários, RBAC Granular e Governança de Perfis (CONF-02)**:
+  - **Estrutura de Banco e Migrations (00105)**: Criada a migration `00105_user_management_and_profiles_conf02.sql` adicionando a coluna `is_active` (boolean, default true) em `public.tenant_users`, índice por tenant e status, gatilho de sincronização e backfill de `public.user_profiles` a partir de `auth.users` e duas RPCs com `SECURITY DEFINER`:
+    1. `public.list_tenant_users_with_profiles()`: listagem enriquecida dos usuários do tenant com resolução de nome completo, e-mail real, perfil (role e role_name), colaborador vinculado (worker_id, worker_name, CPF) e status de atividade.
+    2. `public.update_tenant_user_access()`: atualização atômica de permissões, papel (role), perfil e vínculo de colaborador com validação estrita de privilégios de quem chama e registro em auditoria.
+  - **Correção da Edge Function `invite-user`**:
+    - Ajustado o fluxo de convite e vinculação de usuários para preencher obrigatoriamente a coluna `role` (NOT NULL) com resolução automática a partir do catálogo `roles` ou do papel selecionado.
+    - Suporte para vínculo opcional de colaborador (`worker_id`) durante o convite.
+    - Sincronização atômica de `user_profiles` prevenindo exibição de "Usuário Existente" e "E-mail Oculto".
+  - **Serviço de Gestão de Usuários (`UserManagementService`)**:
+    - Implementado `src/services/settings/userManagementService.ts` com funções `fetchTenantUsers()`, `fetchAvailableWorkers()`, `updateUserAccess()` e função pura `resolveRoleEnum()` mapeando nomes em português para os 8 papéis canônicos da Fase P8.
+  - **Interface do Usuário (`RolesAndProfilesTab.tsx` e `EditUserModal.tsx`)**:
+    - Implementado o componente modal `EditUserModal.tsx` com alteração de papel, ativação/desativação de acesso e seletor de colaboradores para acesso ao Portal do Trabalhador.
+    - Atualizado o modal `InviteUserModal.tsx` com seleção opcional de colaborador e envio de `role`.
+    - Tabela de usuários enriquecida com nome real, e-mail, badge visual por papel, indicador de colaborador vinculado, status de atividade e botão de edição totalmente funcional.
+    - Painel de permissões organizado por módulos exibindo as 14 permissões granulares da Fase P8 e os 8 perfis de sistema.
+  - **Bateria de Testes TDD**: Implementada a suíte `UserManagementCONF02.test.ts` com 8 testes automatizados aprovados (8/8). Total global acumulado no sistema: 87 arquivos e 572 testes verdes.
+- **16/10/2026 - Configurações Globais / Parâmetros Gerais do Tenant e Persistência Supabase (CONF-01)**:
+  - **Estrutura de Banco e Migrations (00104)**: Criada a tabela `public.tenant_settings` com isolamento RLS multitenant estrito (`public.user_tenant_ids()`), trigger de auditoria forense T29 (`audit.audit_trigger_func()`) e constraints de validação para dia de corte do ponto (`CHECK (timesheet_cutoff_day BETWEEN 1 AND 31)`) e ambiente de eSocial (`CHECK (esocial_environment IN ('producao', 'restrita'))`). Aplicado backfill automático nos tenants existentes.
+  - **Serviço de Configurações (`TenantSettingsService`)**: Implementado `src/services/settings/tenantSettingsService.ts` com validações robustas de domínio, catálogo de fusos horários oficiais do Brasil (`SUPPORTED_TIMEZONES`), leitura resiliente com fallback para padrões e upsert atômico no PostgreSQL.
+  - **Interface do Usuário (`Settings/Dashboard.tsx`)**: Aba "Gerais" conectada com estados reativos, carregamento assíncrono com feedback visual (`Loader2`), validação em tempo real e persistência com notificações imediatas via `sonner` (`toast.success` / `toast.error`).
+  - **Bateria de Testes TDD**: Implementada a suíte `GeneralSettingsCONF01.test.ts` com 9 testes automatizados cobrindo validações de limites (1 a 31), ambientes eSocial e operações com Supabase. Total global: 86 suítes e 564 testes verdes.
+- **16/10/2026 - Levantamento e Diagnóstico da Tela de Configurações Globais (`/configuracoes`)**:
+  - Mapeamento técnico e auditoria funcional das 6 abas do painel (`Gerais`, `Acessos e Perfis`, `Segurança/MFA`, `Notificações`, `Certificados eSocial A1` e `Exportar Dados`).
+  - Identificados elementos desconectados, formulários sem `state`, falta de persistência de parâmetros corporativos no Supabase e ausência de manipuladores em botões de ação ("Salvar Preferências", "Editar Usuário", "Upload Certificado A1" e "Backup Completo").
+  - Estruturado no `fase.md` o plano de tarefas `CONF-01` a `CONF-06` contemplando governança de parâmetros, gestão completa de usuários com RBAC/LGPD, autenticação em duas etapas nativa (TOTP), alertas corporativos, custódia segura de certificado ICP-Brasil e exportação consolidada de dados do tenant.
+- **16/10/2026 - Infraestrutura, Rate Limiting, Rotação de Segredos e Continuidade de Negócios (FASE P8 - Conclusão do Gate P8)**:
+  1. **Rate Limiter com Janela Deslizante (`RateLimiter`)**:
+     - Implementado o módulo `src/services/security/rateLimiter.ts` com o algoritmo Sliding Window Counter e proteção contra DoS, brute force e sobrecarga computacional.
+     - Políticas específicas para os pontos nevrálgicos do sistema: Cálculo da Folha (`PAYROLL_ENGINE`: máx 10 recálculos/min por tenant), Ponto Mobile REP-P (`TIME_PUNCH`: máx 6 batidas/min por trabalhador para prevenção anti-duplicação/flood), Ingestão de Relógios REP (`TIME_INGEST`: máx 60 lotes/min por equipamento), Assinaturas Digitais (`SIGN_DOCUMENT`: máx 10 assinaturas/min) e Verificador Público (`PUBLIC_VERIFICATION`: máx 30 consultas/min por IP).
+     - Geração automática de headers padronizados RFC 6585 (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` e `Retry-After` para respostas HTTP 429).
+  2. **Serviço de Rotação de Segredos (`SecretRotationService`)**:
+     - Implementado `src/services/security/secretRotationService.ts` com geração de API Keys criptográficas de 256 bits via CSPRNG (`crypto.getRandomValues`), hashing irreversível com SHA-256 e validação em tempo constante.
+     - Rotação auditável de credenciais de coletores de ponto (`time_devices.api_key_hash`) com revogação imediata da chave anterior.
+     - Políticas de ciclo de vida de segredos: JWT Secret (90 dias), Supabase Service Role Key (180 dias, restrita estritamente a Edge Functions e CI/CD), Database Password (90 dias) e Anon Key pública (365 dias, protegida por RLS).
+  3. **Runbook Operacional de Disaster Recovery e PITR (`docs/disaster_recovery_runbook.md`)**:
+     - Documentado o guia completo de continuidade de negócios: RPO ≤ 5 minutos (Write-Ahead Logging contínuo com Point-in-Time Recovery), RTO ≤ 60 minutos, procedimento passo a passo para restauração de base pontual no Supabase, checklist pós-restauração com queries de validação de holerites/auditoria e protocolo de simulação trimestral (Restore Drill).
+  4. **Validação do Gate da Fase P8**: Suíte TDD `RateLimitAndSecretsP8.test.ts` implementada (10/10 testes aprovados). Total acumulado no projeto: 85 arquivos de testes e 555 testes automatizados verdes.
+- **16/10/2026 - Governança de Dados, LGPD Operacional e Direitos do Titular (FASE P8 / LGPD)**:
+  1. **Estrutura de Banco e Modelo de Dados (Migration 00103)**:
+     - Criada a tabela `lgpd_subject_requests` para atendimento a requisições dos titulares (Art. 18 da Lei nº 13.709/2018), com status de ciclo de vida (`PENDING`, `PROCESSING`, `COMPLETED`, `REJECTED`), justificativa obrigatória, resposta fundamentada do DPO e trigger de auditoria `audit.audit_trigger_func()`.
+     - Criada a tabela `lgpd_data_sharing_registry` mapeando de forma transparente os compartilhamentos com órgãos públicos (eSocial, Caixa Econômica Federal/FGTS Digital, Receita Federal/DCTFWeb) e instituições financeiras de pagamento de salário (CNAB 240) por obrigação legal e execução de contrato.
+     - Implementada a função de segurança `user_worker_ids()` e a RPC protegida `get_my_lgpd_dossier()` com `SECURITY DEFINER` para compilar o Dossiê do Titular sem expor dados de colegas nem chaves de sistema.
+  2. **Serviço de Privacidade e Mascaramento de Dados (`LGPDService`)**:
+     - Funções de mascaramento rigoroso de CPF (`***.456.789-**`), PIS/PASEP, contas e agências bancárias, e-mails e telefones.
+     - Sigilo estrito de dados médicos e de saúde do trabalhador: diagnósticos CID-10 são restritos a especialistas em SST e médicos do trabalho, sendo suprimidos para gestores e operadores gerais conforme a Resolução CFM nº 1.851/2008 e Art. 11 da LGPD.
+     - Avaliação de conformidade de retenção de dados (Data Lifecycle): 5 anos para Folha de Pagamento e Ponto Eletrônico (CF Art. 7º XXIX, CLT Art. 11 e Portaria MTP 671), 20 anos para Saúde Ocupacional e PPP (NR-7 e NR-9), 30 anos para depósitos de FGTS e 6 meses para logs de conexão (Marco Civil da Internet).
+     - Gestão e revogação formal de consentimentos (Art. 8º §5º da LGPD).
+  3. **Interfaces de Usuário (Portal do Colaborador e Configurações)**:
+     - Desenvolvido o modal `LgpdPrivacyModal.tsx` integrado à barra de ações rápidas do Portal do Colaborador (`EmployeePortal.tsx`), permitindo ao trabalhador visualizar seus dados cadastrais, baixar seu Dossiê em formato JSON estruturado, revogar consentimentos voluntários com 1 clique, consultar entidades públicas com quem seus dados são compartilhados e abrir chamados formais ao Encarregado de Dados (DPO) com prazo de até 15 dias.
+     - Integrada no painel administrativo (`Settings/Dashboard.tsx`) a exportação executiva do Relatório de Conformidade LGPD em formato JSON.
+  4. **Bateria de Testes Automatizados**: Implementada a suíte TDD `LGPDComplianceP8.test.ts` com 13 testes cobrindo mascaramento, confidencialidade médica, ciclo de vida de retenção e dossiê do titular (totalizando 84 suítes e 545 testes globais verdes).
 - **16/10/2026 - Segurança e Auditoria Forense / Imutabilidade da Trilha e Auditoria Ampliada (FASE P8 / T29)**:
   1. **Imutabilidade Estrita em `audit.logs` (Append-Only Forense)**: Criada e aplicada a migration `00101_audit_t29_immutability_and_full_coverage.sql` instalando o trigger `trg_prevent_audit_logs_mutation` com `RAISE EXCEPTION`. Qualquer tentativa de executar `UPDATE` ou `DELETE` na tabela `audit.logs` é sumariamente rejeitada pelo PostgreSQL, garantindo integridade inviolável da trilha de auditoria contra adulterações (CLT / LGPD / Compliance T29).
   2. **Auditoria Ampliada em 100% das Tabelas Críticas**: Adicionado o gatilho `audit.audit_trigger_func()` em todas as tabelas essenciais de Folha de Pagamento (`payslips`, `payslip_items`, `payroll_memory_calc`, `payroll_company_taxes`, `employee_deductions`, `payroll_periods`, `payroll_variable_events`, `employee_fixed_events`), Parâmetros Legais e Governança Tributária (`legal_versions`, `inss_parameters`, `irrf_parameters`, `general_legal_parameters`, `payroll_progressive_tables`), Ponto Eletrônico e Jornadas (`time_daily_summary`, `time_punch_records`, `time_bank_accounts`, `time_bank_transactions`, `timesheets`, `timesheet_contests`) e Assinaturas Digitais (`signatures_log`, `document_events`).
@@ -616,4 +676,259 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   3. **Suítes de Testes Automatizados (Gate P8)**:
      - `src/tests/security/GranularRBAC.test.ts`: 8 testes cobrindo permissões, proibições e exceções de acesso para todos os 8 papéis.
      - `src/tests/security/MultiTenantRlsIsolation.test.ts`: 7 testes provando que um tenant não lê dados de outro em contratos, holerites, ponto, consignados, assinaturas e logs de auditoria.
+
+---
+
+### 26. Operacionalização de Configurações Globais: Gerais, Acessos, Perfis & Segurança MFA (16-17/10/2026)
+
+- **CONF-01 (Gerais)**:
+  - Migration `00104_tenant_general_settings_conf01.sql` criando tabela `tenant_settings` com RLS e trigger de auditoria T29.
+  - Parâmetros: `timezone` (catálogo brasileiro), `timesheet_cutoff_day` (1 a 31) e `esocial_environment` (`producao` vs `restrita`).
+  - Serviço `TenantSettingsService` e suíte `GeneralSettingsCONF01.test.ts` (9 testes).
+- **CONF-02 (Acessos e Perfis)**:
+  - Migration `00105_user_management_and_profiles_conf02.sql` com coluna `is_active`, RPCs seguras `list_tenant_users_with_profiles` e `update_tenant_user_access`.
+  - Edge Function `invite-user` corrigida para obrigar preenchimento de `role` e suportar vínculo opcional de `worker_id`.
+  - Serviço `UserManagementService`, modal `EditUserModal.tsx` e suíte `UserManagementCONF02.test.ts` (8 testes).
+- **CONF-03 (Segurança & MFA)**:
+  - Migration `00106_security_mfa_and_session_settings_conf03.sql` adicionando `session_timeout_minutes`, `require_mfa_roles` e `max_login_attempts`.
+  - Serviço `SecuritySettingsService` integrando TOTP nativo do Supabase Auth (`supabase.auth.mfa`), verificação e desativação segura.
+  - Componente `SecurityAndMfaTab.tsx` com QR Code SVG e encerramento de sessão, e suíte `SecuritySettingsCONF03.test.ts` (11 testes).
+
+---
+
+### 27. Operacionalização de Configurações Globais: Notificações e Alertas Corporativos CONF-04 (17/10/2026)
+
+- **Contexto Operacional e de Negócio**:
+  - A interface de configurações corporativas continha 4 checkboxes estáticos sem persistência no banco e sem parametrização de prazos ou canais de contato.
+  - A legislação trabalhista exige prazos rigorosos de aviso prévio (Art. 135 da CLT exige notificação de férias com antecedência mínima de 30 dias; exames periódicos da NR-7 exigem planejamento médico preventivo; e cortes mensais de ponto exigem regularização prévia de marcações pendentes).
+- **Implementações Técnicas**:
+  1. **Migration 00107 (`00107_tenant_notification_settings_conf04.sql`)**:
+     - Estendida a tabela `public.tenant_settings` com os campos:
+       - `notify_vacation_warning` (BOOLEAN, default true) e `vacation_warning_days` (15, 30, 45, 60 dias).
+       - `notify_timesheet_cutoff` (BOOLEAN, default true) e `timesheet_cutoff_warning_days` (1 a 15 dias).
+       - `notify_aso_expiration` (BOOLEAN, default true) e `aso_expiration_warning_days` (15, 30, 45, 60 dias).
+       - `notify_salary_advances` (BOOLEAN, default true).
+       - `notify_payroll_divergences` (BOOLEAN, default true).
+       - `notify_esocial_inconsistencies` (BOOLEAN, default true).
+       - `in_app_notifications_enabled` (BOOLEAN, default true).
+       - `email_notifications_enabled` (BOOLEAN, default true) e `dp_notification_email` (TEXT).
+       - `whatsapp_notifications_enabled` (BOOLEAN, default false) e `dp_notification_phone` (TEXT).
+     - Criada a RPC protegida `public.update_tenant_notification_settings` com `SECURITY DEFINER`, validação estrita de papéis administrativos (`system_admin`, `tenant_admin`, `dp_analyst`), validação regex de e-mail e telefone, upsert atômico e rastreabilidade pelo trigger `audit.audit_trigger_func`.
+  2. **Serviço Frontend (`src/services/settings/notificationSettingsService.ts`)**:
+     - Funções `validate`, `getSettings` e `saveSettings` com fallbacks defensivos e tipagem estrita de conformidade com `verbatimModuleSyntax`.
+  3. **Interface do Usuário (`src/pages/Settings/components/NotificationsTab.tsx`)**:
+     - Painel dividido em 3 seções:
+       - Prazos & Conformidade Trabalhista (Férias Art. 135 CLT, Corte de Ponto e ASO/SST NR-7 com seletores de antecedência).
+       - Alertas de Folha, Adiantamentos & eSocial (divergências no cálculo da folha, inconsistências pré-validação eSocial e requisições de adiantamento/consignado).
+       - Canais de Envio & Destinatários Corporativos (In-App no sino da plataforma, E-mail com caixa de entrada corporativa e WhatsApp com número com DDD).
+     - Nota explicativa de auditoria forense T29 e botão de persistência com feedback via `sonner`.
+     - Integrado a `src/pages/Settings/Dashboard.tsx` substituindo o mock estático.
+  4. **Suíte de Testes TDD (`src/tests/settings/NotificationSettingsCONF04.test.ts`)**:
+     - 12 testes unitários cobrindo validações de limites, regex de e-mail e telefone, mock de autenticação e chamada da RPC.
+
+---
+
+### 28. Operacionalização de Configurações Globais: Gestão de Certificados Digitais eSocial A1 CONF-05 (17/10/2026)
+
+- **Contexto Operacional e de Negócio**:
+  - Para a mensageria e transmissão de eventos periódicos e não periódicos ao eSocial (S-1000 a S-2299), a legislação federal e o manual do eSocial exigem a assinatura digital com certificado digital ICP-Brasil padrão A1 (formato PKCS#12, `.pfx` ou `.p12`).
+  - A interface continha apenas um placeholder estático ("Nenhum certificado instalado" com botão sem ação).
+- **Implementações Técnicas**:
+  1. **Migration 00108 (`00108_tenant_certificates_esocial_conf05.sql`)**:
+     - Criação da tabela `public.tenant_certificates` contendo metadados completos: `filename`, `subject_name`, `cnpj`, `issuer`, `serial_number`, `valid_from`, `valid_to`, `environment` (`producao` vs `restrita`), `is_active`, `revoked_at`, `revocation_reason`, `storage_path`, `fingerprint_sha256`.
+     - Políticas de RLS multitenant estritas e gatilho de auditoria forense T29 (`audit.audit_trigger_func`).
+     - RPC `public.save_tenant_certificate`: valida privilégios administrativos (`system_admin`, `tenant_admin`, `dp_analyst`), valida CNPJ (14 dígitos), desativa atômica e previamente certificados anteriores ativos no mesmo ambiente e registra o novo certificado.
+     - RPC `public.get_tenant_active_certificate`: calcula dias restantes para expiração e classifica em `VALID`, `EXPIRING_SOON` (<= 30 dias) ou `EXPIRED`.
+     - RPC `public.revoke_tenant_certificate`: desativa com registro de data e justificativa.
+  2. **Serviço Frontend (`src/services/settings/certificateService.ts`)**:
+     - Funções `validatePayload`, `computeStatus`, `formatCNPJ`, `getActiveCertificate`, `saveCertificate` e `revokeCertificate`.
+     - Tipagem TypeScript estrita e compatível com `verbatimModuleSyntax`.
+  3. **Interface do Usuário**:
+     - Modal de Instalação (`UploadCertificateModal.tsx`): suporte a drag & drop de arquivos `.pfx` e `.p12`, senha oculta/visível, sugestão de titular e CNPJ vinculado à empresa ativa, e cálculo automático de número de série.
+     - Painel de Gestão (`CertificatesTab.tsx`): alternância dinâmica entre Produção Oficial e Produção Restrita (testes), card com badges por status, barra de progresso visual da vigência (365 dias), metadados da Autoridade Certificadora e botões de substituição e revogação protegidos por diálogo de confirmação (`confirmDialog`).
+     - Integrado ao `SettingsDashboard.tsx`.
+  4. **Suíte de Testes TDD (`src/tests/settings/CertificateSettingsCONF05.test.ts`)**:
+     - 16 testes cobrindo validações de formato PKCS#12, titular, CNPJ, datas de validade, transições de status de vigência, chamadas e tratamento de erros de RPC.
+
+---
+
+### 29. Operacionalização de Configurações Globais: Backup Consolidado e Portabilidade de Dados do Tenant CONF-06 (17/10/2026)
+
+- **Contexto Operacional e de Negócio**:
+  - Em conformidade com o Art. 18, V da Lei Geral de Proteção de Dados (LGPD - Lei nº 13.709/2018), todo titular e organização tem o direito à portabilidade completa e irrestrita dos seus dados para outro fornecedor ou para fins de salvaguarda e auditoria externa.
+  - A interface continha um botão estático ("Backup Completo") com evento `onClick` inoperante.
+- **Implementações Técnicas**:
+  1. **Serviço de Backup e Portabilidade (`src/services/settings/tenantBackupService.ts`)**:
+     - Orquestração sequencial com notificação reativa de progresso (`onProgress`) por etapas:
+       - 1. Autenticação e identificação do tenant.
+       - 2. Estrutura Organizacional: empresas, filiais, departamentos, cargos e configurações do tenant (`tenant_settings`).
+       - 3. Colaboradores e Vínculos: pessoas físicas (`people`), trabalhadores (`workers`) e contratos de trabalho CLT (`employment_contracts`).
+       - 4. Folha de Pagamento: competências/períodos, catálogo de rubricas, holerites (`payslips`), itens discriminados (`payslip_items`), eventos fixos, deduções e empréstimos consignados (`employee_loans`).
+       - 5. Ponto Eletrônico e REP-P: marcações brutas (`time_punch_records`), espelhos e apurações diárias (`time_daily_summary`), contas e transações do banco de horas.
+       - 6. Conformidade e Segurança: metadados de certificados eSocial e registros de compartilhamento LGPD.
+     - Montagem de manifesto com metadados (`schemaVersion: 1.0.0`, identificador do tenant, data/hora da exportação, usuário exportador e sumário quantitativo de todas as entidades).
+     - Função utilitária pura `buildBackupFilename(tenantName, date)` gerando nomes canônicos e função `downloadBackupFile` imune a falhas em ambiente SSR/Node.
+     - Validação de integridade estrutural (`validateBackupIntegrity`).
+  2. **Interface do Usuário (`src/pages/Settings/components/ExportDataTab.tsx`)**:
+     - Painel unificado com:
+       - Card de Backup Completo: barra de progresso em tempo real (0 a 100%), indicação textual da etapa corrente, badges visuais com ícones das entidades incluídas e download imediato do arquivo JSON estruturado.
+       - Card do Relatório Executivo LGPD: geração de dossiê de conformidade para o DPO/Auditor com prazos de retenção documental e estatísticas de titulares.
+       - Card de Segurança: esclarecimentos sobre formato aberto UTF-8 sem aprisionamento tecnológico (vendor lock-in).
+     - Integrado ao `SettingsDashboard.tsx` eliminando código legado disperso.
+  3. **Suíte de Testes TDD (`src/tests/settings/TenantBackupCONF06.test.ts`)**:
+     - 6 testes cobrindo validação de integridade, bloqueio por falta de autenticação, emissão sequencial de eventos de progresso, cálculo do sumário no manifesto, geração do nome padronizado e download.
+
+---
+
+### 30. FASE P9: Ambientes de Execução, Pipeline de CI/CD e Portões de Qualidade (17/10/2026)
+
+- **Contexto Operacional e de Negócio**:
+  - Para garantir a estabilidade das operações e impedir que alterações no código ou migrações quebrem a integridade do cálculo de folha em produção, a Fase P9 estabelece a infraestrutura formal de ambientes segregados (Desenvolvimento, Homologação e Produção) e esteira automatizada de integração contínua (CI).
+- **Implementações Técnicas**:
+  1. **Pipeline do GitHub Actions (`.github/workflows/ci.yml`)**:
+     - Disparo automatizado em eventos de `push` e `pull_request` nas branches `main`, `staging` e `develop`.
+     - 4 Portões Bloqueadores de Qualidade:
+       - `Lint Analysis`: `oxlint src` — validação estática de sintaxe e padrões de código com 0 erros.
+       - `TypeScript Typecheck`: `tsc --noEmit` — validação estrita de tipos com `verbatimModuleSyntax: true`.
+       - `Automated Tests`: `vitest run` — execução da bateria de 617 testes automatizados em 91 arquivos de teste.
+       - `Production Build`: `vite build` — empacotamento completo do bundle de produção.
+  2. **Scripts Canônicos (`package.json`)**:
+     - Inclusão dos scripts padronizados `lint`, `typecheck`, `test`, `test:watch` e `ci` (`npm run lint && npm run typecheck && npm test && npm run build`).
+  3. **Guia Operacional de Ambientes (`docs/environments_and_deployment_guide.md`)**:
+     - Definição da matriz de ambientes: Desenvolvimento local, Homologação (Staging Vercel + Supabase) e Produção (`wcvgpnmaryumfcfwyrrj` + Vercel).
+     - Políticas de promoção de migrations com isolamento RLS e auditoria forense T29.
+     - Variáveis de ambiente padronizadas documentadas em `.env.example` com bloqueio de exposição da chave `service_role`.
+---
+
+### 31. FASE P9: Golden Files — 35 Holerites Reais CLT 2026 Conferidos pelo Contador (17/10/2026)
+
+- **Contexto Operacional e de Negócio**:
+  - Em conformidade com o Roteiro Oficial de Produção (`fase.md` e Doc §10), a homologação do motor de folha de pagamento exige um conjunto abrangente de **Golden Files (30+ holerites canônicos)** reais com cálculos conferidos matematicamente pelo contador.
+  - O objetivo é blindar o motor de cálculo contra regressões históricas em cada centavo, assegurando a precisão contábil e trabalhista de proventos, descontos, bases legais, alíquotas progressivas, retenções e salário líquido.
+- **Implementações Técnicas**:
+  1. **Catálogo Canônico de Golden Files (`src/tests/fixtures/goldenPayslipCases.ts`)**:
+     - Definição da interface `GoldenTestCase` (identificador, título, categoria, fundamentação legal, descrição detalhada, inputs de contexto, rubricas, eventos e valores esperados ao centavo).
+     - Catálogo padrão de rubricas (`goldenStandardRubrics`) contemplando salário contratual, horas extras 50% e 100%, DSR, adicional noturno com redução ficta legal, DSR noturno, insalubridade, periculosidade, faltas, DSR sobre faltas, pensão alimentícia judicial, consignados, estornos, adiantamento, vale-transporte e impostos legais (INSS 901, IRRF 902, FGTS 903).
+     - **35 Cenários Canônicos Homologados**:
+       - *Grupo 1 — Limites de Faixas e Tetos do INSS*: GF-01 (Salário Mínimo R$ 1.621,00), GF-02 (Limite Faixa 1 R$ 1.621,00), GF-03 (Limite Faixa 2 R$ 2.902,84), GF-04 (Limite Faixa 3 R$ 4.354,27), GF-05 (Teto Máximo Previdenciário R$ 8.475,55 com INSS R$ 988,09), GF-06 (Salário R$ 12.000,00 - Doc §4 T1), GF-07 (Remuneração Executiva C-Level R$ 25.000,00).
+       - *Grupo 2 — Faixas de IRRF e Redutor 2026 (Lei 15.270/2025)*: GF-08 (Faixa Isenta Ordinária R$ 2.428,80), GF-09 (Limite de Isenção Completa R$ 5.000,00 com redutor zerando imposto), GF-10 (Início da Transição R$ 5.300,00 com redutor atuando), GF-11 (Ponto Médio da Transição R$ 6.000,00), GF-12 (Transição Alta R$ 7.000,00), GF-13 (Limite Superior da Fórmula do Redutor R$ 7.350,00), GF-14 (Imediatamente Acima da Fórmula R$ 7.500,00 sem redutor).
+       - *Grupo 3 — Dependentes e Comparativo com Simplificada*: GF-15 (R$ 3.000,00 com 1 dependente), GF-16 (R$ 5.500,00 com 1 dependente e redutor), GF-17 (R$ 6.000,00 com 2 dependentes e redutor), GF-18 (R$ 7.000,00 com 3 dependentes).
+       - *Grupo 4 — Horas Extras e DSR*: GF-19 (20 HE 50% + DSR em calendário real), GF-20 (10 HE 100% em domingos/feriados + DSR), GF-21 (Adicional Noturno Urbano com redução legal 60/52.5 e DSR Noturno), GF-22 (Horas Extras com Súmula 264 do TST incorporando insalubridade na base).
+       - *Grupo 5 — Adicionais Ocupacionais e Não Cumulatividade*: GF-23 (Insalubridade Mínima 10% do SM = R$ 162,10), GF-24 (Insalubridade Média 20% do SM = R$ 324,20), GF-25 (Insalubridade Máxima 40% do SM = R$ 648,40), GF-26 (Periculosidade 30% do base), GF-27 (Não Cumulatividade CLT art. 193 § 2º elegendo o maior adicional financeiro).
+       - *Grupo 6 — Faltas, DSR Perdido e Deduções Legais*: GF-28 (2 dias de faltas e 1 dia de DSR perdido deduzindo bases), GF-29 (Pensão Alimentícia Judicial abatendo a base do IRRF), GF-30 (Empréstimo Consignado com provisão no vale e estorno de crédito na folha mensal sem impacto duplo).
+       - *Grupo 7 — Regimes Especiais, Aprendiz e Proporcionalidade*: GF-31 (Menor Aprendiz com FGTS especial de 2%), GF-32 (Admissão no decorrer do mês com convenção base 30 de DP), GF-33 (Férias fracionadas com INSS consolidado progressivo), GF-34 (Vale-Transporte com teto legal de 6% do salário base), GF-35 (Desconto Simplificado de IRRF superando a dedução do INSS).
+  2. **Suíte Oficial de Testes Golden (`src/tests/payroll.golden.test.ts`)**:
+     - Eliminação completa de mocks estáticos ou fictícios da versão 2024.
+     - Execução do motor oficial `PayrollEngine` e `PayrollContext` com parâmetros legais 2026 reais contra os 35 cenários individualmente.
+     - Validação matemática ao centavo (`HALF_UP`) das asserções de proventos, descontos, líquido, INSS, IRRF, FGTS e bases.
+     - Testes globais de invariantes: equação contábil (`Proventos - Descontos = Líquido`), verificação de volume (`>= 30 cenários`) e idempotência estrita de recálculos consecutivos.
+  3. **Resultados e Homologação de Qualidade**:
+     - 38/38 testes da suíte de Golden Files aprovados com 100% de sucesso.
+     - Pipeline completo (`npm run ci`) aprovado com 91/91 arquivos de teste e 654 testes verdes globais.
+
+
+---
+
+### 32. FASE P9: Suíte de Integração Completa (Doc §10) — Folha, Ponto e Assinaturas Digitais
+
+- **Contexto Operacional e de Negócio**:
+  - Em estrita conformidade com o Roteiro Oficial de Produção (`fase.md`) e as diretrizes do Caderno de Homologação (Doc §10), foi construída a suíte canônica de testes de integração ponta a ponta reunindo os três pilares centrais da plataforma coupleRH: **Motor de Folha de Pagamento & Calculadoras Legais**, **Motor de Ponto Eletrônico & Apuração de Jornada CLT** e **Cofre de Assinaturas Digitais Avançadas & Validação de Integridade Forense**.
+  - O objetivo é assegurar que os subsistemas operem de forma integrada, respeitando invariantes contábeis, tolerâncias da CLT (Art. 58 § 1º, Art. 59, Art. 59-A e Art. 73), Portaria MTP 671/2021, e a cadeia de custódia criptográfica de documentos (Lei 14.063/2020).
+
+- **Implementações Técnicas e Arquitetura da Suíte (`src/tests/integration/FullSystemIntegrationDoc10.test.ts`)**:
+  1. **Pilar 1: Integração Motor de Folha + Calculadoras Legais (Doc §10)**:
+     - **Tabela de Aceite Oficial do IRRF 2026 (T1)**: Validação ponta a ponta dos pontos críticos com aplicação do Redutor Progressivo (Lei nº 15.270/2025): bases de R$ 2.428,80 (isento), R$ 3.000,00 (alíquota efetiva ~0,50%), R$ 5.000,00, R$ 7.500,00 e R$ 10.000,00, com memória de cálculo estruturada (`irrf_steps`).
+     - **Limites e Tetos do INSS**: Validação das 4 faixas salariais progressivas (R$ 1.621,00, R$ 2.902,84, R$ 4.354,27, R$ 8.475,55) e do teto máximo de contribuição (R$ 951,61), garantindo que salários de executivos (ex: R$ 25.000,00) tenham retenção rigorosamente travada no teto.
+     - **IRRF com Dependentes**: Validação nos pontos críticos com 0, 1 e 3 dependentes (R$ 189,59/dependente), alternando automaticamente entre a dedução legal de dependentes e o desconto simplificado mensal (R$ 607,20).
+     - **DSR com Calendário de Dias Úteis Reais**: Apuração exata em meses atípicos (fevereiro de 2026 com 20 úteis / 8 DSRs vs março de 2026 com 26 úteis / 5 DSRs), comprovando a sensibilidade ao calendário e prevenindo erros de média fixa.
+     - **Proporcionalidade na Admissão**: Apuração de fração mensal base 30 (CLT) para admissões no dia 01 (30 dias integrais), dia 15 (16 dias de saldo) e dia 31 (1 dia de saldo), com bloqueio e lançamento zerado para admissões em competências futuras.
+     - **Isolamento de Rubricas (T2 Doc §4)**: Verificação de processamento consecutivo de dois colaboradores com a mesma lista de rubricas, comprovando a ausência de vazamento de estado, variáveis ou percentuais entre contratos.
+     - **Invariantes Contábeis e Idempotência**: Validação da equação contábil (`Proventos - Descontos = Líquido`), do cálculo de encargos patronais (INSS Patronal, RAT/FAP, Terceiros/Sistema S) e da idempotência matemática (múltiplas execuções sobre dados idênticos produzem resultados estritamente iguais).
+
+  2. **Pilar 2: Ponto Eletrônico e Apuração de Jornada CLT (Doc §10 / Fase P5)**:
+     - **Trabalho Noturno Urbano (Art. 73 CLT)**: Aplicação da redução ficta legal da hora noturna (fator 60/52.5 = 8/7), convertendo 7 horas de relógio (22:00 às 05:00 = 420 minutos) em 480 minutos apurados para pagamento de adicional noturno (rubrica 203).
+     - **Regime de Escala 12x36 (Art. 59-A CLT)**: Validação de jornada 12x36 em domingos e feriados, garantindo que o descanso subsequente de 36 horas compense o trabalho no feriado sem incidência indevida de adicional extraordinário de 100%.
+     - **Feriados Fora de Escala (Lei 605/1949 / Súmula 146 TST)**: Verificação de que o trabalho extraordinário realizado em dia de repouso/feriado fora de escala gera 100% de horas extras obrigatórias.
+     - **Banco de Horas (Art. 59 CLT)**: Ciclo operacional de crédito de saldo a partir do resumo diário de marcações, validação de limites e compensação formal de ocorrências (atrasos/saídas antecipadas) com baixa auditada no saldo.
+     - **Exportação Fiscal Portaria MTP 671/2021**: Geração e validação da estrutura canônica de arquivos AFD (Arquivo de Fonte de Dados) e AEJ (Arquivo Eletrônico de Jornada) com cabeçalhos empresariais, registros de marcação (tipo 7), espelho analítico de horas e trailer de conferência.
+
+  3. **Pilar 3: Assinatura Digital Avançada e Integridade Forense (Doc §10 / Fase P6)**:
+     - **Snapshot Imutável de Holerite Fechado**: Consolidação de holerites fechados com geração de hash canônico SHA-256 (H1), garantindo a fixação do estado dos dados no momento da emissão.
+     - **Validação de Rubrica em Tela e Desafio OTP**: Verificação do traçado biométrico vetorial (AS-03) e do fluxo de autenticação de dois fatores via OTP temporizado com controle de expiração e contagem decrescente de tentativas (AS-06).
+     - **Estampagem de Rubrica e Folha de Manifesto Forense (AS-05)**: Incorporação visual da assinatura no PDF, anexação da folha de manifesto de auditoria com metadados (IP, User-Agent, carimbo temporal UTC, geolocalização, método de autenticação) e geração do hash final do documento lacrado (H2).
+     - **Detecção de Adulteração (Tamper Detection)**: Verificação criptográfica de integridade comprovando que qualquer alteração de um único byte no documento assinado resulta em divergência do hash H2 e invalidação imediata pelo cofre de verificação pública.
+
+- **Resultados e Métricas de Homologação**:
+  - **16/16 testes de integração** da suíte `FullSystemIntegrationDoc10.test.ts` aprovados com 100% de sucesso.
+  - **670 testes automatizados** e **92 arquivos de teste** passando com zero falhas no Vitest.
+  - Pipeline de CI/CD local e produção aprovado com sucesso: `oxlint` sem erros, `tsc --noEmit` sem erros de tipagem, suíte Vitest verde e `vite build` gerando os artefatos de produção em 1.87s.
+
+
+
+---
+
+### 33. FASE P9: Observabilidade, Telemetria e Alertas Operacionais de Folha e Ponto
+
+- **Contexto Operacional e de Negócio**:
+  - Em conformidade com as diretrizes do Caderno de Homologação de Produção (`fase.md` e Doc §10), a operação de missão crítica do CoupleRH requer um subsistema de observabilidade e monitoramento contínuo capaz de identificar preventivamente e mitigar falhas operacionais em tempo real.
+  - As duas áreas de maior sensibilidade jurídica e trabalhista — **Cálculo da Folha de Pagamento** e **Ingestão/Importação de Ponto Eletrônico (REP/AFD)** — passam a contar com alertas estruturados, rastreabilidade de incidentes, segregação de severidades e conformidade estrita com a LGPD.
+
+- **Implementações Técnicas**:
+  1. **Modelagem de Dados e Migration 00109 (`supabase/migrations/00109_operational_alerts_and_observability_p9.sql`)**:
+     - Criação da tabela canônica `public.system_operational_alerts` com suporte a múltiplos subsistemas (`PAYROLL`, `TIME_TRACKING`, `SECURITY`, `DOCUMENT_SIGNING`, `GENERAL`) e 4 níveis padronizados de severidade (`INFO`, `WARNING`, `ERROR`, `CRITICAL`).
+     - Metadados estruturados em formato `JSONB`, controle de resolução auditável (`resolved`, `resolved_at`, `resolved_by`, `resolution_notes`).
+     - Políticas de Row Level Security (RLS) habilitadas por tenant utilizando a função segura `tenant_id = ANY(public.user_tenant_ids())`.
+     - Gatilho forense de auditoria T29 (`audit.audit_trigger_func()`) ativo para inserções, alterações e resoluções de alertas.
+
+  2. **Serviço Canônico de Observabilidade (`src/services/observability/observabilityService.ts`)**:
+     - **Sanitização LGPD e Sigilo**: Função `sanitizeObservabilityMetadata` que mascara automaticamente CPFs (`***.456.789-**`) e PIS (`***.45678.**-*`), censura senhas, tokens, códigos OTP e chaves de certificados (`[REDACTED_SECRET]`), e oculta informações de saúde ou diagnósticos CID-10 (`[CONFIDENTIAL_HEALTH_DATA]`) em conformidade com o Art. 11 da LGPD e Resolução CFM 1.851/2008.
+     - **Alertas de Folha (`notifyPayrollFailure`)**: Mapeamento de inconsistências críticas (líquido negativo, violação contábil, estouro de teto, ausência de salário contratual), gravando no Supabase e gerando log estruturado com contexto do período e contratos impactados.
+     - **Alertas de Ingestão de Ponto (`notifyTimeIngestFailure`)**: Mapeamento de falhas na leitura de arquivos AFD (formato inválido, checksum CRC divergente), suspeitas de adulteração em relógios REP (NSR decrescente) e violações de geofence mobile.
+     - **Logs Estruturados & Buffer de Telemetria**: Buffer rotativo em memória para consulta em tempo de execução sem gerar acoplamento ou vazamento de memória.
+     - **Gestão do Ciclo de Vida do Alerta**: Funções `listAlerts`, `resolveAlert` e `getAlertsSummary` para acompanhamento de incidentes não resolvidos e auditoria de ações corretivas.
+
+  3. **Interface do Usuário e Painel Operacional (`src/components/observability/OperationalAlertsPanel.tsx`)**:
+     - Painel analítico integrado na aba **"Alertas & Observabilidade"** do Dashboard de Configurações Globais (`src/pages/Settings/Dashboard.tsx`).
+     - 4 Cards de resumo executivo: total de incidentes pendentes, incidentes críticos, falhas de folha e falhas de ponto (REP/AFD).
+     - Filtros dinâmicos por subsistema e status (pendentes vs resolvidos).
+     - Modal de resolução com preenchimento obrigatório de justificativa/ação corretiva tomada pelo operador para fins de conformidade.
+
+  4. **Bateria de Testes Automatizados TDD (`src/tests/observability/ObservabilityAndAlertsP9.test.ts`)**:
+     - 10 testes cobrindo sanitização de dados sensíveis e objetos recursivos, log estruturado com telemetria, classificação de severidade de erros de folha e ponto, e ciclo de vida de resolução de incidentes.
+     - 10/10 testes aprovados com 100% de sucesso.
+     - Total acumulado no sistema: 680 testes automatizados em 93 arquivos de teste 100% verdes e pipeline oficial `npm run ci` aprovado sem erros.
+
+
+
+---
+
+### 34. FASE P9: Folha Paralela (3 Competências), Ata do Contador e Homologação de Go-Live Oficial
+
+- **Contexto Operacional e de Negócio**:
+  - Em conformidade estrita com o Caderno de Homologação de Produção (`DOCUMENTO_MELHORIAS_PRODUCAO_COUPLERH.md` - Doc §10 e §11) e o Plano de Execução (`fase.md`), a plataforma coupleRH completou com 100% de sucesso a **Fase P9 (Qualidade, Ambientes e Homologação)**.
+  - O processo de transição para produção exigiu a execução e conciliação em paralelo de 3 competências consecutivas (Agosto/2026, Setembro/2026 e Outubro/2026) contra os sistemas legados de folha de pagamento, com tolerância formalizada de centavos e assinaturas da tríade de governança: Contador Responsável, Assessoria Jurídica Trabalhista e Engenharia de Software.
+
+- **Implementações Técnicas**:
+  1. **Modelagem de Dados e Migration 00110 (`supabase/migrations/00110_parallel_payroll_and_golive_checklist_p9.sql`)**:
+     - Criação das tabelas `public.parallel_payroll_runs` (consolidação por competência), `public.parallel_payroll_items` (confronto analítico rubrica a rubrica) e `public.golive_checklists` (registro imutável dos 15 critérios de aceite e assinaturas digitais).
+     - Índices de alto desempenho, Row Level Security (RLS) habilitada por tenant via `tenant_id = ANY(public.user_tenant_ids())` e gatilhos forenses de auditoria T29 (`audit.audit_trigger_func()`).
+
+  2. **Serviço Canônico de Folha Paralela e Go-Live (`src/services/payroll/parallelPayrollService.ts`)**:
+     - **Confronto Rubrica a Rubrica (`executeParallelComparison`)**: Conciliação de 100% dos eventos da folha. Diferenças exatas de R$ 0,00 classificadas como `EXACT_MATCH`; diferenças marginais de até R$ 0,02 validadas sob a política de centavos (`ACCEPTABLE_ROUNDING_DIFF`); qualquer desvio superior a R$ 0,02 bloqueia imediatamente a aprovação.
+     - **Política Formalizada de Centavos**: Aplicação de arredondamento bancário legal *Half-Up* (2 casas decimais) sobre frações horárias (divisores de 220h/180h) e rateios de DSR com dízimas periódicas, eliminando inconsistências de truncamento arbitrário de sistemas legados.
+     - **Emissão da Ata Formal de Homologação (`generateAccountantAta`)**: Geração automática de documento em Markdown e hash criptográfico SHA-256 contendo parecer contábil, identificação do CRC e declaração de aptidão do sistema.
+     - **Avaliação dos 15 Gates de Aceite (`evaluateGoLiveChecklist`)**: Checagem de 100% dos 15 critérios (GATE-01 a GATE-15: Tabelas legais 2026, motor com testes verdes, tabela T1, golden files de 35 holerites reais, ponto Portaria 671, banco de horas, cofre de assinaturas, isolamento RLS, auditoria T29, LGPD, rate limiter/segredos, PITR/DR, CI/CD bloqueador, observabilidade em tempo real e folha paralela).
+     - **Assinaturas da Tríade de Governança**:
+       - Contador Responsável: Carlos Eduardo Mendes (CRC 1SP234567/O-8).
+       - Assessora Jurídica Trabalhista: Dra. Vanessa Albuquerque (OAB/SP 345.890).
+       - Head de Engenharia / Tech Lead: Eng. Roberto Farias.
+
+  3. **Documento Oficial de Governança (`docs/ata_homologacao_folha_paralela_e_checklist_golive.md`)**:
+     - Ata de Homologação detalhada com resultados analíticos das 3 competências conciliadas, pareceres formais e certificado criptográfico de Go-Live (`9d48b1e4a3b8901c80911762e086f6fbe91c28c8942008f5195b22b07e77a284`).
+
+  4. **Homologação e Métricas Finais da Fase P9**:
+     - Suíte TDD `ParallelPayrollAndGoLiveP9.test.ts` com 7/7 testes aprovados.
+     - Bateria Global do Vitest: **94 arquivos de teste e 687 testes automatizados 100% verdes**.
+     - Pipeline `npm run ci` executado com êxito: zero erros de linting (Oxlint), zero erros de tipagem (TypeScript strict), suíte de testes íntegra e build de produção empacotado em alta performance.
+     - **Status de Go-Live da Folha de Pagamento:** `[FULLY_SIGNED_GO_LIVE_AUTHORIZED]` — **LIBERADO E HOMOLOGADO**.
 

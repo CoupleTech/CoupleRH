@@ -3,15 +3,19 @@
  * Conformidade com FASE P8: Matriz Granular de Papéis e Permissões
  */
 
-export type UserRole = 
-  | 'system_admin'
-  | 'tenant_admin'
-  | 'dp_analyst'
-  | 'manager'
-  | 'accountant'
-  | 'auditor'
-  | 'employee'
-  | 'sst_specialist';
+export const USER_ROLES = [
+  'system_admin',
+  'tenant_admin',
+  'dp_analyst',
+  'manager',
+  'accountant',
+  'auditor',
+  'employee',
+  'sst_specialist',
+] as const;
+
+export type UserRole = (typeof USER_ROLES)[number];
+export const UserRole = USER_ROLES;
 
 export type PermissionSlug = 
   | 'manage_users'

@@ -217,7 +217,7 @@ export class PayrollContext {
       'DIAS_UTEIS': this.dias_uteis,
       'DIAS_INUTEIS': this.dias_inuteis,
       'DIVISOR': this.divisor,
-      'DEPENDENTES': data.num_dependentes || 0,
+      'DEPENDENTES': data.num_dependentes ?? data.dependentes ?? 0,
       'BASE_DSR': 0,
       'BASE_DSR_NOTURNO': 0,
       'BASE_HORA_EXTRA': 0,

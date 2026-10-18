@@ -160,11 +160,16 @@ export async function fetchContractWorkplaceGeofence(
   isTelework: boolean;
 }> {
   try {
+    if (!contractId) {
+      return { workplace: null, isTelework: false };
+    }
+
     const { data, error } = await supabase
       .from('employment_contracts')
       .select(`
         id,
         is_telework,
+        workplace_id,
         workplaces (
           id,
           name,
@@ -175,16 +180,45 @@ export async function fetchContractWorkplaceGeofence(
         )
       `)
       .eq('id', contractId)
-      .single();
+      .maybeSingle();
 
     if (error || !data) {
       return { workplace: null, isTelework: false };
     }
 
-    const wp = (data as any).workplaces;
+    const rawWp = (data as any).workplaces;
+    const wp = Array.isArray(rawWp) ? rawWp[0] : rawWp;
     const isTelework = Boolean(data.is_telework);
 
     if (!wp) {
+      // Se não veio pelo embedding mas existe workplace_id, busca diretamente por segurança
+      if ((data as any).workplace_id) {
+        const { data: directWp } = await supabase
+          .from('workplaces')
+          .select('id, name, latitude, longitude, radius_meters, enforce_geofence')
+          .eq('id', (data as any).workplace_id)
+          .maybeSingle();
+
+        if (directWp) {
+          return {
+            workplace: {
+              name: directWp.name || 'Sede da Empresa',
+              latitude:
+                directWp.latitude !== null && directWp.latitude !== undefined
+                  ? Number(directWp.latitude)
+                  : null,
+              longitude:
+                directWp.longitude !== null && directWp.longitude !== undefined
+                  ? Number(directWp.longitude)
+                  : null,
+              radius_meters: directWp.radius_meters ? Number(directWp.radius_meters) : 50,
+              enforce_geofence: Boolean(directWp.enforce_geofence)
+            },
+            isTelework
+          };
+        }
+      }
+
       return { workplace: null, isTelework };
     }
 
@@ -203,3 +237,4 @@ export async function fetchContractWorkplaceGeofence(
     return { workplace: null, isTelework: false };
   }
 }
+
