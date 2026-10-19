@@ -932,3 +932,26 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
      - Pipeline `npm run ci` executado com êxito: zero erros de linting (Oxlint), zero erros de tipagem (TypeScript strict), suíte de testes íntegra e build de produção empacotado em alta performance.
      - **Status de Go-Live da Folha de Pagamento:** `[FULLY_SIGNED_GO_LIVE_AUTHORIZED]` — **LIBERADO E HOMOLOGADO**.
 
+---
+
+### 35. HOTFIX: Manutenção do Cofre Digital, Verificação Pública e Lembretes (19/10/2026)
+
+- **Contexto Operacional e de Negócio**:
+  - Em conformidade com o Roteiro Oficial de Produção (`fase.md`) e os registros operacionais pós-homologação, foram identificados e sanados três gargalos operacionais no cofre de assinaturas digitais e na verificação pública de autenticidade trabalhista (Doc §8 / AS-07 e AS-08):
+    1. Existência de dois documentos de férias residuais duplicados gerados em testes manuais de 25/09/2026 às 00:05:13 no cofre (`employee_documents`).
+    2. Bloqueio de consulta pública de autenticidade na rota `/verificar/:codigo`: a tabela `employee_documents` possui RLS restrita a usuários autenticados do tenant e a sanitização de busca não extraía os 8 caracteres alfanuméricos (`XXXXYYYY`) de chancelas formatadas da UI (`CRH-XXXX-YYYY`) para consultar o prefixo do UUID.
+    3. Falha no envio de notificações/lembretes de assinatura via WhatsApp/E-mail no componente `SignaturesVault.tsx`: ausência da coluna `tenant_id` no payload de inserção da tabela `document_events` ocasionando erro PostgreSQL `23502 (violates not-null constraint on column tenant_id) -> HTTP 400 Bad Request`.
+
+- **Implementações Técnicas**:
+  1. **Modelagem de Dados e Migration 00111 (`supabase/migrations/00111_hotfix_digital_vault_and_public_verification.sql`)**:
+     - **Soft-Delete Auditável**: Executado update seguro `deleted_at = NOW()` para os documentos residuais `b2bd30c6-8575-4f26-affc-c0148ec593cf` e `d254e8a0-48ee-4445-a285-82d1ea47ddfb`, preservando a trilha forense do trigger `audit.audit_trigger_func()` e garantindo que apenas a via oficial e definitiva de cada período aquisitivo permaneça visível.
+     - **RPC Pública de Verificação (`verify_public_document(p_code TEXT)`)**: Função com `SECURITY DEFINER` e permissão explícita concedida aos papéis `anon`, `authenticated` e `service_role`. A função sanitiza o código recebido, suportando buscas por código de chancela (`CRH-XXXX-YYYY` ou `XXXXYYYY`), UUID completo ou prefixo de 8 caracteres do UUID.
+     - **Conformidade LGPD**: Retorno estruturado em JSONB contendo exclusivamente metadados públicos do documento (título, tipo, status, hashes H1/H2, data de assinatura e código de chancela) com mascaramento rigoroso de CPF (`***.***.***-**`) e nome do titular (ex: `KAUAN G. ***`), blindando os dados dos demais empregados e da empresa.
+  2. **Ajustes no Frontend (`PublicDocumentVerification.tsx` e `SignaturesVault.tsx`)**:
+     - `PublicDocumentVerification.tsx`: Integração primária com a RPC `verify_public_document` garantindo que visitantes não autenticados consigam atestar a integridade do documento. No fluxo de fallback, implementada extração dos 8 caracteres alfanuméricos (`cleanNoPrefix`) para casamento de prefixo do UUID (`id.ilike.cleanNoPrefix%`).
+     - `SignaturesVault.tsx`: Interface `EmployeeDocument` enriquecida com `tenant_id: string`, inclusão da coluna no `.select()` da query `fetchDocs`, e preenchimento mandatório de `tenant_id: doc.tenant_id` na inserção de eventos em `document_events`.
+  3. **Qualidade e Bateria de Testes TDD**:
+     - Criação da suíte `src/tests/documents/PublicVerificationAndVaultHotfix.test.ts` (5 testes aprovados).
+     - Bateria Global do Vitest: **95 arquivos de teste e 692 testes automatizados 100% verdes**.
+     - Pipeline `npm run ci` aprovado sem erros de linting (Oxlint), tipagem (TypeScript strict) e build de produção empacotado com êxito.
+

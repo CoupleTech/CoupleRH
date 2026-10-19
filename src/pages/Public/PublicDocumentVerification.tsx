@@ -75,6 +75,21 @@ export default function PublicDocumentVerification() {
       const formatted = formatVerificationCode(rawCode);
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawCode);
 
+      // 1. Tentar validação pública segura via RPC (SECURITY DEFINER / anon sem bloqueio de RLS com proteção LGPD)
+      try {
+        const { data: rpcData, error: rpcError } = await supabase.rpc('verify_public_document', {
+          p_code: rawCode
+        });
+
+        if (!rpcError && rpcData) {
+          setDoc(rpcData as DocumentDetails);
+          return;
+        }
+      } catch (rpcErr) {
+        console.warn('RPC verify_public_document fallback:', rpcErr);
+      }
+
+      // 2. Fallback via consulta direta (para usuários autenticados do tenant)
       let query = supabase
         .from('employee_documents')
         .select(`
@@ -104,7 +119,13 @@ export default function PublicDocumentVerification() {
         query = query.eq('id', rawCode);
       } else {
         const clean = rawCode.replace(/[^0-9a-zA-Z]/g, '');
-        query = query.ilike('id', `${clean}%`);
+        const cleanNoPrefix = clean.toUpperCase().startsWith('CRH') ? clean.substring(3) : clean;
+
+        if (cleanNoPrefix.length >= 8) {
+          query = query.or(`id.ilike.${cleanNoPrefix}%,verification_code.ilike.${rawCode},verification_code.ilike.${formatted}`);
+        } else {
+          query = query.or(`verification_code.ilike.${rawCode},verification_code.ilike.${formatted}`);
+        }
       }
 
       const { data, error } = await query.maybeSingle();

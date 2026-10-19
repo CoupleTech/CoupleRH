@@ -277,17 +277,17 @@ Este documento é o **roteiro oficial de desenvolvimento** do sistema. Cada fase
 ---
 
 ## 📌 PENDÊNCIAS OPERACIONAIS E HOTFIXES PRIORITÁRIOS (COFRE DIGITAL & VERIFICAÇÃO PÚBLICA)
-*Registrado em 18/10/2026 para execução posterior:*
+*Registrado em 18/10/2026 e concluído com homologação em 19/10/2026:*
 
 1. **Limpeza de Documentos Duplicados no Cofre Digital (`employee_documents`):**
-   - [ ] Expurgo/soft-delete (`deleted_at = now()`) dos dois documentos residuais de testes manuais criados em 25/09/2026 às 00:05:13 (`b2bd30c6-8575-4f26-affc-c0148ec593cf` e `d254e8a0-48ee-4445-a285-82d1ea47ddfb`), mantendo no cofre exclusivamente a via oficial e definitiva do aviso e recibo de férias de cada período aquisitivo.
+   - [x] Expurgo/soft-delete (`deleted_at = now()`) dos dois documentos residuais de testes manuais criados em 25/09/2026 às 00:05:13 (`b2bd30c6-8575-4f26-affc-c0148ec593cf` e `d254e8a0-48ee-4445-a285-82d1ea47ddfb`), mantendo no cofre exclusivamente a via oficial e definitiva do aviso e recibo de férias de cada período aquisitivo. — *Concluído em 19/10/2026: executado e auditado via migration 00111_hotfix_digital_vault_and_public_verification.sql aplicada no banco de produção.*
 
 2. **Verificação Pública de Autenticidade Digital (`/verificar/:codigo`):**
-   - [ ] **Resolução do Prefixo de Código:** No componente `PublicDocumentVerification.tsx`, ajustar a sanitização da busca: quando o usuário pesquisar o código formatado da UI (`CRH-XXXX-YYYY`), extrair os 8 caracteres alfanuméricos (`XXXXYYYY`) e consultar o prefixo do UUID do documento (`query.ilike('id', clean + '%')`), em vez de buscar por `CRH...%` que não casa com UUIDs.
-   - [ ] **RPC Pública com Bypass de RLS (`verify_public_document`):** A tabela `employee_documents` possui RLS restrita a usuários autenticados do tenant. Criar migration com a função `public.verify_public_document(p_code TEXT)` com `SECURITY DEFINER` e permissão para o papel `anon`, retornando apenas os metadados públicos necessários para validação de autenticidade (título, tipo, status, hash H1, hash H2, data de assinatura e nome mascarado do titular), permitindo a validação pública sem expor outros dados da empresa.
+   - [x] **Resolução do Prefixo de Código:** No componente `PublicDocumentVerification.tsx`, ajustar a sanitização da busca: quando o usuário pesquisar o código formatado da UI (`CRH-XXXX-YYYY`), extrair os 8 caracteres alfanuméricos (`XXXXYYYY`) e consultar o prefixo do UUID do documento (`query.ilike('id', clean + '%')`), em vez de buscar por `CRH...%` que não casa com UUIDs. — *Concluído em 19/10/2026: sanitização corrigida em PublicDocumentVerification.tsx extraindo os 8 caracteres limpos (cleanNoPrefix) e buscando por prefixo do UUID.*
+   - [x] **RPC Pública com Bypass de RLS (`verify_public_document`):** A tabela `employee_documents` possui RLS restrita a usuários autenticados do tenant. Criar migration com a função `public.verify_public_document(p_code TEXT)` com `SECURITY DEFINER` e permissão para o papel `anon`, retornando apenas os metadados públicos necessários para validação de autenticidade (título, tipo, status, hash H1, hash H2, data de assinatura e nome mascarado do titular), permitindo a validação pública sem expor outros dados da empresa. — *Concluído em 19/10/2026: criada e aplicada no banco de produção a migration 00111 com a RPC pública verify_public_document() com SECURITY DEFINER, mascaramento estrito de CPF (***.***.***-**) e nome (KAUAN G. ***) conforme LGPD Art. 11, e permissão concedida ao role anon.*
 
 3. **Compartilhamento de Documentos via WhatsApp / E-mail (`document_events`):**
-   - [ ] No componente `SignaturesVault.tsx` (linha 172), incluir a coluna obrigatória `tenant_id: doc.tenant_id` no payload de inserção da tabela `document_events` para sanar o erro PostgreSQL `23502 (violates not-null constraint on column tenant_id) -> HTTP 400 Bad Request`.
+   - [x] No componente `SignaturesVault.tsx` (linha 172), incluir a coluna obrigatória `tenant_id: doc.tenant_id` no payload de inserção da tabela `document_events` para sanar o erro PostgreSQL `23502 (violates not-null constraint on column tenant_id) -> HTTP 400 Bad Request`. — *Concluído em 19/10/2026: adicionado tenant_id à interface EmployeeDocument, selecionado no select do fetchDocs e passado obrigatoriamente no payload de document_events.insert.*
 
 ---
 
@@ -1307,4 +1307,4 @@ Resultado: 204,55
 
 - [x] **Configurações Globais:** Construir a funcionalidade real das abas da tela de Configurações Globais (Concluído: abas Gerais, Perfis/RBAC, Segurança/MFA, Notificações, Certificados e Alertas/Observabilidade 100% operacionais).
 - [x] **Acessos e Perfis (Configurações):** Desenvolver lógica de gestão de permissões de usuários (RBAC), criando perfis (Admin, Analista, Contador, etc.) e mapeando o que podem ver ou editar. (Concluído: RolesAndProfilesTab operacional).
-- [ ] **Hotfix Cofre Digital & Verificação:** Limpeza dos 2 documentos duplicados de férias de 25/09, criação da RPC `verify_public_document` para a rota `/verificar/:codigo` pública, e inclusão de `tenant_id` no insert de `document_events` (compartilhamento WhatsApp).
+- [x] **Hotfix Cofre Digital & Verificação:** Limpeza dos 2 documentos duplicados de férias de 25/09, criação da RPC `verify_public_document` para a rota `/verificar/:codigo` pública, e inclusão de `tenant_id` no insert de `document_events` (Concluído em 19/10/2026: migration 00111 aplicada em produção, soft-delete efetuado, RPC pública com bypass seguro de RLS e mascaramento LGPD, e tenant_id amarrado nos eventos de documentos).

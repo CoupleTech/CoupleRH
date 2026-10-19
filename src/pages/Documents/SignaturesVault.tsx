@@ -24,6 +24,7 @@ import { toast } from "sonner";
 
 interface EmployeeDocument {
   id: string;
+  tenant_id: string;
   title: string;
   doc_type: string;
   status: string;
@@ -69,6 +70,7 @@ export default function SignaturesVault() {
       .from("employee_documents")
       .select(`
         id,
+        tenant_id,
         title,
         document_type,
         status,
@@ -170,6 +172,7 @@ export default function SignaturesVault() {
       // Registra evento de lembrete em document_events (se a tabela estiver disponível)
       try {
         await supabase.from('document_events').insert({
+          tenant_id: doc.tenant_id,
           document_id: doc.id,
           event: channel === 'WHATSAPP' ? 'NOTIFIED_WHATSAPP' : 'NOTIFIED_EMAIL',
           meta: {
