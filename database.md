@@ -15608,4 +15608,456 @@ $$;
 GRANT EXECUTE ON FUNCTION public.verify_public_document(TEXT) TO anon, authenticated, service_role;
 ```
 
+---
+
+## 4. Evolução do Schema PostgreSQL 17 Puro (FASE V1 — VPS Oracle Cloud Always Free)
+
+### 4.1 Migration `0002_storage_helper.sql` (Helper de Acesso Seguro a Arquivos Privados)
+```sql
+CREATE OR REPLACE FUNCTION public.get_stored_file_by_id(p_file_id UUID)
+RETURNS TABLE (
+    id UUID,
+    tenant_id UUID,
+    bucket VARCHAR,
+    file_path TEXT,
+    original_name VARCHAR,
+    mime_type VARCHAR,
+    byte_size BIGINT,
+    sha256_hash VARCHAR,
+    is_public BOOLEAN,
+    created_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        sf.id,
+        sf.tenant_id,
+        sf.bucket,
+        sf.file_path,
+        sf.original_name,
+        sf.mime_type,
+        sf.byte_size,
+        sf.sha256_hash,
+        sf.is_public,
+        sf.created_at
+    FROM public.stored_files sf
+    WHERE sf.id = p_file_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_stored_file_by_id(UUID) TO couplerh_app;
+```
+
+### 4.2 Migration `0003_system_operational_alerts.sql` (Tabela de Alertas Operacionais)
+```sql
+CREATE TABLE IF NOT EXISTS public.system_operational_alerts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    severity VARCHAR(20) NOT NULL CHECK (severity IN ('INFO', 'WARNING', 'ERROR', 'CRITICAL')),
+    category VARCHAR(50) NOT NULL CHECK (category IN ('DATABASE', 'STORAGE', 'QUEUE', 'AUTH', 'BACKUP', 'SYSTEM', 'SECURITY')),
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_resolved BOOLEAN NOT NULL DEFAULT FALSE,
+    resolved_at TIMESTAMPTZ,
+    resolved_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_operational_alerts_active 
+    ON public.system_operational_alerts(severity, created_at DESC) 
+    WHERE is_resolved = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_operational_alerts_created_at 
+    ON public.system_operational_alerts(created_at DESC);
+
+GRANT SELECT, INSERT, UPDATE ON public.system_operational_alerts TO couplerh_app;
+```
+
+### 4.3 Migration `0004_auth_users_flexibility.sql` (Flexibilização de Identidade para Colaboradores)
+```sql
+-- Permite que colaboradores operacionais usem CPF sem obrigatoriedade de e-mail corporativo
+ALTER TABLE public.users ALTER COLUMN email DROP NOT NULL;
+
+-- Garante que o usuário possua ao menos e-mail ou CPF
+ALTER TABLE public.users DROP CONSTRAINT IF EXISTS check_user_identifier;
+ALTER TABLE public.users ADD CONSTRAINT check_user_identifier 
+    CHECK (email IS NOT NULL OR cpf IS NOT NULL);
+
+-- Índice único para login por CPF ativo
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_cpf_unique_active 
+    ON public.users(cpf) 
+    WHERE deleted_at IS NULL AND cpf IS NOT NULL;
+```
+
+### 4.4 Migration `0005_auth_helpers.sql` (Funções SECURITY DEFINER de Autenticação Pré-RLS)
+```sql
+-- 1. Lookup de usuário corporativo por e-mail
+CREATE OR REPLACE FUNCTION public.auth_get_user_for_login(p_email CITEXT)
+RETURNS TABLE (
+    id UUID, email CITEXT, password_hash TEXT, full_name TEXT,
+    failed_login_attempts INT, locked_until TIMESTAMPTZ, is_active BOOLEAN
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    RETURN QUERY
+    SELECT u.id, u.email, u.password_hash, u.full_name, u.failed_login_attempts, u.locked_until, u.is_active
+    FROM public.users u
+    WHERE u.email = p_email AND u.deleted_at IS NULL;
+END;
+$$;
+
+-- 2. Lookup de tenant e papel do usuário
+CREATE OR REPLACE FUNCTION public.auth_get_user_tenant_membership(p_user_id UUID)
+RETURNS TABLE (tenant_id UUID, tenant_name TEXT, role TEXT)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    RETURN QUERY
+    SELECT tu.tenant_id, t.name as tenant_name, tu.role
+    FROM public.tenant_users tu
+    JOIN public.tenants t ON t.id = tu.tenant_id
+    WHERE tu.user_id = p_user_id AND tu.is_active = TRUE
+    ORDER BY tu.created_at ASC LIMIT 1;
+END;
+$$;
+
+-- 3. Lookup de trabalhador para login no Portal do Colaborador (CPF + Contrato Ativo)
+CREATE OR REPLACE FUNCTION public.auth_get_worker_for_portal_login(p_cpf VARCHAR(11))
+RETURNS TABLE (
+    id UUID, tenant_id UUID, user_id UUID, full_name TEXT, cpf VARCHAR(11),
+    birth_date DATE, email TEXT, contract_status TEXT, position_title TEXT
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    RETURN QUERY
+    SELECT w.id, w.tenant_id, w.user_id, w.full_name, w.cpf, w.birth_date, w.email,
+           c.status as contract_status, pos.title as position_title
+    FROM public.workers w
+    JOIN public.contracts c ON c.worker_id = w.id
+    LEFT JOIN public.positions pos ON pos.id = c.position_id
+    WHERE w.cpf = p_cpf AND c.status = 'ACTIVE'
+    ORDER BY c.created_at DESC LIMIT 1;
+END;
+$$;
+
+-- 4. Provisioning atômico e vinculação do trabalhador à tabela users e tenant_users
+CREATE OR REPLACE FUNCTION public.auth_ensure_portal_worker_user(
+    p_worker_id UUID, p_tenant_id UUID, p_cpf VARCHAR(11),
+    p_full_name TEXT, p_email TEXT, p_password_hash TEXT
+) RETURNS UUID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_user_id UUID;
+BEGIN
+    SELECT user_id INTO v_user_id FROM public.workers WHERE id = p_worker_id;
+    IF v_user_id IS NULL THEN
+        SELECT id INTO v_user_id FROM public.users WHERE cpf = p_cpf;
+    END IF;
+    IF v_user_id IS NULL THEN
+        INSERT INTO public.users (cpf, full_name, email, password_hash, is_active, failed_login_attempts)
+        VALUES (p_cpf, p_full_name, p_email, p_password_hash, TRUE, 0)
+        RETURNING id INTO v_user_id;
+    END IF;
+    UPDATE public.workers SET user_id = v_user_id WHERE id = p_worker_id AND (user_id IS NULL OR user_id <> v_user_id);
+    INSERT INTO public.tenant_users (tenant_id, user_id, role, is_active)
+    VALUES (p_tenant_id, v_user_id, 'employee', TRUE)
+    ON CONFLICT (tenant_id, user_id) DO UPDATE SET is_active = TRUE;
+    UPDATE public.users SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW() WHERE id = v_user_id;
+    RETURN v_user_id;
+END;
+$$;
+
+-- 5. Perfil completo para /me
+CREATE OR REPLACE FUNCTION public.auth_get_me(p_user_id UUID)
+RETURNS TABLE (
+    id UUID, email CITEXT, cpf VARCHAR(11), full_name TEXT, phone TEXT,
+    last_login_at TIMESTAMPTZ, tenant_id UUID, role TEXT, tenant_name TEXT, worker_id UUID
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    RETURN QUERY
+    SELECT u.id, u.email, u.cpf, u.full_name, u.phone, u.last_login_at,
+           tu.tenant_id, tu.role, t.name as tenant_name, w.id as worker_id
+    FROM public.users u
+    LEFT JOIN public.tenant_users tu ON tu.user_id = u.id AND tu.is_active = TRUE
+    LEFT JOIN public.tenants t ON t.id = tu.tenant_id
+    LEFT JOIN public.workers w ON w.user_id = u.id AND w.tenant_id = tu.tenant_id
+    WHERE u.id = p_user_id AND u.is_active = TRUE LIMIT 1;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.auth_get_user_for_login(CITEXT) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_get_user_tenant_membership(UUID) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_get_worker_for_portal_login(VARCHAR(11)) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_ensure_portal_worker_user(UUID, UUID, VARCHAR(11), TEXT, TEXT, TEXT) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_get_me(UUID) TO couplerh_app;
+```
+
+### 4.5 Migration `0006_mfa_and_session_helpers.sql` (Funções SECURITY DEFINER de MFA TOTP e Timeout de Sessão)
+```sql
+-- 1. Status de MFA do usuário
+CREATE OR REPLACE FUNCTION public.auth_get_user_mfa_status(p_user_id UUID)
+RETURNS TABLE (has_verified_mfa BOOLEAN, verified_factors_count INT, total_factors_count INT)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    RETURN QUERY
+    SELECT COALESCE(BOOL_OR(is_verified), FALSE),
+           COUNT(*) FILTER (WHERE is_verified = TRUE)::INT,
+           COUNT(*)::INT
+    FROM public.user_mfa_factors WHERE user_id = p_user_id;
+END;
+$$;
+
+-- 2. Configurações de MFA e timeout de inatividade do tenant
+CREATE OR REPLACE FUNCTION public.auth_get_tenant_mfa_and_session_settings(p_tenant_id UUID)
+RETURNS TABLE (require_mfa_roles TEXT[], session_timeout_minutes INT, max_login_attempts INT)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_settings JSONB; v_roles_json JSONB; v_roles TEXT[];
+BEGIN
+    SELECT settings INTO v_settings FROM public.tenants WHERE id = p_tenant_id;
+    IF v_settings IS NULL THEN v_settings := '{}'::jsonb; END IF;
+    v_roles_json := v_settings->'require_mfa_roles';
+    IF v_roles_json IS NOT NULL AND jsonb_typeof(v_roles_json) = 'array' THEN
+        SELECT ARRAY_AGG(x.val::TEXT) INTO v_roles FROM jsonb_array_elements_text(v_roles_json) AS x(val);
+    ELSE
+        v_roles := ARRAY[]::TEXT[];
+    END IF;
+    RETURN QUERY
+    SELECT COALESCE(v_roles, ARRAY[]::TEXT[]),
+           COALESCE((v_settings->>'session_timeout_minutes')::INT, 60),
+           COALESCE((v_settings->>'max_login_attempts')::INT, 5);
+END;
+$$;
+
+-- 3. Validação e heartbeat de inatividade da sessão
+CREATE OR REPLACE FUNCTION public.auth_touch_session_activity(
+    p_session_id UUID, p_max_inactivity_minutes INT DEFAULT 60
+)
+RETURNS TABLE (is_valid BOOLEAN, is_expired BOOLEAN, user_id UUID, aal TEXT)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_session RECORD; v_now TIMESTAMPTZ := NOW(); v_inactivity_interval INTERVAL;
+BEGIN
+    SELECT s.id, s.user_id, s.aal, s.last_seen_at, s.expires_at, s.revoked_at
+    INTO v_session FROM public.user_sessions s WHERE s.id = p_session_id;
+
+    IF v_session.id IS NULL OR v_session.revoked_at IS NOT NULL OR v_session.expires_at <= v_now THEN
+        RETURN QUERY SELECT FALSE, TRUE, NULL::UUID, NULL::TEXT;
+        RETURN;
+    END IF;
+
+    v_inactivity_interval := (p_max_inactivity_minutes || ' minutes')::INTERVAL;
+    IF (v_now - v_session.last_seen_at) > v_inactivity_interval THEN
+        UPDATE public.user_sessions SET revoked_at = v_now WHERE id = p_session_id;
+        RETURN QUERY SELECT FALSE, TRUE, v_session.user_id, v_session.aal;
+        RETURN;
+    END IF;
+
+    UPDATE public.user_sessions SET last_seen_at = v_now WHERE id = p_session_id;
+    RETURN QUERY SELECT TRUE, FALSE, v_session.user_id, v_session.aal;
+END;
+$$;
+
+-- 4. Promove sessão para AAL2
+CREATE OR REPLACE FUNCTION public.auth_promote_session_aal2(p_session_id UUID)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    UPDATE public.user_sessions SET aal = 'aal2', last_seen_at = NOW()
+    WHERE id = p_session_id AND revoked_at IS NULL;
+    RETURN FOUND;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.auth_get_user_mfa_status(UUID) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_get_tenant_mfa_and_session_settings(UUID) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_touch_session_activity(UUID, INT) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_promote_session_aal2(UUID) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_get_user_mfa_factors(UUID) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_save_mfa_factor(UUID, TEXT, JSONB, TEXT) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_get_mfa_factor_for_verification(UUID, UUID) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_verify_mfa_factor(UUID, UUID) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_consume_recovery_code(UUID, UUID, TEXT) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_delete_mfa_factor(UUID, UUID) TO couplerh_app;
+```
+
+### 4.6 Migration `0007_password_reset_helpers.sql` (Funções SECURITY DEFINER de Recuperação e Troca de Senha)
+```sql
+-- 1. Cria token de recuperação com invalidação atômica de tokens antigos
+CREATE OR REPLACE FUNCTION public.auth_create_password_reset_token(
+    p_email CITEXT, p_token_hash TEXT, p_expires_minutes INT DEFAULT 30
+)
+RETURNS TABLE (found BOOLEAN, user_id UUID, full_name TEXT, email CITEXT)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_user RECORD; v_token_id UUID;
+BEGIN
+    SELECT u.id, u.full_name, u.email INTO v_user
+    FROM public.users u
+    WHERE u.email = p_email AND u.is_active = TRUE AND u.deleted_at IS NULL;
+
+    IF v_user.id IS NULL THEN
+        RETURN QUERY SELECT FALSE, NULL::UUID, NULL::TEXT, NULL::CITEXT;
+        RETURN;
+    END IF;
+
+    UPDATE public.auth_tokens SET used_at = NOW()
+    WHERE public.auth_tokens.user_id = v_user.id 
+      AND public.auth_tokens.token_type = 'PASSWORD_RESET' 
+      AND public.auth_tokens.used_at IS NULL;
+
+    INSERT INTO public.auth_tokens (user_id, token_type, token_hash, expires_at)
+    VALUES (v_user.id, 'PASSWORD_RESET', p_token_hash, NOW() + (p_expires_minutes || ' minutes')::INTERVAL)
+    RETURNING id INTO v_token_id;
+
+    RETURN QUERY SELECT TRUE, v_user.id, v_user.full_name, v_user.email;
+END;
+$$;
+
+-- 2. Verifica token de recuperação de senha
+CREATE OR REPLACE FUNCTION public.auth_verify_password_reset_token(p_token_hash TEXT)
+RETURNS TABLE (is_valid BOOLEAN, is_used BOOLEAN, is_expired BOOLEAN, user_id UUID, email CITEXT, full_name TEXT)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_row RECORD; v_now TIMESTAMPTZ := NOW();
+BEGIN
+    SELECT t.id, t.user_id, t.expires_at, t.used_at, u.email, u.full_name, u.is_active
+    INTO v_row FROM public.auth_tokens t JOIN public.users u ON u.id = t.user_id
+    WHERE t.token_hash = p_token_hash AND t.token_type = 'PASSWORD_RESET'
+    ORDER BY t.created_at DESC LIMIT 1;
+
+    IF v_row.id IS NULL OR NOT v_row.is_active THEN
+        RETURN QUERY SELECT FALSE, FALSE, FALSE, NULL::UUID, NULL::CITEXT, NULL::TEXT;
+        RETURN;
+    END IF;
+    IF v_row.used_at IS NOT NULL THEN
+        RETURN QUERY SELECT FALSE, TRUE, FALSE, v_row.user_id, v_row.email, v_row.full_name;
+        RETURN;
+    END IF;
+    IF v_row.expires_at <= v_now THEN
+        RETURN QUERY SELECT FALSE, FALSE, TRUE, v_row.user_id, v_row.email, v_row.full_name;
+        RETURN;
+    END IF;
+
+    RETURN QUERY SELECT TRUE, FALSE, FALSE, v_row.user_id, v_row.email, v_row.full_name;
+END;
+$$;
+
+-- 3. Consome token de recuperação, atualiza senha e revoga sessões ativas
+CREATE OR REPLACE FUNCTION public.auth_consume_password_reset_token(
+    p_token_hash TEXT, p_new_password_hash TEXT
+)
+RETURNS TABLE (success BOOLEAN, user_id UUID)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_check RECORD;
+BEGIN
+    SELECT * INTO v_check FROM public.auth_verify_password_reset_token(p_token_hash);
+    IF NOT v_check.is_valid THEN
+        RETURN QUERY SELECT FALSE, NULL::UUID;
+        RETURN;
+    END IF;
+
+    UPDATE public.auth_tokens SET used_at = NOW()
+    WHERE public.auth_tokens.token_hash = p_token_hash AND public.auth_tokens.token_type = 'PASSWORD_RESET';
+
+    UPDATE public.users SET password_hash = p_new_password_hash, failed_login_attempts = 0, locked_until = NULL, updated_at = NOW()
+    WHERE public.users.id = v_check.user_id;
+
+    UPDATE public.user_sessions SET revoked_at = NOW()
+    WHERE public.user_sessions.user_id = v_check.user_id AND public.user_sessions.revoked_at IS NULL;
+
+    RETURN QUERY SELECT TRUE, v_check.user_id;
+END;
+$$;
+
+-- 4. Troca de senha pessoal do colaborador autenticado
+CREATE OR REPLACE FUNCTION public.auth_change_worker_password(p_user_id UUID, p_new_password_hash TEXT)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    UPDATE public.users SET password_hash = p_new_password_hash, failed_login_attempts = 0, locked_until = NULL, updated_at = NOW()
+    WHERE id = p_user_id AND is_active = TRUE;
+    RETURN FOUND;
+END;
+$$;
+
+-- 5. Consulta credencial atual do colaborador (birth_date ou password_hash)
+CREATE OR REPLACE FUNCTION public.auth_get_worker_credentials_for_change(p_user_id UUID)
+RETURNS TABLE (birth_date DATE, password_hash TEXT)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    RETURN QUERY
+    SELECT w.birth_date, u.password_hash
+    FROM public.users u LEFT JOIN public.workers w ON w.user_id = u.id
+    WHERE u.id = p_user_id AND u.is_active = TRUE LIMIT 1;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.auth_create_password_reset_token(CITEXT, TEXT, INT) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_verify_password_reset_token(TEXT) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_consume_password_reset_token(TEXT, TEXT) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_change_worker_password(UUID, TEXT) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.auth_get_worker_credentials_for_change(UUID) TO couplerh_app;
+```
+
+### Migration 0008: Validação Atômica de Atividade do Contexto de Tenant e Usuário (`0008_tenant_context_helpers.sql`)
+
+```sql
+CREATE OR REPLACE FUNCTION public.auth_assert_tenant_context_active(
+    p_user_id UUID,
+    p_tenant_id UUID DEFAULT NULL
+)
+RETURNS TABLE (
+    is_active BOOLEAN,
+    reason TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user_active BOOLEAN;
+    v_tenant_active BOOLEAN;
+    v_tenant_user_active BOOLEAN;
+BEGIN
+    -- 1. Verifica se o usuário global está ativo
+    IF p_user_id IS NOT NULL THEN
+        SELECT u.is_active INTO v_user_active
+        FROM public.users u
+        WHERE u.id = p_user_id AND u.deleted_at IS NULL;
+
+        IF v_user_active IS NULL OR NOT v_user_active THEN
+            RETURN QUERY SELECT FALSE, 'USER_INACTIVE';
+            RETURN;
+        END IF;
+    END IF;
+
+    -- 2. Se o tenant_id foi informado, verifica se o tenant está ativo
+    IF p_tenant_id IS NOT NULL THEN
+        SELECT (t.status = 'ACTIVE' AND t.deleted_at IS NULL) INTO v_tenant_active
+        FROM public.tenants t
+        WHERE t.id = p_tenant_id;
+
+        IF v_tenant_active IS NULL OR NOT v_tenant_active THEN
+            RETURN QUERY SELECT FALSE, 'TENANT_INACTIVE';
+            RETURN;
+        END IF;
+
+        -- 3. Se ambos informados, verifica o vínculo em tenant_users
+        IF p_user_id IS NOT NULL THEN
+            SELECT tu.is_active INTO v_tenant_user_active
+            FROM public.tenant_users tu
+            WHERE tu.user_id = p_user_id AND tu.tenant_id = p_tenant_id;
+
+            IF v_tenant_user_active IS NULL OR NOT v_tenant_user_active THEN
+                RETURN QUERY SELECT FALSE, 'MEMBERSHIP_INACTIVE';
+                RETURN;
+            END IF;
+        END IF;
+    END IF;
+
+    RETURN QUERY SELECT TRUE, 'OK';
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.auth_assert_tenant_context_active(UUID, UUID) TO couplerh_app;
+```
+
+
+
+
+
 
