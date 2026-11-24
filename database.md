@@ -17027,3 +17027,65 @@ GRANT EXECUTE ON FUNCTION public.can_access_contract(UUID, UUID) TO couplerh_app
 GRANT EXECUTE ON FUNCTION public.get_accessible_contract_ids(UUID) TO couplerh_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.tenant_user_scopes TO couplerh_app;
 ```
+
+---
+
+## 34. Migration 0012: Políticas RLS Nativas no PostgreSQL 17 Puro & Imutabilidade Append-Only (RBAC-03)
+
+### 34.1 Tabela `public.document_events` e Trigger Imutável
+```sql
+CREATE TABLE IF NOT EXISTS public.document_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    document_id UUID NOT NULL REFERENCES public.employee_documents(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    actor_id UUID,
+    payload JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TRIGGER trg_document_events_immutable
+    BEFORE UPDATE OR DELETE ON public.document_events
+    FOR EACH ROW EXECUTE FUNCTION audit.trg_block_audit_modification();
+```
+
+### 34.2 Políticas RLS Append-Only e de Leitura
+```sql
+-- audit.logs (Leitura restrita a view_audit_logs, apenas INSERT)
+ALTER TABLE audit.logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit.logs FORCE ROW LEVEL SECURITY;
+CREATE POLICY audit_logs_select_policy ON audit.logs FOR SELECT
+    USING (tenant_id = current_app_tenant_id() AND (public.current_app_user_id() IS NULL OR public.has_permission(tenant_id, 'view_audit_logs')));
+CREATE POLICY audit_logs_insert_policy ON audit.logs FOR INSERT
+    WITH CHECK (tenant_id = current_app_tenant_id() OR current_app_tenant_id() IS NULL);
+
+-- time_punch_records (Portaria MTP 671/2021: append-only obrigatório)
+CREATE TRIGGER trg_time_punch_records_immutable
+    BEFORE UPDATE OR DELETE ON public.time_punch_records
+    FOR EACH ROW EXECUTE FUNCTION audit.trg_block_audit_modification();
+
+-- contracts (Separação estrita de SELECT vs INSERT/UPDATE/DELETE)
+CREATE POLICY contracts_select_policy ON public.contracts FOR SELECT
+    USING (tenant_id = current_app_tenant_id() AND (public.current_app_user_id() IS NULL OR public.can_access_contract(tenant_id, id)));
+CREATE POLICY contracts_insert_policy ON public.contracts FOR INSERT
+    WITH CHECK (tenant_id = current_app_tenant_id() AND (public.current_app_user_id() IS NULL OR public.has_permission(tenant_id, 'manage_employees')));
+CREATE POLICY contracts_update_policy ON public.contracts FOR UPDATE
+    USING (tenant_id = current_app_tenant_id() AND (public.current_app_user_id() IS NULL OR public.has_permission(tenant_id, 'manage_employees')))
+    WITH CHECK (tenant_id = current_app_tenant_id() AND (public.current_app_user_id() IS NULL OR public.has_permission(tenant_id, 'manage_employees')));
+CREATE POLICY contracts_delete_policy ON public.contracts FOR DELETE
+    USING (tenant_id = current_app_tenant_id() AND (public.current_app_user_id() IS NULL OR public.has_permission(tenant_id, 'manage_employees')));
+
+-- Função SECURITY DEFINER get_document_for_signature
+CREATE OR REPLACE FUNCTION public.get_document_for_signature(p_document_id UUID)
+RETURNS TABLE (id UUID, worker_id UUID, status TEXT, tenant_id UUID)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    SELECT d.id, d.worker_id, d.status, d.tenant_id
+    FROM public.employee_documents d
+    WHERE d.id = p_document_id AND d.tenant_id = current_app_tenant_id();
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_document_for_signature(UUID) TO couplerh_app;
+```

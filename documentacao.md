@@ -1169,3 +1169,31 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   - **Métricas Acumuladas**:
     - Total de testes automatizados no monorepo: **169 testes 100% verdes** (`payroll-core`: 16, `api`: 144, `web`: 9).
     - Build de produção compilando em 1.72s.
+
+---
+
+### 42. FASE V3 (RBAC-03): Políticas RLS Nativas no PostgreSQL 17 e Imutabilidade Append-Only
+
+- **Blindagem RLS Nativa com FORCE ROW LEVEL SECURITY**:
+  - Implementada a Migration `0012_rls_policies_hardening.sql` no PostgreSQL 17 puro (`postgres:17-alpine`), aplicando `ENABLE ROW LEVEL SECURITY` e `FORCE ROW LEVEL SECURITY` nas tabelas mais críticas do sistema.
+  - **Separação Estrita de Políticas RLS por Operação (SELECT vs INSERT vs UPDATE vs DELETE)**:
+    - O PostgreSQL combina múltiplas políticas aplicáveis com operador lógico `OR`. Por isso, políticas de modificação foram divididas em `FOR INSERT`, `FOR UPDATE` e `FOR DELETE`, impedindo que concessões de permissão de escrita sobrescrevessem o filtro de leitura `can_access_contract()` ou vice-versa.
+    - Suporte robusto a operações internas de sistema e background jobs quando `current_app_user_id() IS NULL`.
+  - **Tabelas com RLS e Governança**:
+    1. `public.contracts`: `SELECT` condicionado a `tenant_id` e `can_access_contract(tenant_id, id)`. `INSERT`, `UPDATE` e `DELETE` condicionados a `has_permission(tenant_id, 'manage_employees')`.
+    2. `public.payslips` e `public.payslip_items`: `SELECT` condicionado ao escopo do contrato e titularidade (`view_payslips` ou trabalhador titular). `INSERT`, `UPDATE` e `DELETE` condicionados a `calculate_payroll`.
+    3. `public.terminations`: `SELECT` condicionado ao escopo do contrato e titularidade (`manage_terminations` ou trabalhador titular). `INSERT`, `UPDATE` e `DELETE` condicionados a `manage_terminations`.
+    4. `public.vacation_periods` e `public.vacation_schedules`: `SELECT` condicionado ao escopo do contrato e titularidade (`manage_vacations` ou trabalhador titular). `INSERT`, `UPDATE` e `DELETE` condicionados a `manage_vacations`.
+    5. `public.employee_documents`: `SELECT` condicionado a titularidade do documento ou gestão (`manage_documents` ou `worker_id = current_app_worker_id()`). `INSERT`, `UPDATE` e `DELETE` condicionados a `manage_documents`.
+  - **Imutabilidade e Append-Only em Tabelas de Conformidade Legal e Auditoria**:
+    1. `audit.logs`: Imutável via trigger `audit.trg_block_audit_modification`. RLS restringe `SELECT` à permissão `view_audit_logs`, permite `INSERT` e bloqueia `UPDATE` e `DELETE`.
+    2. `public.time_punch_records`: Conformidade estrita com a **Portaria MTP 671/2021** (Art. 74 CLT) — proibição absoluta de alteração ou exclusão de marcação original de ponto através do trigger `trg_time_punch_records_immutable`.
+    3. `public.signatures_log` e `public.document_events`: Log imutável de assinaturas e eventos documentais com trigger `trg_document_events_immutable`.
+  - **Função SECURITY DEFINER `get_document_for_signature(UUID)`**:
+    - Busca segura do documento com isolamento estrito de tenant para a rota `POST /api/v1/documents/:id/sign`, permitindo distinção precisa entre `404 DOCUMENT_NOT_FOUND` e `403 FORBIDDEN_DOCUMENT_OWNER` sem vazar dados sob RLS.
+  - **Homologação Automatizada TDD**:
+    - Suíte `tests/rbac-rls-hardening.test.ts` com **7/7 testes verdes** cobrindo isolamento cross-role, bloqueio de adulteração de auditoria e ponto, e imutabilidade de eventos.
+    - Todos os 14 arquivos de teste do monorepo passando com **151/151 testes verdes**.
+  - **Métricas Acumuladas**:
+    - Total de testes automatizados no monorepo: **176 testes 100% verdes** (`payroll-core`: 16, `api`: 151, `web`: 9).
+    - Monorepo compilando em produção via `npm run build` limpo em 2.51s.
