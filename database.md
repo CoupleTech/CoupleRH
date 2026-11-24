@@ -16643,3 +16643,139 @@ GRANT EXECUTE ON FUNCTION public.verify_public_punch(TEXT) TO couplerh_app;
 
 
 
+
+
+---
+
+### 3.10 Migration 0010 — RBAC Dinâmico, Matriz de Permissões Granulares e has_permission (PostgreSQL 17 Puro)
+
+```sql
+-- ==============================================================================
+-- Migration 0010: RBAC Dinâmico, Matriz de Permissões Granulares e has_permission
+-- ==============================================================================
+
+-- 1. Tabela de Permissões (Catálogo Oficial de Ações do Sistema)
+CREATE TABLE IF NOT EXISTS public.permissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    category TEXT NOT NULL CHECK (category IN (
+        'ORGANIZATION', 'COMPENSATION_PAYROLL', 'ACCOUNTING_FISCAL',
+        'TIME_TRACKING', 'OCCUPATIONAL_HEALTH_SST', 'GOVERNANCE_SYSTEM'
+    )),
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 2. Tabela de Papéis (Roles Nativas de Sistema e Perfis Customizados por Tenant)
+CREATE TABLE IF NOT EXISTS public.roles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES public.tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    description TEXT,
+    is_system BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_roles_tenant_slug UNIQUE (tenant_id, slug)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_system_roles_slug 
+ON public.roles(slug) WHERE tenant_id IS NULL;
+
+-- 3. Tabela Associativa Papel <-> Permissão
+CREATE TABLE IF NOT EXISTS public.role_permissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    role_id UUID NOT NULL REFERENCES public.roles(id) ON DELETE CASCADE,
+    permission_id UUID NOT NULL REFERENCES public.permissions(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_role_permission UNIQUE (role_id, permission_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON public.role_permissions(role_id);
+CREATE INDEX IF NOT EXISTS idx_role_permissions_permission ON public.role_permissions(permission_id);
+
+-- 4. Adicionar coluna role_id em tenant_users e remover enum restritivo
+ALTER TABLE public.tenant_users
+ADD COLUMN IF NOT EXISTS role_id UUID REFERENCES public.roles(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_tenant_users_role_id ON public.tenant_users(role_id);
+
+ALTER TABLE public.tenant_users
+DROP CONSTRAINT IF EXISTS tenant_users_role_check;
+
+-- 5. RLS nas tabelas RBAC
+ALTER TABLE public.permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.permissions FORCE ROW LEVEL SECURITY;
+
+ALTER TABLE public.roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.roles FORCE ROW LEVEL SECURITY;
+
+ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.role_permissions FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY permissions_read_policy ON public.permissions
+    FOR SELECT USING (TRUE);
+
+CREATE POLICY roles_isolation_policy ON public.roles
+    FOR ALL
+    USING (tenant_id = current_app_tenant_id() OR (is_system = TRUE AND tenant_id IS NULL))
+    WITH CHECK (tenant_id = current_app_tenant_id() AND is_system = FALSE);
+
+CREATE POLICY role_permissions_isolation_policy ON public.role_permissions
+    FOR ALL
+    USING (EXISTS (
+        SELECT 1 FROM public.roles r 
+        WHERE r.id = role_permissions.role_id 
+          AND (r.tenant_id = current_app_tenant_id() OR (r.is_system = TRUE AND r.tenant_id IS NULL))
+    ))
+    WITH CHECK (EXISTS (
+        SELECT 1 FROM public.roles r 
+        WHERE r.id = role_permissions.role_id 
+          AND r.tenant_id = current_app_tenant_id() 
+          AND r.is_system = FALSE
+    ));
+
+-- Triggers de auditoria imutável
+CREATE TRIGGER trg_audit_roles
+    AFTER INSERT OR UPDATE OR DELETE ON public.roles
+    FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+
+CREATE TRIGGER trg_audit_role_permissions
+    AFTER INSERT OR UPDATE OR DELETE ON public.role_permissions
+    FOR EACH ROW EXECUTE FUNCTION audit.audit_trigger_func();
+
+-- 6. Função SQL Oficial has_permission (PostgreSQL 17 Puro, STABLE, SECURITY DEFINER)
+CREATE OR REPLACE FUNCTION public.has_permission(p_tenant_id UUID, p_permission_slug TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.tenant_users tu
+    JOIN public.users u ON u.id = tu.user_id
+    LEFT JOIN public.roles r ON r.id = tu.role_id
+    LEFT JOIN public.role_permissions rp ON rp.role_id = r.id
+    LEFT JOIN public.permissions p ON p.id = rp.permission_id
+    WHERE tu.user_id = public.current_app_user_id()
+      AND tu.tenant_id = p_tenant_id
+      AND tu.is_active = TRUE
+      AND u.is_active = TRUE
+      AND (
+        -- 1. Super Admin Global tem acesso irrestrito
+        tu.role = 'system_admin'
+        OR r.slug = 'system_admin'
+        -- 2. Permissão explícita concedida pelo papel
+        OR p.slug = p_permission_slug
+      )
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.has_permission(UUID, TEXT) TO couplerh_app;
+GRANT SELECT ON public.permissions TO couplerh_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.roles TO couplerh_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.role_permissions TO couplerh_app;
+```

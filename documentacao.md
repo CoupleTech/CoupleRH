@@ -1106,3 +1106,37 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   - **Total:** **147 testes automatizados 100% verdes no monorepo**.
   - **FASE V2 100% CONCLUÍDA E HOMOLOGADA PARA PRODUÇÃO**.
 
+
+
+---
+
+### 40. FASE V3 (RBAC-01): RBAC Dinâmico, Catálogo de Permissões Granulares e Middleware has_permission
+
+- **Arquitetura de Perfis sem Enums Hardcoded**:
+  - Implementada a Migration `0010_rbac_dynamic_permissions.sql` no PostgreSQL 17 puro (`postgres:17-alpine`), eliminando a limitação legada do `resolveRoleEnum` e da check constraint `tenant_users_role_check`.
+  - **Tabelas Criadas**:
+    1. `public.permissions`: Catálogo oficial com 34 permissões granulares categorizadas (`ORGANIZATION`, `COMPENSATION_PAYROLL`, `ACCOUNTING_FISCAL`, `TIME_TRACKING`, `OCCUPATIONAL_HEALTH_SST`, `GOVERNANCE_SYSTEM`).
+    2. `public.roles`: Suporte nativo a papéis de sistema globais (`tenant_id IS NULL`, `is_system = TRUE`) e papéis customizados criados pelas empresas (`tenant_id = UUID`, `is_system = FALSE`).
+    3. `public.role_permissions`: Tabela associativa papel <-> permissão com isolamento RLS e triggers de auditoria imutável (`trg_audit_roles`, `trg_audit_role_permissions`).
+    4. `public.tenant_users.role_id`: Vínculo direto ao papel ativo com foreign key `ON DELETE SET NULL`.
+  - **Papéis Padrão Populados**:
+    - `system_admin`: Acesso universal e bypass irrestrito.
+    - `tenant_admin`: Gestão administrativa completa da empresa.
+    - `dp_analyst`: Operação completa de DP, folha e ponto sem permissões de governança de sistema (`manage_users`, `manage_roles`, etc.).
+    - `manager`: Gestão de equipe, visualização de espelho de ponto e aprovações.
+    - `employee`: Restrito ao autoatendimento no portal (`self_service_portal`).
+    - `sst_specialist`: Gestão de saúde e segurança com acesso a CID médico.
+    - `auditor`: Acesso estrito de leitura fiscal e contábil.
+  - **Função SQL `public.has_permission(p_tenant_id UUID, p_permission_slug TEXT) RETURNS BOOLEAN`**:
+    - Função `STABLE SECURITY DEFINER` que valida em tempo real a associação do usuário com o papel e a permissão, exigindo usuário e membership ativos (`is_active = TRUE`), concedendo bypass global a `system_admin` e aplicando isolamento estrito de tenant.
+  - **Motor Fastify & Middlewares**:
+    - Criado `apps/api/src/modules/auth/rbacMiddleware.ts` com factories tipadas `requirePermission(slug)` e `requireAnyPermission([slugs])`, retornando HTTP 403 `FORBIDDEN_PERMISSION` com mensagem amigável em caso de violação.
+    - Endpoints adicionados em `apps/api/src/modules/auth/authRoutes.ts`:
+      - `GET /api/v1/auth/permissions`: Retorna a lista de slugs de permissões do usuário logado no tenant ativo.
+      - `GET /api/v1/auth/permissions/catalog`: Retorna todas as permissões cadastradas no sistema com descrições.
+      - `GET /api/v1/auth/roles`: Retorna os papéis do sistema e os papéis customizados visíveis para a empresa sob RLS.
+  - **Homologação Automatizada TDD**:
+    - Criada a suíte `apps/api/tests/rbac-permissions.test.ts` com 14/14 testes verdes cobrindo acesso de super_admin, papéis padrão, criação de papéis customizados por tenant, isolamento multi-tenant, bloqueio de contas inativas e middlewares Fastify.
+  - **Métricas Acumuladas**:
+    - Total de testes automatizados no monorepo: **161 testes 100% verdes** (`payroll-core`: 16, `api`: 136, `web`: 9).
+    - Monorepo compilando em produção via `npm run build` em 2.21s sem erros.
