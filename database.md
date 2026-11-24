@@ -17089,3 +17089,199 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.get_document_for_signature(UUID) TO couplerh_app;
 ```
+
+---
+
+## 35. Migration 0013: Funções SQL e Views de Mascaramento LGPD & Sigilo Salarial (RBAC-04)
+
+### 35.1 Funções de Sanitização e Mascaramento SQL
+```sql
+-- CPF: ***.XXX.XXX-**
+CREATE OR REPLACE FUNCTION public.mask_cpf(p_cpf TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    v_clean TEXT;
+BEGIN
+    IF p_cpf IS NULL THEN
+        RETURN NULL;
+    END IF;
+    v_clean := regexp_replace(p_cpf, '\D', '', 'g');
+    IF length(v_clean) <> 11 THEN
+        RETURN '***.***.***-**';
+    END IF;
+    RETURN '***.' || substr(v_clean, 4, 3) || '.' || substr(v_clean, 7, 3) || '-**';
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- PIS/PASEP: ***.*****.**-*
+CREATE OR REPLACE FUNCTION public.mask_pis(p_pis TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    v_clean TEXT;
+BEGIN
+    IF p_pis IS NULL THEN
+        RETURN NULL;
+    END IF;
+    v_clean := regexp_replace(p_pis, '\D', '', 'g');
+    IF length(v_clean) < 10 THEN
+        RETURN '***.*****.**-*';
+    END IF;
+    RETURN '***.*****.' || substr(v_clean, length(v_clean) - 1, 1) || '-' || right(v_clean, 1);
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Chave PIX: XX***XX
+CREATE OR REPLACE FUNCTION public.mask_pix(p_pix TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    v_trimmed TEXT;
+BEGIN
+    IF p_pix IS NULL THEN
+        RETURN NULL;
+    END IF;
+    v_trimmed := trim(p_pix);
+    IF length(v_trimmed) <= 4 THEN
+        RETURN '***';
+    END IF;
+    RETURN substr(v_trimmed, 1, 2) || '***' || right(v_trimmed, 2);
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Conta Bancária: *****-X
+CREATE OR REPLACE FUNCTION public.mask_bank_account(p_acc TEXT)
+RETURNS TEXT AS $$
+BEGIN
+    IF p_acc IS NULL THEN
+        RETURN NULL;
+    END IF;
+    RETURN '*****-' || right(trim(p_acc), 1);
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Agência Bancária: ***-X
+CREATE OR REPLACE FUNCTION public.mask_bank_agency(p_agency TEXT)
+RETURNS TEXT AS $$
+BEGIN
+    IF p_agency IS NULL THEN
+        RETURN NULL;
+    END IF;
+    RETURN '***-' || right(trim(p_agency), 1);
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+```
+
+### 35.2 Views SQL Mascaradas sob RLS
+```sql
+-- Contratos e Trabalhadores com Sigilo Salarial e Mascaramento LGPD
+CREATE OR REPLACE VIEW public.view_contracts_masked AS
+SELECT
+    c.id,
+    c.tenant_id,
+    c.worker_id,
+    c.company_id,
+    c.establishment_id,
+    c.department_id,
+    c.sector_id,
+    c.cost_center_id,
+    c.position_id,
+    c.registration_number,
+    c.admission_date,
+    c.status,
+    c.is_confidential_payroll,
+    -- Sigilo Salarial
+    CASE
+        WHEN public.current_app_user_id() IS NULL
+             OR public.has_permission(c.tenant_id, 'view_salaries')
+        THEN c.base_salary
+        ELSE NULL
+    END AS base_salary,
+    -- Dados Pessoais Mascarados
+    w.full_name,
+    CASE
+        WHEN public.current_app_user_id() IS NULL
+             OR public.has_permission(c.tenant_id, 'view_pii_unmasked')
+        THEN w.cpf
+        ELSE public.mask_cpf(w.cpf)
+    END AS cpf,
+    CASE
+        WHEN public.current_app_user_id() IS NULL
+             OR public.has_permission(c.tenant_id, 'view_pii_unmasked')
+        THEN w.rg
+        ELSE '***'
+    END AS rg,
+    CASE
+        WHEN public.current_app_user_id() IS NULL
+             OR public.has_permission(c.tenant_id, 'view_pii_unmasked')
+        THEN w.pis
+        ELSE public.mask_pis(w.pis)
+    END AS pis,
+    CASE
+        WHEN public.current_app_user_id() IS NULL
+             OR public.has_permission(c.tenant_id, 'view_pii_unmasked')
+        THEN w.bank_agency
+        ELSE public.mask_bank_agency(w.bank_agency)
+    END AS bank_agency,
+    CASE
+        WHEN public.current_app_user_id() IS NULL
+             OR public.has_permission(c.tenant_id, 'view_pii_unmasked')
+        THEN w.bank_account
+        ELSE public.mask_bank_account(w.bank_account)
+    END AS bank_account,
+    CASE
+        WHEN public.current_app_user_id() IS NULL
+             OR public.has_permission(c.tenant_id, 'view_pii_unmasked')
+        THEN w.pix_key
+        ELSE public.mask_pix(w.pix_key)
+    END AS pix_key
+FROM public.contracts c
+JOIN public.workers w ON w.id = c.worker_id
+WHERE (
+    c.is_confidential_payroll = FALSE
+    OR public.current_app_user_id() IS NULL
+    OR public.has_permission(c.tenant_id, 'view_executive_payroll')
+);
+
+-- Afastamentos e Atestados com Sigilo Médico (Resolução CFM 1.851/2008 & LGPD Art. 11)
+CREATE OR REPLACE VIEW public.view_leaves_masked AS
+SELECT
+    l.id,
+    l.tenant_id,
+    l.contract_id,
+    l.leave_type,
+    l.start_date,
+    l.end_date,
+    l.status,
+    CASE
+        WHEN public.current_app_user_id() IS NULL
+             OR public.has_permission(l.tenant_id, 'view_medical_cid')
+        THEN l.cid10_code
+        ELSE NULL
+    END AS cid10_code,
+    CASE
+        WHEN public.current_app_user_id() IS NULL
+             OR public.has_permission(l.tenant_id, 'view_medical_cid')
+        THEN l.doctor_crm
+        ELSE NULL
+    END AS doctor_crm,
+    CASE
+        WHEN public.current_app_user_id() IS NULL
+             OR public.has_permission(l.tenant_id, 'view_medical_cid')
+        THEN l.doctor_state
+        ELSE NULL
+    END AS doctor_state,
+    CASE
+        WHEN public.current_app_user_id() IS NULL
+             OR public.has_permission(l.tenant_id, 'view_medical_cid')
+        THEN l.certificate_file_id
+        ELSE NULL
+    END AS certificate_file_id
+FROM public.leaves l;
+
+GRANT EXECUTE ON FUNCTION public.mask_cpf(TEXT) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.mask_pis(TEXT) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.mask_pix(TEXT) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.mask_bank_account(TEXT) TO couplerh_app;
+GRANT EXECUTE ON FUNCTION public.mask_bank_agency(TEXT) TO couplerh_app;
+GRANT SELECT ON public.view_contracts_masked TO couplerh_app;
+GRANT SELECT ON public.view_leaves_masked TO couplerh_app;
+```

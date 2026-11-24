@@ -1197,3 +1197,36 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   - **Métricas Acumuladas**:
     - Total de testes automatizados no monorepo: **176 testes 100% verdes** (`payroll-core`: 16, `api`: 151, `web`: 9).
     - Monorepo compilando em produção via `npm run build` limpo em 2.51s.
+
+---
+
+### 43. FASE V3 (RBAC-04): Sigilo Salarial, Folha Confidencial e Mascaramento LGPD Real
+
+- **Conformidade Legal Estrita**:
+  - Resolução CFM 1.851/2008 (sigilo do diagnóstico e código CID-10 exclusivo ao médico do trabalho).
+  - Lei Geral de Proteção de Dados (LGPD — Lei 13.709/2018), Art. 11 (tratamento de dados sensíveis de saúde e identificação pessoal).
+  - CLT e Compliance Corporativo: sigilo salarial entre pares e folha confidencial de sócios e diretores executivos.
+- **Camada de Banco de Dados (PostgreSQL 17 Puro — Migration 0013)**:
+  - Criadas funções SQL determinísticas `public.mask_cpf(TEXT)`, `public.mask_pis(TEXT)`, `public.mask_pix(TEXT)`, `public.mask_bank_account(TEXT)` e `public.mask_bank_agency(TEXT)`.
+  - Criada view SQL `public.view_contracts_masked` com supressão nativa de `base_salary` para quem não tem `view_salaries`, mascaramento de CPF/PIS/banco/PIX para quem não tem `view_pii_unmasked`, e filtro automático de contratos com `is_confidential_payroll = TRUE` para quem não tem `view_executive_payroll`.
+  - Criada view SQL `public.view_leaves_masked` com supressão de `cid10_code`, `doctor_crm`, `doctor_state` e `certificate_file_id` para quem não tem `view_medical_cid`.
+- **Camada de Serialização e API Fastify**:
+  - Criados `apps/api/src/shared/security/lgpdMasker.ts` e `apps/api/src/shared/serializers/entitySerializers.ts`.
+  - Endpoints implementados em `apps/api/src/modules/employees/employeeRoutes.ts` e `apps/api/src/modules/leaves/leaveRoutes.ts`.
+  - Módulos protegidos com autenticação e injeção do contexto de permissões do usuário (`UserPermissionContext`).
+- **Homologação Automatizada TDD**:
+  - Suíte `apps/api/tests/rbac-salary-lgpd.test.ts` com **10/10 testes 100% verdes** cobrindo acesso restrito de gestor, especialista SST, administrador e views SQL nativas.
+
+---
+
+### 44. FASE V3 (RBAC-05): Módulos REST com Zod, Portal do Colaborador e Data Bridge Compatível
+
+- **Módulos REST com Validação Zod**:
+  - `apps/api/src/modules/org/orgRoutes.ts`: Estrutura organizacional completa (`companies`, `establishments`, `departments`, `sectors`, `positions`, `cost-centers`, `workplaces` com geofence/raio/bssid e `work-shifts`).
+  - `apps/api/src/modules/vacations/vacationRoutes.ts`: Gestão de férias CLT com travas dos Art. 134 e 143 (mínimo de 5 dias por fração, abono pecuniário máx de 10 dias / 1/3, dedução atômica de `days_remaining` em `vacation_periods`).
+  - `apps/api/src/modules/portal/portalRoutes.ts`: Autoatendimento exclusivo do trabalhador (`/portal/me`, `/portal/payslips`, `/portal/time-records`, `/portal/vacations`, `/portal/documents`), blindado por `worker_id` com bloqueio 404 `WORKER_NOT_LINKED` para usuários sem trabalhador vinculado.
+  - `apps/api/src/modules/settings/settingsRoutes.ts`: Configurações do tenant (`sessionTimeoutMinutes`, `mfaEnforcement`) e parâmetros legais vigentes (`inss_parameters`, `irrf_parameters`, `general_legal_parameters`).
+  - `apps/api/src/modules/data/dataBridgeRoutes.ts`: Ponte segura para `/api/v1/data/:table` e `/api/v1/rpc/:functionName` com whitelist estrita de tabelas autorizadas e sanitização de colunas, garantindo compatibilidade imediata com as chamadas de `apiClient.from(table)` de todas as páginas existentes do frontend sem necessidade de SQL saindo do browser.
+- **Homologação Automatizada TDD**:
+  - Suíte `apps/api/tests/rbac-rest-modules.test.ts` com **10/10 testes 100% verdes**.
+  - Suíte completa do monorepo executada com **196 testes 100% verdes** (20 arquivos de teste), sem nenhuma falha e build do frontend `apps/web` concluído em 1.99s.
