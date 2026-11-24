@@ -1140,3 +1140,32 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   - **Métricas Acumuladas**:
     - Total de testes automatizados no monorepo: **161 testes 100% verdes** (`payroll-core`: 16, `api`: 136, `web`: 9).
     - Monorepo compilando em produção via `npm run build` em 2.21s sem erros.
+
+
+---
+
+### 41. FASE V3 (RBAC-02): Escopo Organizacional Multidimensional e can_access_contract
+
+- **Modelagem de Escopo Hierárquico e Granular**:
+  - Implementada a Migration `0011_organizational_scopes.sql` no PostgreSQL 17 puro.
+  - **Alterações Estruturais**:
+    1. `public.contracts`: Adicionadas colunas `manager_worker_id UUID REFERENCES workers(id)` (gerente imediato daquele contrato) e `is_confidential_payroll BOOLEAN NOT NULL DEFAULT FALSE` (sinalização de folha de sócios/diretoria).
+    2. `public.departments` e `public.sectors`: Adicionada coluna `manager_worker_id UUID REFERENCES workers(id)` para vincular a liderança oficial da área.
+    3. `public.tenant_users`: Adicionadas colunas `worker_id UUID REFERENCES workers(id)` e `scope_mode TEXT NOT NULL DEFAULT 'ALL' CHECK (scope_mode IN ('ALL', 'RESTRICTED', 'OWN_TEAM', 'SELF_ONLY'))`.
+    4. `public.tenant_user_scopes`: Check constraint expandida para cobrir `'COMPANY', 'ESTABLISHMENT', 'DEPARTMENT', 'SECTOR', 'COST_CENTER', 'WORKPLACE', 'TEAM'`, com RLS isolada por tenant e triggers de auditoria imutável.
+  - **Função SQL `public.can_access_contract(p_tenant_id UUID, p_contract_id UUID) RETURNS BOOLEAN`**:
+    - Função `STABLE SECURITY DEFINER` que avalia dinamicamente o acesso:
+      - `ALL` ou `system_admin`: Acesso irrestrito a todos os contratos da empresa.
+      - `SELF_ONLY`: Acesso restrito ao próprio contrato do colaborador (`ec.worker_id = tu.worker_id`).
+      - `OWN_TEAM`: Acesso ao próprio contrato + subordinados diretos + colaboradores dos departamentos/setores gerenciados pelo usuário.
+      - `RESTRICTED`: Interseção estrita dos níveis organizacionais configurados em `tenant_user_scopes` (ex.: Filial SP E Departamento Logística).
+      - **Blindagem de Folha Confidencial**: Se `is_confidential_payroll = TRUE`, exige cumulativamente que o perfil possua a permissão `view_executive_payroll`.
+  - **Endpoints REST na API Fastify (`apps/api/src/modules/users/userAccessRoutes.ts`)**:
+    - `GET /api/v1/users/accessible-contracts`: Lista os contratos visíveis sob o escopo organizacional do usuário logado.
+    - `GET /api/v1/users/tenant-access/:id/scopes`: Consulta o modo de escopo e alvos organizacionais atribuídos a um usuário no tenant.
+    - `PUT /api/v1/users/tenant-access/:id/scopes`: Atualização transacional de `scope_mode`, `worker_id` e substituição atômica de `tenant_user_scopes`.
+  - **Homologação Automatizada TDD**:
+    - Criada a suíte `apps/api/tests/rbac-scope.test.ts` com **8/8 testes verdes**, cobrindo os 4 modos de escopo, isolamento multi-filial (0 vazamentos de RJ em SP), bloqueio de folha confidencial e endpoints REST.
+  - **Métricas Acumuladas**:
+    - Total de testes automatizados no monorepo: **169 testes 100% verdes** (`payroll-core`: 16, `api`: 144, `web`: 9).
+    - Build de produção compilando em 1.72s.
