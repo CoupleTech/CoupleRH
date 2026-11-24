@@ -1026,3 +1026,35 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   6. **Garantia de Qualidade e Bateria de Testes**:
      - Suíte `apps/api/tests/tenant-context.test.ts` com 9 testes automatizados cobrindo isolamento concorrente entre tenants, ausência de contaminação do pool, bloqueio atômico de contas/vínculos inativos, captura em `audit.logs`, rollback em falhas e rejeição em transação somente leitura.
      - Total: **86 testes passando na API** e **102 testes passando no monorepo**.
+
+---
+
+### 37. FASE V2 (SEC-05): Fechamento Definitivo de Todas as Brechas P0 da Auditoria
+
+- **Contexto Operacional e de Segurança P0**:
+  - Em conformidade com o Caderno de Homologação de Produção (`fase.md` e Blueprint v2.0 §3 FASE V2), foram estancadas 100% das vulnerabilidades críticas identificadas na auditoria técnica, garantindo que nenhum dado real de RH, folha ou ponto seja exposto ou vulnerável a escalada de privilégio, IDOR ou bypass.
+- **Implementações Técnicas**:
+  1. **Anti-Escalada de Privilégios no RBAC (`public.update_tenant_user_access`)**:
+     - O papel `dp_analyst` foi expressamente removido da gestão de acessos e usuários, retornando 403 `FORBIDDEN_PRIVILEGE_ESCALATION`.
+     - Administradores de tenant (`tenant_admin`) estão estritamente proibidos de promover usuários a `system_admin` ou de alterar usuários `system_admin`.
+     - Mecanismo anti-lockout impede administradores de rebaixarem ou desativarem seu próprio perfil.
+  2. **Correção do Fechamento e Reabertura de Folha (`close_payroll_period` e `reopen_payroll_period`)**:
+     - Eliminado o bug SQL `NULL NOT IN` que causava avaliações nulas e comportamentos erráticos em verificações de perfil.
+     - Removida a referência ao papel inexistente `dp_manager`, exigindo papéis administrativos válidos (`system_admin` ou `tenant_admin`).
+     - Travas de conformidade CLT no banco: bloqueio automático de fechamento quando houver holerites com status de erro, salário líquido negativo (CLT Art. 462) ou divergência entre proventos, descontos e líquido.
+     - Trilha imutável em `public.payroll_period_reopenings` registrando obrigatoriamente a justificativa legal/contábil (mínimo 15 caracteres), data, hora e responsável pela reabertura.
+  3. **Ponto Mobile Seguro (`public.register_mobile_punch`)**:
+     - Bloqueio IDOR estrito: colaboradores autenticados só podem registrar batidas para seu próprio `worker_id`.
+     - Validação obrigatória de contrato de trabalho ativo (`status = 'ACTIVE'`).
+  4. **Autenticação Segura de Coletores REP Físicos (`/rep/ingest`)**:
+     - Lookup pré-tenant por número de série via função `SECURITY DEFINER` `public.auth_get_rep_device_by_serial`.
+     - Comparação criptográfica da API key com hash SHA-256 via `crypto.timingSafeEqual` (imune a timing attacks).
+     - Saneamento do bug histórico de PIS: mapeamento do colaborador realizado estritamente pela coluna `workers.pis` (e não em `people`).
+  5. **Assinatura Digital com Validação de Titularidade**:
+     - Colaboradores operacionais só podem assinar documentos vinculados ao seu próprio `worker_id`, eliminando risco de adulteração ou assinatura cruzada.
+  6. **Rotas Públicas Seguras de Verificação Trabalhista (Únicos Endpoints sem Login)**:
+     - `/api/v1/public/verify-document/:code` e `/api/v1/public/verify-punch/:code` são os únicos endpoints abertos sem JWT.
+     - Retornam dados estritamente sanitizados sob a LGPD: CPF mascarado (`123.***.***-45`), nome abreviado (`Carlos S***`), e zero exposição de salários, descontos, PIS ou diagnósticos CID-10.
+  7. **Bateria TDD e Qualidade**:
+     - 22 testes automatizados em `apps/api/tests/security-p0.test.ts` 100% verdes.
+     - Total acumulado na API: **108 testes passando em 10 arquivos de teste**.
