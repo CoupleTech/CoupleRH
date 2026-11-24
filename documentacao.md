@@ -1058,3 +1058,51 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
   7. **Bateria TDD e Qualidade**:
      - 22 testes automatizados em `apps/api/tests/security-p0.test.ts` 100% verdes.
      - Total acumulado na API: **108 testes passando em 10 arquivos de teste**.
+
+---
+
+### 38. FASE V2 (SEC-06): Cliente HTTP Tipado no Frontend e Remoção Definitiva do Supabase-js
+
+- **Contexto Operacional e Arquitetura Frontend**:
+  - Em conformidade com o Blueprint v2.0 §3 FASE V2, o frontend React 19 foi completamente desacoplado de qualquer biblioteca ou SDK proprietário de terceiros.
+- **Implementações Técnicas (`apps/web/src/lib/apiClient.ts`)**:
+  1. **Access Token em Memória (Anti-XSS)**:
+     - O Bearer Token é mantido exclusivamente em escopo de memória do módulo (`inMemoryAccessToken`).
+     - Zero persistência de credenciais em `localStorage` ou `sessionStorage`, blindando o sistema contra ataques XSS.
+  2. **Refresh Token Seguro via Cookies HttpOnly**:
+     - Todas as chamadas `fetch` utilizam `credentials: 'include'`.
+     - O refresh token rotativo trafega protegido por flags `HttpOnly; SameSite=Lax; Secure`.
+  3. **Mutex Anti-Race Condition de Renovação em 401**:
+     - Fila atômica de requisições pendentes (`failedQueue`).
+     - Em caso de 401 Unauthorized concorrente, uma única requisição líder assume o disparo de `POST /api/v1/auth/refresh`.
+     - Todas as requisições paralelas subsequentes são enfileiradas e aguardam a resolução sem tempestades de refresh simultâneos.
+     - Ao receber o novo token, a fila é descarregada reprocessando cada requisição original com o novo Bearer Token.
+     - Se o refresh falhar (sessão revogada/expirada), a fila é rejeitada, a memória é limpa e os listeners `onAuthFailure` disparam o redirecionamento.
+  4. **Expurgo Definitivo de `src/lib/supabase.ts`**:
+     - O arquivo legado `apps/web/src/lib/supabase.ts` foi **completamente excluído**.
+     - 101 arquivos do frontend foram refatorados para consumir `apiClient`.
+     - Build de produção (`vite build`) validado com sucesso gerando artefatos limpos em `apps/web/dist/` em 6.40s.
+     - Suíte `apps/web/tests/apiClient.test.ts` com 9 testes automatizados cobrindo injeção de token, fila anti-race condition e auth nativa 100% verdes.
+
+---
+
+### 39. FASE V2 (SEC-07): Homologação Oficial do Gate V2 (Bateria TDD Negativa de Segurança P0)
+
+- **Validação Completa de Segurança P0 (100% Aprovada)**:
+  - Suíte consolidada `apps/api/tests/gate-v2-negative-security.test.ts` com 14 testes de estresse e prova de mitigação:
+  1. **Anti-Bruteforce**: 401 para senhas erradas e bloqueio temporário 423 Locked após 5 tentativas consecutivas.
+  2. **Portal do Colaborador**: 401 para CPF ou data de nascimento divergentes; 200 e emissão segura de JWT para credenciais válidas.
+  3. **Anti-Replay Attack**: Reuso de refresh token rotacionado dispara revogação atômica imediata de 100% das sessões ativas do usuário e bloqueio com erro.
+  4. **MFA Administrativo**: 403 Forbidden para requisições em rotas restritas utilizando tokens com pendência de desafio AAL2 (`mfa_challenge`).
+  5. **Anti-Escalada de Privilégios**: `dp_analyst` toma 403 `FORBIDDEN_PRIVILEGE_ESCALATION`; `tenant_admin` não consegue elevar usuários para `system_admin`; auto-rebaixamento/lockout de administrador é bloqueado com 403.
+  6. **Anti-IDOR Multi-Usuário**: Colaborador A impedido de bater ponto para Colaborador B (403 `FORBIDDEN_PUNCH_OWNERSHIP`); Colaborador A impedido de assinar documentos de terceiros (403 `FORBIDDEN_DOCUMENT_OWNER`).
+  7. **Storage Privado HMAC**: 400 para parâmetros ausentes e 403 para links adulterados ou com HMAC-SHA256 expirado.
+  8. **Imutabilidade CLT no PostgreSQL 17**: Bloqueio sumário via trigger imutável `trg_block_closed_payroll_modification` para qualquer tentativa de alteração em períodos ou holerites fechados (`CLOSED`).
+  9. **Auditoria de Código**: Verificação estática atestando 0 dependências ou menções a `@supabase/supabase-js`.
+- **Métricas Finais da FASE V2**:
+  - `@couplerh/payroll-core`: 16 testes verdes (3 arquivos).
+  - `@couplerh/api`: 122 testes verdes (11 arquivos).
+  - `@couplerh/web`: 9 testes verdes (1 arquivo).
+  - **Total:** **147 testes automatizados 100% verdes no monorepo**.
+  - **FASE V2 100% CONCLUÍDA E HOMOLOGADA PARA PRODUÇÃO**.
+
