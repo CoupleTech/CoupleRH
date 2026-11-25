@@ -23,6 +23,28 @@ A plataforma deve gerenciar vínculos trabalhistas, documentos, jornadas, folha 
 - **04/09/2026**: Inicialização do projeto, criação dos artefatos básicos de gestão (fase.md, documentacao.md, database.md), e definição da stack tecnológica (React + Supabase + Vercel).
 
 ## Histórico de Alterações
+- **24/11/2026 - FASE V3: Conclusão do RBAC-08 (Matriz de Isolamento e Governança Enterprise: 2 Tenants × 8 Papéis Canônicos + 2 Perfis Customizados) e Aprovação Integral do GATE V3**:
+  - **Suíte Automatizada de Governança Multicamadas (`apps/api/tests/gate-v3-rbac-matrix.test.ts`)**: Implementada bateria completa com 14/14 testes automatizados em Vitest cobrindo 100% da matriz de isolamento e governança:
+    1. *Isolamento Cross-Tenant*: Comprovado isolamento inviolável de dados (empresas, filiais, colaboradores e contratos) entre `Tenant Alpha SA` e `Tenant Beta Ltda`, garantindo que um administrador de um tenant jamais consiga listar ou inferir a existência de entidades de outro tenant via API REST ou sob RLS direta no PostgreSQL 17 puro.
+    2. *Matriz dos 8 Papéis Canônicos*:
+       - `system_admin`: Bypass irrestrito e visualização total de folhas executivas confidenciais de diretoria.
+       - `tenant_admin`: Gestão completa do tenant, visualização de salários normais e bloqueio a contratos confidenciais sem permissão expressa `view_executive_payroll`.
+       - `dp_analyst`: Operação total de folha, rescisões e contratos, com validação de regras CLT.
+       - `manager` (`OWN_TEAM`): Acesso estritamente delimitado aos colaboradores de sua equipe direta e subordinados gerenciados, bloqueado para outras equipes e diretoria.
+       - `accountant`: Leitura e parametrização fiscal/contábil, estritamente bloqueado contra escrita/criação em cadastros de colaboradores (403 `FORBIDDEN`).
+       - `auditor`: Acesso integral de leitura em relatórios e entidades sob conformidade LGPD, com bloqueio absoluto de escrita e recálculo de folha (403 `FORBIDDEN`).
+       - `sst_specialist`: Acesso autorizado a CID-10 e CRM médico em atestados para emissão de PCMSO/CAT, com **supressão mandatória e total de dados salariais** (`base_salary: null`).
+       - `employee`: Portal do Colaborador restrito a `SELF_ONLY`, bloqueado em qualquer rota de gestão administrativa do RH com 403 `FORBIDDEN_EMPLOYEE`.
+    3. *2 Perfis Customizados Criados Dinamicamente*:
+       - `rh_operacional_no_salaries`: Perfil operacional com permissões de gestão de colaboradores (`view_employees`, `manage_employees`), porém com supressão estrita de salários (`base_salary: null`) por não possuir `view_salaries`.
+       - `gestor_filial_sp`: Gestor com escopo organizacional restrito (`RESTRICTED`) via `tenant_user_scopes`, acessando unicamente contratos da Filial SP e bloqueado para contratos da Filial RJ.
+    4. *Auditoria Estática de Integridade do Monorepo*:
+       - Validação automática de zero dependências de `@supabase/supabase-js` em todos os `package.json` (raiz, `api` e `web`).
+       - Confirmação de que `apps/web/src/lib/apiClient.ts` é o cliente HTTP oficial exclusivo do frontend.
+  - **Homologação Formal do Gate V3**:
+    - **185 testes automatizados 100% verdes** no monorepo total (`packages/payroll-core`: 16, `apps/api`: 160 em 17 suítes, `apps/web`: 9).
+    - Compilação limpa e aprovada: API Fastify (`tsc -b`) e Frontend Vite React 19 (`dist/` gerado sem erros).
+    - Fechamento oficial da **FASE V3** e habilitação para a **FASE V4 (Saneamento de Bugs Críticos do Motor de Cálculo Atual)**.
 - **24/11/2026 - FASE V3: Conclusão do RBAC-06 (Blindagem 100% da Interface React, Guards de Rota, Página 403 e Menu Dinâmico)**:
   - **Hidratação de Contextos de Segurança**: O `AuthContext` foi enriquecido para consumir `/api/v1/auth/me`, hidratando em memória `permissions: string[]`, `isSystemAdmin: boolean`, `scope_mode: string` e o método utilitário `hasPermission(slug | slugs)`. O `CompanyContext` foi atualizado para carregar `/api/v1/org/companies` respeitando estritamente o escopo multidimensional do usuário.
   - **Route Guards Declarativos**: Criado o componente `<RequirePermission permission="..." anyPermissions={[...]} fallback={<AccessDenied403 />}>` encapsulando as 50+ rotas corporativas em `apps/web/src/routes/index.tsx`. Remoção de rotas duplicadas (`/cargos`) e adição da rota oficial `/403`.
